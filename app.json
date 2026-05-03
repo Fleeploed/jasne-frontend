@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Jasne",
+    "slug": "jasne",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "jasne",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.jasne.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Jasne uses the camera to scan bureaucracy documents.",
+        "NSPhotoLibraryUsageDescription": "Jasne can upload documents selected from your library."
+      }
+    },
+    "android": {
+      "package": "app.jasne.mobile",
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-document-picker",
+      "expo-image-picker",
+      [
+        "react-native-document-scanner-plugin",
+        {
+          "cameraPermission": "Jasne uses the camera to scan bureaucracy documents."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

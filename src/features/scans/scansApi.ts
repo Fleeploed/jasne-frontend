@@ -1,0 +1,225 @@
+import { decode } from "base64-arraybuffer";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
+import * as ImagePicker from "expo-image-picker";
+import { TurboModuleRegistry } from "react-native";
+
+import { apiFetch } from "@/lib/api";
+import { getLocale, t } from "@/lib/i18n";
+import { streamPost } from "@/lib/sse";
+import { supabase } from "@/lib/supabase";
+import type { LimitsResponse, ScanListItem, ScanResponse } from "@/lib/types";
+
+export type PickedUpload = {
+  uri: string;
+  name: string;
+  mimeType: string;
+};
+
+export type ScanProgressEvent =
+  | { type: "status"; step?: string; message?: string; category?: string; doc_type?: string; confidence?: number }
+  | { type: "field"; field: string; value: unknown }
+  | { type: "done"; scan: ScanResponse }
+  | { type: "error"; detail: string; status_code?: number };
+
+const allowedMimeTypes = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
+const supportedExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf"];
+
+export async function listScans() {
+  return apiFetch<ScanListItem[]>("/scans?limit=50&offset=0");
+}
+
+export async function getScan(scanId: string) {
+  return apiFetch<ScanResponse>(`/scans/${scanId}`);
+}
+
+export async function getLimits(scanId?: string) {
+  return apiFetch<LimitsResponse>(scanId ? `/limits?scan_id=${encodeURIComponent(scanId)}` : "/limits");
+}
+
+export async function pickDocument(): Promise<PickedUpload[] | null> {
+  const result = await DocumentPicker.getDocumentAsync({
+    type: allowedMimeTypes,
+    copyToCacheDirectory: true,
+    multiple: true
+  });
+
+  if (result.canceled) return null;
+  return result.assets.map((asset) => normalizePickedUpload(asset.uri, asset.name, asset.mimeType));
+}
+
+export async function pickImage(selectionLimit = 10): Promise<PickedUpload[] | null> {
+  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permission.granted) throw new Error(t("scanApi.photoPermission"));
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    quality: 0.9,
+    allowsMultipleSelection: true,
+    orderedSelection: true,
+    selectionLimit
+  });
+
+  if (result.canceled) return null;
+  return result.assets.map((asset, index) =>
+    normalizePickedUpload(asset.uri, asset.fileName ?? `page-${Date.now()}-${index + 1}.jpg`, asset.mimeType)
+  );
+}
+
+export async function scanWithCamera(): Promise<PickedUpload[] | null> {
+  try {
+    if (!TurboModuleRegistry.get("DocumentScanner")) {
+      throw new Error(t("scanApi.scannerNoBuild"));
+    }
+
+    const module = await import("react-native-document-scanner-plugin");
+    const result = await module.default.scanDocument({ maxNumDocuments: 10 });
+    const images = result.scannedImages ?? [];
+    if (!images.length) return null;
+    return images.map((uri, index) => ({
+      uri,
+      name: `scan-${Date.now()}-${index + 1}.jpg`,
+      mimeType: "image/jpeg"
+    }));
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : t("scanApi.scannerUnavailable"));
+  }
+}
+
+export async function uploadToStorage(files: PickedUpload[]) {
+  const {
+    data: { user },
+    error: userError
+  } = await supabase.auth.getUser();
+
+  if (userError) throw userError;
+  if (!user) throw new Error(t("scanApi.authRequired"));
+
+  const paths: string[] = [];
+
+  for (const [index, file] of files.entries()) {
+    const extension = extensionFor(file.name, file.mimeType, file.uri);
+    const safeName = file.name.replace(/[^A-Za-z0-9_.-]/g, "_").replace(/\.[^.]+$/, "");
+    const storagePath = `${user.id}/${Date.now()}-${index + 1}-${safeName}${extension}`;
+    const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
+    const { error } = await supabase.storage.from("documents").upload(storagePath, decode(base64), {
+      contentType: file.mimeType,
+      upsert: false
+    });
+
+    if (error) throw error;
+    paths.push(storagePath);
+  }
+
+  return paths;
+}
+
+export async function streamScan(imagePaths: string[], onEvent: (event: ScanProgressEvent) => void) {
+  await streamPost({
+    path: "/scans/stream",
+    body: { image_paths: imagePaths, language: getLocale() },
+    onMessage: ({ event, data }) => {
+      if (event === "status" && isRecord(data)) {
+        onEvent({
+          type: "status",
+          step: stringValue(data.step),
+          message: stringValue(data.message),
+          category: stringValue(data.category),
+          doc_type: stringValue(data.doc_type),
+          confidence: numberValue(data.confidence)
+        });
+      }
+      if (event === "field" && isRecord(data)) {
+        onEvent({ type: "field", field: stringValue(data.field) ?? "field", value: data.value });
+      }
+      if (event === "done" && isRecord(data)) {
+        onEvent({ type: "done", scan: data as ScanResponse });
+      }
+      if (event === "error" && isRecord(data)) {
+        onEvent({
+          type: "error",
+          detail: stringValue(data.detail) ?? t("scan.failed"),
+          status_code: numberValue(data.status_code)
+        });
+      }
+    }
+  });
+}
+
+function inferMimeType(name: string) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return "image/jpeg";
+}
+
+function normalizePickedUpload(uri: string, name: string, mimeType?: string | null): PickedUpload {
+  const uriExtension = extensionFromName(uri);
+  const nameExtension = extensionFromName(name);
+  const normalizedMime = normalizeMimeType(mimeType, uriExtension, nameExtension);
+  const extension = extensionFor(name, normalizedMime, uri);
+  const baseName = name.replace(/[^A-Za-z0-9_.-]/g, "_").replace(/\.[^.]+$/, "") || "page";
+
+  if (!allowedMimeTypes.includes(normalizedMime) || !supportedExtensions.includes(extension)) {
+    throw new Error(t("scanApi.unsupportedImage"));
+  }
+
+  return {
+    uri,
+    name: `${baseName}${extension}`,
+    mimeType: normalizedMime
+  };
+}
+
+function normalizeMimeType(mimeType: string | null | undefined, uriExtension?: string, nameExtension?: string) {
+  if (mimeType === "image/jpg") return "image/jpeg";
+  if (mimeType && allowedMimeTypes.includes(mimeType)) return mimeType;
+
+  const extensionMime = mimeTypeForExtension(uriExtension) ?? mimeTypeForExtension(nameExtension);
+  if (extensionMime) return extensionMime;
+
+  return mimeType ?? inferMimeType(nameExtension ?? "");
+}
+
+function extensionFromName(name: string) {
+  return name.toLowerCase().split("?", 1)[0].match(/\.[a-z0-9]+$/)?.[0];
+}
+
+function mimeTypeForExtension(extension?: string) {
+  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".png") return "image/png";
+  if (extension === ".gif") return "image/gif";
+  if (extension === ".webp") return "image/webp";
+  if (extension === ".pdf") return "application/pdf";
+  return undefined;
+}
+
+function extensionFor(name: string, mimeType: string, uri?: string) {
+  if (mimeType === "application/pdf") return ".pdf";
+  if (mimeType === "image/png") return ".png";
+  if (mimeType === "image/gif") return ".gif";
+  if (mimeType === "image/webp") return ".webp";
+  if (mimeType === "image/jpeg") return ".jpg";
+
+  const fromUri = uri ? extensionFromName(uri) : undefined;
+  if (fromUri && supportedExtensions.includes(fromUri)) return fromUri;
+
+  const fromName = extensionFromName(name);
+  if (fromName && supportedExtensions.includes(fromName)) return fromName;
+
+  return ".jpg";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value : undefined;
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" ? value : undefined;
+}
