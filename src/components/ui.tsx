@@ -48,7 +48,15 @@ export const colors = {
 
   // Pro / subscription
   pro: "#7C3AED",
-  proLight: "#F3EFFD"
+  proLight: "#F3EFFD",
+
+  // Extended palette (DS primitives)
+  ink300: "#C0B9AF",
+  blue200: "#C7D2E3",
+  blue100: "#E3E9F2",
+  amber200: "#F5DCA7",
+  red200: "#E9BFB8",
+  green100: "#DDE8DF"
 };
 
 export function Screen({ children }: { children: ReactNode }) {
@@ -113,7 +121,10 @@ export function Button({
         pressed && !disabled && styles.pressed
       ]}
     >
-      {loading ? <ActivityIndicator color={variant === "secondary" ? colors.primary : colors.text} /> : <Text style={[styles.buttonText, variant === "secondary" && styles.secondaryText]}>{title}</Text>}
+      {loading
+        ? <ActivityIndicator color={variant === "secondary" ? colors.primary : variant === "danger" ? colors.danger : colors.textOnAccent} />
+        : <Text style={[styles.buttonText, variant === "secondary" && styles.secondaryText, variant === "danger" && styles.dangerText]}>{title}</Text>
+      }
     </Pressable>
   );
 }
@@ -192,7 +203,7 @@ const styles = StyleSheet.create({
   appbarTitle: {
     color: colors.text,
     fontSize: 22,
-    fontWeight: "800",
+    fontWeight: "500",
     textAlign: "center"
   },
   appbarSubtitle: {
@@ -200,7 +211,7 @@ const styles = StyleSheet.create({
     fontSize: 13
   },
   appbarSide: {
-    width: 56,
+    width: 44,
     minHeight: 36,
     alignItems: "center",
     justifyContent: "center"
@@ -230,15 +241,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.blueSoft
   },
   dangerButton: {
-    backgroundColor: colors.danger
+    backgroundColor: "transparent",
+    borderWidth: 1.5,
+    borderColor: colors.danger
   },
   buttonText: {
     color: colors.textOnAccent,
     fontSize: 16,
-    fontWeight: "700"
+    fontWeight: "600"
   },
   secondaryText: {
     color: colors.primary
+  },
+  dangerText: {
+    color: colors.danger
   },
   disabled: {
     opacity: 0.55
@@ -247,13 +263,13 @@ const styles = StyleSheet.create({
     opacity: 0.85
   },
   input: {
-    minHeight: 46,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: "transparent",
-    backgroundColor: colors.surface2,
+    minHeight: 50,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     color: colors.text,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     fontSize: 16
   },
   multiline: {

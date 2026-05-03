@@ -291,32 +291,35 @@ const styles = StyleSheet.create({
   },
   resultCard: {
     alignSelf: "flex-start",
-    maxWidth: "88%",
-    borderRadius: 16,
+    maxWidth: "92%",
+    borderRadius: 20,
     backgroundColor: colors.surface,
-    padding: 12,
-    gap: 8,
-    shadowColor: colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6
+    paddingHorizontal: 22,
+    paddingTop: 20,
+    paddingBottom: 18,
+    gap: 10,
+    shadowColor: "#1E1B17",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1
   },
   resultHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 8
+    gap: 12
   },
   resultIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     backgroundColor: colors.blueSoft,
     alignItems: "center",
     justifyContent: "center"
   },
   resultIconText: {
     color: colors.primary,
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: "900"
   },
   resultHeaderText: {
@@ -326,8 +329,8 @@ const styles = StyleSheet.create({
   docKind: {
     alignSelf: "flex-start",
     color: colors.primary,
-    fontSize: 10,
-    fontWeight: "900",
+    fontSize: 13,
+    fontWeight: "700",
     textTransform: "uppercase"
   },
   docFrom: {
@@ -347,20 +350,22 @@ const styles = StyleSheet.create({
   },
   resultTitle: {
     color: colors.text,
-    fontSize: 17,
-    fontWeight: "800",
-    lineHeight: 22
+    fontSize: 22,
+    fontWeight: "700",
+    lineHeight: 28
   },
   resultSummary: {
-    color: colors.muted,
-    fontSize: 13,
-    lineHeight: 19
+    color: colors.muted2,
+    fontSize: 17,
+    lineHeight: 26
   },
   deadlineCallout: {
     backgroundColor: colors.amberLight,
+    borderTopWidth: 1,
+    borderTopColor: colors.amber200,
     borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     gap: 2
   },
   deadlineDate: {
@@ -374,37 +379,37 @@ const styles = StyleSheet.create({
     lineHeight: 15
   },
   sectionTitle: {
-    color: colors.muted,
-    fontSize: 10,
-    fontWeight: "900",
+    color: colors.muted2,
+    fontSize: 13,
+    fontWeight: "600",
     textTransform: "uppercase",
-    letterSpacing: 0,
-    marginTop: 4
+    letterSpacing: 0.4,
+    marginTop: 6
   },
   actionRow: {
     flexDirection: "row",
-    gap: 10,
+    gap: 12,
     alignItems: "flex-start"
   },
   actionIndex: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: colors.blueSoft,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.blue100,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 1
   },
   actionIndexText: {
     color: colors.primary,
-    fontSize: 11,
-    fontWeight: "900"
+    fontSize: 13,
+    fontWeight: "700"
   },
   resultLine: {
     flex: 1,
     color: colors.text,
-    fontSize: 13,
-    lineHeight: 19
+    fontSize: 16,
+    lineHeight: 22
   },
   deadlineRow: {
     backgroundColor: colors.surface2,
@@ -433,10 +438,11 @@ const styles = StyleSheet.create({
   penalty: {
     backgroundColor: colors.dangerLight,
     color: colors.dangerDeep,
-    borderRadius: 10,
-    padding: 10,
-    fontSize: 12,
-    lineHeight: 17
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 14,
+    lineHeight: 20
   },
   verifyNote: {
     backgroundColor: colors.blueSoft,

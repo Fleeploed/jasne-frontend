@@ -75,12 +75,15 @@ export function DeadlinesScreen() {
               </View>
               <Text style={styles.title}>{item.title}</Text>
               {item.description ? <Text style={styles.description}>{item.description}</Text> : null}
-              <Text style={styles.meta}>{item.auto_created ? t("deadlines.auto") : t("deadlines.manual")} - {statusLabel(item.status)}</Text>
-            </View>
-            <View style={styles.deadlineEnd}>
-              <Pressable onPress={() => void markDone(item.id)} style={styles.doneButton}>
-                <Text style={styles.doneText}>{t("common.ok")}</Text>
-              </Pressable>
+              <Text style={styles.meta}>{item.auto_created ? t("deadlines.auto") : t("deadlines.manual")} · {statusLabel(item.status)}</Text>
+              <View style={styles.pillRow}>
+                <Pressable style={styles.remindPill}>
+                  <Text style={styles.remindPillText}>{t("deadlines.remind")}</Text>
+                </Pressable>
+                <Pressable onPress={() => void markDone(item.id)} style={styles.donePill}>
+                  <Text style={styles.donePillText}>{t("deadlines.markDone")}</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
         )}
@@ -272,22 +275,32 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 12
   },
-  deadlineEnd: {
-    justifyContent: "center",
-    paddingHorizontal: 12
+  pillRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4
   },
-  doneButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.greenLight,
-    alignItems: "center",
-    justifyContent: "center"
+  remindPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.blueSoft
   },
-  doneText: {
-    color: colors.greenDark,
-    fontSize: 10,
-    fontWeight: "900"
+  remindPillText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "600"
+  },
+  donePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.surface2
+  },
+  donePillText: {
+    color: colors.muted2,
+    fontSize: 13,
+    fontWeight: "600"
   },
   modal: {
     flex: 1,
@@ -317,6 +330,6 @@ const styles = StyleSheet.create({
     fontWeight: "700"
   },
   activeTypeText: {
-    color: colors.text
+    color: colors.textOnAccent
   }
 });

@@ -75,7 +75,7 @@ export function ScanListScreen() {
         keyExtractor={(item) => item.key}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
-        ListHeaderComponent={<ListHeader limits={limits} />}
+        ListHeaderComponent={<ListHeader limits={limits} scanDisabled={scanDisabled} onScan={() => router.push("/scan/new")} />}
         ListEmptyComponent={<EmptyState title={t("documents.emptyTitle")} detail={t("documents.emptyDetail")} />}
         renderItem={({ item }) => {
           if (item.type === "section") return <Text style={styles.sectionHeader}>{item.title}</Text>;
@@ -112,28 +112,30 @@ function HomeHeader() {
   );
 }
 
-function ListHeader({ limits }: { limits: LimitsResponse | null }) {
-  return <ScanMeter limits={limits} />;
+function ListHeader({ limits, scanDisabled, onScan }: { limits: LimitsResponse | null; scanDisabled: boolean; onScan: () => void }) {
+  return <ScanCTACard limits={limits} scanDisabled={scanDisabled} onScan={onScan} />;
 }
 
-function ScanMeter({ limits }: { limits: LimitsResponse | null }) {
+function ScanCTACard({ limits, scanDisabled, onScan }: { limits: LimitsResponse | null; scanDisabled: boolean; onScan: () => void }) {
   const used = limits?.scans_used ?? 0;
   const max = limits?.scans_max ?? 5;
-  const percent = max ? Math.min(100, (used / max) * 100) : 0;
-  const isAtLimit = Boolean(limits && limits.scans_remaining <= 0);
 
   return (
-    <View style={styles.scanMeter}>
-      <View style={styles.meterTop}>
-        <Text style={styles.meterLabel}>{t("documents.scansThisMonth")}</Text>
-        <Text style={[styles.meterCount, isAtLimit && styles.meterCountWarn]}>{used} / {max}</Text>
+    <View style={styles.ctaCard}>
+      <View style={styles.ctaHalo} />
+      <Text style={styles.ctaTitle}>{t("documents.ctaTitle")}</Text>
+      <Text style={styles.ctaSubtitle}>{t("documents.ctaSubtitle")}</Text>
+      <View style={styles.ctaRow}>
+        <Pressable
+          disabled={scanDisabled}
+          onPress={onScan}
+          style={({ pressed }) => [styles.ctaButton, scanDisabled && styles.ctaButtonDisabled, pressed && !scanDisabled && styles.pressed]}
+        >
+          <CameraGlyph color={colors.text} />
+          <Text style={styles.ctaButtonText}>{t("documents.ctaButton")}</Text>
+        </Pressable>
+        <Text style={styles.ctaUsage}>{used} / {max} · {limits?.plan === "pro" ? t("documents.proPlan") : t("documents.freePlan")}</Text>
       </View>
-      <View style={styles.meterTrack}>
-        <View style={[styles.meterFill, isAtLimit && styles.meterFillWarn, { width: `${percent}%` }]} />
-      </View>
-      <Text style={styles.planLine}>
-        {limits?.plan === "pro" ? t("documents.proPlan") : t("documents.freePlan")} <Text style={styles.proLink}>{t("documents.goPro")}</Text>
-      </Text>
     </View>
   );
 }
@@ -159,6 +161,7 @@ function DocumentRow({ item, deadline, muted }: { item: ScanListItem; deadline?:
             <Text style={[styles.badgeText, { color: badgeColors.badgeFg ?? colors.primary }]}>{badge}</Text>
           </View>
         ) : null}
+        <Text style={styles.rowChevron}>›</Text>
       </View>
     </Pressable>
   );
@@ -336,96 +339,106 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.bg
   },
-  scanMeter: {
+  ctaCard: {
     marginHorizontal: 16,
-    marginTop: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: 10,
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border
-  },
-  meterTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 7
-  },
-  meterLabel: {
-    color: colors.muted2,
-    fontSize: 12,
-    fontWeight: "700"
-  },
-  meterCount: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: "800"
-  },
-  meterCountWarn: {
-    color: colors.dangerDark
-  },
-  meterTrack: {
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: colors.border,
+    marginTop: 14,
+    borderRadius: 24,
+    backgroundColor: colors.primary,
+    padding: 24,
+    gap: 10,
     overflow: "hidden"
   },
-  meterFill: {
-    height: "100%",
+  ctaHalo: {
+    position: "absolute",
+    right: -20,
+    top: -20,
+    width: 160,
+    height: 160,
     borderRadius: 999,
-    backgroundColor: colors.primary
+    backgroundColor: "rgba(232,160,32,0.12)"
   },
-  meterFillWarn: {
-    backgroundColor: colors.danger
+  ctaTitle: {
+    color: colors.textOnAccent,
+    fontSize: 22,
+    fontWeight: "700",
+    lineHeight: 28
   },
-  planLine: {
-    color: colors.muted3,
-    fontSize: 11,
-    marginTop: 6
+  ctaSubtitle: {
+    color: "rgba(253,251,248,0.72)",
+    fontSize: 14,
+    lineHeight: 20
   },
-  proLink: {
-    color: colors.pro,
-    fontWeight: "800"
+  ctaRow: {
+    marginTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16
+  },
+  ctaButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.amber,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10
+  },
+  ctaButtonDisabled: {
+    opacity: 0.5
+  },
+  ctaButtonText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700"
+  },
+  ctaUsage: {
+    color: "rgba(253,251,248,0.60)",
+    fontSize: 13
   },
   warning: {
     marginHorizontal: 16,
     marginTop: 10,
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: colors.warningBg,
     color: colors.warningText,
-    fontWeight: "700"
+    fontSize: 13,
+    fontWeight: "600"
   },
   list: {
+    paddingHorizontal: 16,
     paddingBottom: 106,
+    gap: 8,
     backgroundColor: colors.bg
   },
   sectionHeader: {
     color: colors.muted2,
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 0.8,
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: 0.4,
     textTransform: "uppercase",
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 8
+    paddingHorizontal: 4,
+    paddingTop: 16,
+    paddingBottom: 4
   },
   row: {
-    minHeight: 79,
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
-    paddingHorizontal: 20,
+    paddingHorizontal: 14,
     paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.bg
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    shadowColor: "#1E1B17",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1
   },
   thumb: {
-    width: 50,
-    height: 50,
-    borderRadius: 13,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center"
   },
@@ -453,7 +466,7 @@ const styles = StyleSheet.create({
   rowTitle: {
     color: colors.text,
     fontSize: 15,
-    fontWeight: "800"
+    fontWeight: "500"
   },
   rowTitleMuted: {
     color: colors.muted2
@@ -472,13 +485,20 @@ const styles = StyleSheet.create({
     fontSize: 12
   },
   badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 999
   },
   badgeText: {
-    fontSize: 11,
-    fontWeight: "900"
+    fontSize: 12,
+    fontWeight: "600"
+  },
+  rowChevron: {
+    color: colors.muted3,
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: "300",
+    marginTop: -2
   },
   fab: {
     position: "absolute",
