@@ -4,7 +4,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { AuthScreen } from "@/features/auth/AuthScreen";
-import { colors } from "@/components/ui";
+import { useColors } from "@/components/ui";
 
 export default function RootLayout() {
   return (
@@ -18,6 +18,7 @@ export default function RootLayout() {
 
 function RootNavigator() {
   const { initializing, session } = useAuth();
+  const colors = useColors();
 
   if (initializing) {
     return (
