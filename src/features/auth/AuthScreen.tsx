@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
 
 import { supabase } from "@/lib/supabase";
-import { Button, ErrorText, Field, Screen, colors } from "@/components/ui";
+import { Button, ErrorText, Field, Screen, useColors, type ColorPalette } from "@/components/ui";
 import { t } from "@/lib/i18n";
 
 export function AuthScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -61,33 +64,23 @@ export function AuthScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: {
-    flex: 1,
-    justifyContent: "center",
-    padding: 20
-  },
-  panel: {
-    gap: 14
-  },
-  title: {
-    color: colors.primary,
-    fontSize: 38,
-    fontWeight: "800",
-    letterSpacing: 0
-  },
-  subtitle: {
-    color: colors.muted,
-    fontSize: 16,
-    lineHeight: 22,
-    marginBottom: 12
-  },
-  fields: {
-    gap: 10
-  },
-  notice: {
-    color: colors.primary,
-    fontSize: 14,
-    lineHeight: 20
-  }
-});
+function createStyles(colors: ColorPalette) {
+  return StyleSheet.create({
+    wrap: { flex: 1, justifyContent: "center", padding: 20 },
+    panel: { gap: 14 },
+    title: {
+      color: colors.primary,
+      fontSize: 38,
+      fontWeight: "800",
+      letterSpacing: 0
+    },
+    subtitle: {
+      color: colors.muted,
+      fontSize: 16,
+      lineHeight: 22,
+      marginBottom: 12
+    },
+    fields: { gap: 10 },
+    notice: { color: colors.primary, fontSize: 14, lineHeight: 20 }
+  });
+}

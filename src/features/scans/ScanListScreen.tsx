@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 
-import { EmptyState, ErrorText, Screen, colors } from "@/components/ui";
+import { EmptyState, ErrorText, Screen, useColors, type ColorPalette } from "@/components/ui";
 import { listDeadlines } from "@/features/deadlines/deadlinesApi";
 import { getLimits, listScans } from "@/features/scans/scansApi";
 import { formatLocalizedDate, t } from "@/lib/i18n";
@@ -15,14 +15,20 @@ type RowVisual = {
   badgeFg?: string;
 };
 
-const categoryStyles = [
-  { match: ["dan", "tax", "finan"], bg: colors.cream, fg: colors.amber, badgeBg: colors.amberLight, badgeFg: colors.amberDark },
-  { match: ["ciz", "visa", "pobyt", "immigration", "mv čr", "oamp"], bg: colors.blueSoft, fg: colors.primary, badgeBg: colors.blueSoft, badgeFg: colors.primary },
-  { match: ["soud", "court"], bg: colors.dangerLight, fg: colors.dangerDark, badgeBg: colors.dangerLight, badgeFg: colors.dangerDark },
-  { match: ["ucet", "fakt", "invoice", "vzp", "poji"], bg: colors.greenLight, fg: colors.greenDark, badgeBg: colors.greenLight, badgeFg: colors.greenDark }
-];
+function getCategoryStyles(colors: ColorPalette) {
+  return [
+    { match: ["dan", "tax", "finan"], bg: colors.cream, fg: colors.amber, badgeBg: colors.amberLight, badgeFg: colors.amberDark },
+    { match: ["ciz", "visa", "pobyt", "immigration", "mv čr", "oamp"], bg: colors.blueSoft, fg: colors.primary, badgeBg: colors.blueSoft, badgeFg: colors.primary },
+    { match: ["soud", "court"], bg: colors.dangerLight, fg: colors.dangerDark, badgeBg: colors.dangerLight, badgeFg: colors.dangerDark },
+    { match: ["ucet", "fakt", "invoice", "vzp", "poji"], bg: colors.greenLight, fg: colors.greenDark, badgeBg: colors.greenLight, badgeFg: colors.greenDark }
+  ];
+}
 
 export function ScanListScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const categoryStyleList = useMemo(() => getCategoryStyles(colors), [colors]);
+
   const [scans, setScans] = useState<ScanListItem[]>([]);
   const [deadlines, setDeadlines] = useState<DeadlineResponse[]>([]);
   const [limits, setLimits] = useState<LimitsResponse | null>(null);
@@ -67,7 +73,7 @@ export function ScanListScreen() {
 
   return (
     <Screen>
-      <HomeHeader />
+      <HomeHeader styles={styles} colors={colors} />
       <ErrorText message={error} />
       {scanDisabled ? <Text style={styles.warning}>{t("documents.limitReached")}</Text> : null}
       <FlatList
@@ -75,11 +81,11 @@ export function ScanListScreen() {
         keyExtractor={(item) => item.key}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
-        ListHeaderComponent={<ListHeader limits={limits} scanDisabled={scanDisabled} onScan={() => router.push("/scan/new")} />}
+        ListHeaderComponent={<ListHeader limits={limits} scanDisabled={scanDisabled} onScan={() => router.push("/scan/new")} styles={styles} colors={colors} />}
         ListEmptyComponent={<EmptyState title={t("documents.emptyTitle")} detail={t("documents.emptyDetail")} />}
         renderItem={({ item }) => {
           if (item.type === "section") return <Text style={styles.sectionHeader}>{item.title}</Text>;
-          return <DocumentRow item={item.scan} deadline={item.deadline} muted={item.muted} />;
+          return <DocumentRow item={item.scan} deadline={item.deadline} muted={item.muted} colors={colors} styles={styles} categoryStyleList={categoryStyleList} />;
         }}
       />
       <Pressable
@@ -93,30 +99,42 @@ export function ScanListScreen() {
   );
 }
 
-function HomeHeader() {
+function HomeHeader({ styles, colors }: { styles: ReturnType<typeof createStyles>; colors: ColorPalette }) {
   return (
     <View style={styles.header}>
       <Text style={styles.logo}>jasně</Text>
       <View style={styles.headerActions}>
         <View style={styles.searchIcon}>
-          <View style={styles.searchCircle} />
-          <View style={styles.searchHandle} />
+          <View style={[styles.searchCircle, { borderColor: colors.muted2 }]} />
+          <View style={[styles.searchHandle, { backgroundColor: colors.muted2 }]} />
         </View>
         <View style={styles.bellIcon}>
-          <View style={styles.bellDome} />
-          <View style={styles.bellBase} />
-          <View style={styles.notifyDot} />
+          <View style={[styles.bellDome, { borderColor: colors.muted2 }]} />
+          <View style={[styles.bellBase, { backgroundColor: colors.muted2 }]} />
+          <View style={[styles.notifyDot, { backgroundColor: colors.danger, borderColor: colors.bg }]} />
         </View>
       </View>
     </View>
   );
 }
 
-function ListHeader({ limits, scanDisabled, onScan }: { limits: LimitsResponse | null; scanDisabled: boolean; onScan: () => void }) {
-  return <ScanCTACard limits={limits} scanDisabled={scanDisabled} onScan={onScan} />;
+function ListHeader({ limits, scanDisabled, onScan, styles, colors }: {
+  limits: LimitsResponse | null;
+  scanDisabled: boolean;
+  onScan: () => void;
+  styles: ReturnType<typeof createStyles>;
+  colors: ColorPalette;
+}) {
+  return <ScanCTACard limits={limits} scanDisabled={scanDisabled} onScan={onScan} styles={styles} colors={colors} />;
 }
 
-function ScanCTACard({ limits, scanDisabled, onScan }: { limits: LimitsResponse | null; scanDisabled: boolean; onScan: () => void }) {
+function ScanCTACard({ limits, scanDisabled, onScan, styles, colors }: {
+  limits: LimitsResponse | null;
+  scanDisabled: boolean;
+  onScan: () => void;
+  styles: ReturnType<typeof createStyles>;
+  colors: ColorPalette;
+}) {
   const used = limits?.scans_used ?? 0;
   const max = limits?.scans_max ?? 5;
 
@@ -140,10 +158,17 @@ function ScanCTACard({ limits, scanDisabled, onScan }: { limits: LimitsResponse 
   );
 }
 
-function DocumentRow({ item, deadline, muted }: { item: ScanListItem; deadline?: DeadlineResponse; muted?: boolean }) {
-  const visual = getDocVisual(item);
+function DocumentRow({ item, deadline, muted, colors, styles, categoryStyleList }: {
+  item: ScanListItem;
+  deadline?: DeadlineResponse;
+  muted?: boolean;
+  colors: ColorPalette;
+  styles: ReturnType<typeof createStyles>;
+  categoryStyleList: ReturnType<typeof getCategoryStyles>;
+}) {
+  const visual = getDocVisual(item, colors, categoryStyleList);
   const badge = muted || !deadline ? null : getDeadlineBadge(deadline.due_date);
-  const badgeColors = deadline ? getDeadlineBadgeColors(deadline.due_date) : visual;
+  const badgeColors = deadline ? getDeadlineBadgeColors(deadline.due_date, colors) : visual;
 
   return (
     <Pressable style={({ pressed }) => [styles.row, pressed && styles.pressed]} onPress={() => router.push(`/scan/${item.id}`)}>
@@ -200,9 +225,9 @@ function getTitle(item: ScanListItem) {
   return item.doc_type ?? item.category ?? t("common.document");
 }
 
-function getDocVisual(item: ScanListItem): RowVisual {
+function getDocVisual(item: ScanListItem, colors: ColorPalette, categoryStyleList: ReturnType<typeof getCategoryStyles>): RowVisual {
   const haystack = `${item.doc_type ?? ""} ${item.category ?? ""} ${item.summary ?? ""}`.toLowerCase();
-  return categoryStyles.find((style) => style.match.some((token) => haystack.includes(token))) ?? { bg: colors.blueSoft, fg: colors.primary, badgeBg: colors.blueSoft, badgeFg: colors.primary };
+  return categoryStyleList.find((style) => style.match.some((token) => haystack.includes(token))) ?? { bg: colors.blueSoft, fg: colors.primary, badgeBg: colors.blueSoft, badgeFg: colors.primary };
 }
 
 function getDeadlineBadge(value: string) {
@@ -213,7 +238,7 @@ function getDeadlineBadge(value: string) {
   return t("common.days", { count: diffDays });
 }
 
-function getDeadlineBadgeColors(value: string): RowVisual {
+function getDeadlineBadgeColors(value: string, colors: ColorPalette): RowVisual {
   const diffDays = getDaysUntil(value);
   if (diffDays < 7) return { bg: colors.dangerLight, fg: colors.dangerDark, badgeBg: colors.dangerLight, badgeFg: colors.dangerDark };
   if (diffDays <= 30) return { bg: colors.cream, fg: colors.amber, badgeBg: colors.amberLight, badgeFg: colors.amberDark };
@@ -237,316 +262,173 @@ function formatDate(value: string) {
 
 function FileGlyph({ color }: { color: string }) {
   return (
-    <View style={[styles.fileGlyph, { borderColor: color }]}>
-      <View style={[styles.fileFold, { borderLeftColor: color, borderBottomColor: color }]} />
+    <View style={[fileGlyphBase.wrap, { borderColor: color }]}>
+      <View style={[fileGlyphBase.fold, { borderLeftColor: color, borderBottomColor: color }]} />
     </View>
   );
 }
 
+const fileGlyphBase = StyleSheet.create({
+  wrap: { width: 15, height: 18, borderRadius: 2, borderWidth: 1.4 },
+  fold: { position: "absolute", right: -1.4, top: -1.4, width: 6, height: 6, borderLeftWidth: 1.4, borderBottomWidth: 1.4, backgroundColor: "transparent" }
+});
+
 function CameraGlyph({ color }: { color: string }) {
   return (
-    <View style={styles.cameraGlyph}>
-      <View style={[styles.cameraBody, { borderColor: color }]}>
-        <View style={[styles.cameraTop, { backgroundColor: color }]} />
-        <View style={[styles.cameraLens, { borderColor: color }]} />
+    <View style={cameraGlyphBase.wrap}>
+      <View style={[cameraGlyphBase.body, { borderColor: color }]}>
+        <View style={[cameraGlyphBase.top, { backgroundColor: color }]} />
+        <View style={[cameraGlyphBase.lens, { borderColor: color }]} />
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  header: {
-    minHeight: 72,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.bg,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between"
-  },
-  logo: {
-    color: colors.primary,
-    fontSize: 26,
-    lineHeight: 28,
-    fontWeight: "800",
-    letterSpacing: -1
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4
-  },
-  searchIcon: {
-    width: 38,
-    height: 38,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  searchCircle: {
-    width: 15,
-    height: 15,
-    borderRadius: 8,
-    borderWidth: 1.6,
-    borderColor: colors.muted2
-  },
-  searchHandle: {
-    width: 8,
-    height: 1.6,
-    borderRadius: 2,
-    backgroundColor: colors.muted2,
-    transform: [{ rotate: "45deg" }],
-    marginTop: -1,
-    marginLeft: 12
-  },
-  bellIcon: {
-    width: 38,
-    height: 38,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  bellDome: {
-    width: 15,
-    height: 16,
-    borderTopLeftRadius: 9,
-    borderTopRightRadius: 9,
-    borderWidth: 1.5,
-    borderBottomWidth: 0,
-    borderColor: colors.muted2
-  },
-  bellBase: {
-    width: 19,
-    height: 1.5,
-    borderRadius: 2,
-    backgroundColor: colors.muted2,
-    marginTop: -1
-  },
-  notifyDot: {
-    position: "absolute",
-    right: 8,
-    top: 9,
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.danger,
-    borderWidth: 1.5,
-    borderColor: colors.bg
-  },
-  ctaCard: {
-    marginHorizontal: 16,
-    marginTop: 14,
-    borderRadius: 24,
-    backgroundColor: colors.primary,
-    padding: 24,
-    gap: 10,
-    overflow: "hidden"
-  },
-  ctaHalo: {
-    position: "absolute",
-    right: -20,
-    top: -20,
-    width: 160,
-    height: 160,
-    borderRadius: 999,
-    backgroundColor: "rgba(232,160,32,0.12)"
-  },
-  ctaTitle: {
-    color: colors.textOnAccent,
-    fontSize: 22,
-    fontWeight: "700",
-    lineHeight: 28
-  },
-  ctaSubtitle: {
-    color: "rgba(253,251,248,0.72)",
-    fontSize: 14,
-    lineHeight: 20
-  },
-  ctaRow: {
-    marginTop: 4,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16
-  },
-  ctaButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: colors.amber,
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 10
-  },
-  ctaButtonDisabled: {
-    opacity: 0.5
-  },
-  ctaButtonText: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "700"
-  },
-  ctaUsage: {
-    color: "rgba(253,251,248,0.60)",
-    fontSize: 13
-  },
-  warning: {
-    marginHorizontal: 16,
-    marginTop: 10,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: colors.warningBg,
-    color: colors.warningText,
-    fontSize: 13,
-    fontWeight: "600"
-  },
-  list: {
-    paddingHorizontal: 16,
-    paddingBottom: 106,
-    gap: 8,
-    backgroundColor: colors.bg
-  },
-  sectionHeader: {
-    color: colors.muted2,
-    fontSize: 13,
-    fontWeight: "600",
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-    paddingHorizontal: 4,
-    paddingTop: 16,
-    paddingBottom: 4
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderRadius: 20,
-    backgroundColor: colors.surface,
-    shadowColor: "#1E1B17",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 2,
-    elevation: 1
-  },
-  thumb: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  fileGlyph: {
-    width: 15,
-    height: 18,
-    borderRadius: 2,
-    borderWidth: 1.4
-  },
-  fileFold: {
-    position: "absolute",
-    right: -1.4,
-    top: -1.4,
-    width: 6,
-    height: 6,
-    borderLeftWidth: 1.4,
-    borderBottomWidth: 1.4,
-    backgroundColor: "transparent"
-  },
-  rowMid: {
-    flex: 1,
-    minWidth: 0,
-    gap: 3
-  },
-  rowTitle: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "500"
-  },
-  rowTitleMuted: {
-    color: colors.muted2
-  },
-  rowPreview: {
-    color: colors.muted,
-    fontSize: 13,
-    lineHeight: 18
-  },
-  rowEnd: {
-    alignItems: "flex-end",
-    gap: 5
-  },
-  rowTime: {
-    color: colors.muted2,
-    fontSize: 12
-  },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999
-  },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: "600"
-  },
-  rowChevron: {
-    color: colors.muted3,
-    fontSize: 22,
-    lineHeight: 26,
-    fontWeight: "300",
-    marginTop: -2
-  },
-  fab: {
-    position: "absolute",
-    right: 20,
-    bottom: 92,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.38,
-    shadowRadius: 22
-  },
-  fabDisabled: {
-    opacity: 0.45
-  },
-  cameraGlyph: {
-    width: 26,
-    height: 22,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  cameraBody: {
-    width: 24,
-    height: 17,
-    borderRadius: 4,
-    borderWidth: 1.8,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  cameraTop: {
-    position: "absolute",
-    top: -5,
-    width: 9,
-    height: 5,
-    borderTopLeftRadius: 3,
-    borderTopRightRadius: 3
-  },
-  cameraLens: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    borderWidth: 1.7
-  },
-  pressed: {
-    opacity: 0.72
-  }
+const cameraGlyphBase = StyleSheet.create({
+  wrap: { width: 26, height: 22, alignItems: "center", justifyContent: "center" },
+  body: { width: 24, height: 17, borderRadius: 4, borderWidth: 1.8, alignItems: "center", justifyContent: "center" },
+  top: { position: "absolute", top: -5, width: 9, height: 5, borderTopLeftRadius: 3, borderTopRightRadius: 3 },
+  lens: { width: 8, height: 8, borderRadius: 4, borderWidth: 1.7 }
 });
+
+function createStyles(colors: ColorPalette) {
+  return StyleSheet.create({
+    center: { flex: 1, alignItems: "center", justifyContent: "center" },
+    header: {
+      minHeight: 72,
+      paddingHorizontal: 20,
+      paddingTop: 10,
+      paddingBottom: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      backgroundColor: colors.bg,
+      flexDirection: "row",
+      alignItems: "flex-end",
+      justifyContent: "space-between"
+    },
+    logo: {
+      color: colors.primary,
+      fontSize: 26,
+      lineHeight: 28,
+      fontWeight: "800",
+      letterSpacing: -1
+    },
+    headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
+    searchIcon: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
+    searchCircle: { width: 15, height: 15, borderRadius: 8, borderWidth: 1.6 },
+    searchHandle: { width: 8, height: 1.6, borderRadius: 2, transform: [{ rotate: "45deg" }], marginTop: -1, marginLeft: 12 },
+    bellIcon: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
+    bellDome: { width: 15, height: 16, borderTopLeftRadius: 9, borderTopRightRadius: 9, borderWidth: 1.5, borderBottomWidth: 0 },
+    bellBase: { width: 19, height: 1.5, borderRadius: 2, marginTop: -1 },
+    notifyDot: { position: "absolute", right: 8, top: 9, width: 7, height: 7, borderRadius: 4, borderWidth: 1.5 },
+    ctaCard: {
+      marginHorizontal: 16,
+      marginTop: 14,
+      borderRadius: 24,
+      backgroundColor: colors.primary,
+      padding: 24,
+      gap: 10,
+      overflow: "hidden"
+    },
+    ctaHalo: {
+      position: "absolute",
+      right: -20,
+      top: -20,
+      width: 160,
+      height: 160,
+      borderRadius: 999,
+      backgroundColor: "rgba(232,160,32,0.12)"
+    },
+    ctaTitle: {
+      color: colors.textOnAccent,
+      fontSize: 22,
+      fontWeight: "700",
+      lineHeight: 28
+    },
+    ctaSubtitle: {
+      color: "rgba(253,251,248,0.72)",
+      fontSize: 14,
+      lineHeight: 20
+    },
+    ctaRow: { marginTop: 4, flexDirection: "row", alignItems: "center", gap: 16 },
+    ctaButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      backgroundColor: colors.amber,
+      borderRadius: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 10
+    },
+    ctaButtonDisabled: { opacity: 0.5 },
+    ctaButtonText: { color: colors.text, fontSize: 15, fontWeight: "700" },
+    ctaUsage: { color: "rgba(253,251,248,0.60)", fontSize: 13 },
+    warning: {
+      marginHorizontal: 16,
+      marginTop: 10,
+      padding: 12,
+      borderRadius: 12,
+      backgroundColor: colors.warningBg,
+      color: colors.warningText,
+      fontSize: 13,
+      fontWeight: "600"
+    },
+    list: {
+      paddingHorizontal: 16,
+      paddingBottom: 106,
+      gap: 8,
+      backgroundColor: colors.bg
+    },
+    sectionHeader: {
+      color: colors.muted2,
+      fontSize: 13,
+      fontWeight: "600",
+      letterSpacing: 0.4,
+      textTransform: "uppercase",
+      paddingHorizontal: 4,
+      paddingTop: 16,
+      paddingBottom: 4
+    },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      borderRadius: 20,
+      backgroundColor: colors.surface,
+      shadowColor: "#1E1B17",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.04,
+      shadowRadius: 2,
+      elevation: 1
+    },
+    thumb: { width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+    rowMid: { flex: 1, minWidth: 0, gap: 3 },
+    rowTitle: { color: colors.text, fontSize: 15, fontWeight: "500" },
+    rowTitleMuted: { color: colors.muted2 },
+    rowPreview: { color: colors.muted, fontSize: 13, lineHeight: 18 },
+    rowEnd: { alignItems: "flex-end", gap: 5 },
+    rowTime: { color: colors.muted2, fontSize: 12 },
+    badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+    badgeText: { fontSize: 12, fontWeight: "600" },
+    rowChevron: { color: colors.muted3, fontSize: 22, lineHeight: 26, fontWeight: "300", marginTop: -2 },
+    fab: {
+      position: "absolute",
+      right: 20,
+      bottom: 92,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.38,
+      shadowRadius: 22
+    },
+    fabDisabled: { opacity: 0.45 },
+    pressed: { opacity: 0.72 }
+  });
+}

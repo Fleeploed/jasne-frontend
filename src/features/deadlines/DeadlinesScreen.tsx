@@ -1,13 +1,16 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Modal, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 
-import { AppBar, Button, EmptyState, ErrorText, Field, Screen, colors } from "@/components/ui";
+import { AppBar, Button, EmptyState, ErrorText, Field, Screen, useColors, type ColorPalette } from "@/components/ui";
 import { completeDeadline, createManualDeadline, listDeadlines } from "@/features/deadlines/deadlinesApi";
 import { formatLocalizedDate, t } from "@/lib/i18n";
 import type { DeadlineResponse, DeadlineType } from "@/lib/types";
 
 export function DeadlinesScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [deadlines, setDeadlines] = useState<DeadlineResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -67,7 +70,7 @@ export function DeadlinesScreen() {
         ListEmptyComponent={<EmptyState title={t("deadlines.emptyTitle")} detail={t("deadlines.emptyDetail")} />}
         renderItem={({ item }) => (
           <View style={styles.deadline}>
-            <View style={[styles.spine, { backgroundColor: getUrgencyColor(item.due_date) }]} />
+            <View style={[styles.spine, { backgroundColor: getUrgencyColor(item.due_date, colors) }]} />
             <View style={styles.deadlineBody}>
               <View style={styles.deadlineTop}>
                 <Text style={styles.date}>{formatDate(item.due_date)}</Text>
@@ -106,6 +109,9 @@ function ManualDeadlineModal({
   onClose: () => void;
   onCreated: (deadline: DeadlineResponse) => void;
 }) {
+  const colors = useColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -183,7 +189,7 @@ function statusLabel(status: DeadlineResponse["status"]) {
   return labels[status];
 }
 
-function getUrgencyColor(value: string) {
+function getUrgencyColor(value: string, colors: ColorPalette) {
   const today = new Date();
   const dueDate = new Date(`${value}T12:00:00Z`);
   const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / 86_400_000);
@@ -192,144 +198,86 @@ function getUrgencyColor(value: string) {
   return colors.green;
 }
 
-const styles = StyleSheet.create({
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12
-  },
-  heading: {
-    color: colors.text,
-    fontSize: 30,
-    fontWeight: "800"
-  },
-  list: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    paddingBottom: 100,
-    gap: 12
-  },
-  emptyList: {
-    flexGrow: 1,
-    justifyContent: "center"
-  },
-  deadline: {
-    flexDirection: "row",
-    borderRadius: 20,
-    backgroundColor: colors.surface,
-    overflow: "hidden",
-    shadowColor: colors.text,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6
-  },
-  spine: {
-    width: 4
-  },
-  deadlineBody: {
-    flex: 1,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    gap: 4
-  },
-  deadlineTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12
-  },
-  title: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "600"
-  },
-  date: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: "800"
-  },
-  typePill: {
-    color: colors.amberDark,
-    backgroundColor: colors.amberLight,
-    borderRadius: 999,
-    overflow: "hidden",
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    fontSize: 10,
-    fontWeight: "800"
-  },
-  description: {
-    color: colors.muted,
-    fontSize: 13,
-    lineHeight: 19
-  },
-  meta: {
-    color: colors.muted,
-    fontSize: 12
-  },
-  pillRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 4
-  },
-  remindPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: colors.blueSoft
-  },
-  remindPillText: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: "600"
-  },
-  donePill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: colors.surface2
-  },
-  donePillText: {
-    color: colors.muted2,
-    fontSize: 13,
-    fontWeight: "600"
-  },
-  modal: {
-    flex: 1,
-    padding: 20,
-    gap: 12,
-    backgroundColor: colors.bg
-  },
-  typeRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8
-  },
-  typeChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    backgroundColor: colors.surface
-  },
-  activeType: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary
-  },
-  typeText: {
-    color: colors.text,
-    fontWeight: "700"
-  },
-  activeTypeText: {
-    color: colors.textOnAccent
-  }
-});
+function createStyles(colors: ColorPalette) {
+  return StyleSheet.create({
+    center: { flex: 1, alignItems: "center", justifyContent: "center" },
+    header: {
+      paddingHorizontal: 20,
+      paddingTop: 18,
+      paddingBottom: 10,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 12
+    },
+    heading: { color: colors.text, fontSize: 30, fontWeight: "800" },
+    list: {
+      paddingHorizontal: 20,
+      paddingVertical: 8,
+      paddingBottom: 100,
+      gap: 12
+    },
+    emptyList: { flexGrow: 1, justifyContent: "center" },
+    deadline: {
+      flexDirection: "row",
+      borderRadius: 20,
+      backgroundColor: colors.surface,
+      overflow: "hidden",
+      shadowColor: "#1E1B17",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.04,
+      shadowRadius: 2,
+      elevation: 1
+    },
+    spine: { width: 4 },
+    deadlineBody: {
+      flex: 1,
+      paddingHorizontal: 18,
+      paddingVertical: 16,
+      gap: 4
+    },
+    deadlineTop: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
+    title: { color: colors.text, fontSize: 15, fontWeight: "600" },
+    date: { color: colors.text, fontSize: 22, fontWeight: "800" },
+    typePill: {
+      color: colors.amberDark,
+      backgroundColor: colors.amberLight,
+      borderRadius: 999,
+      overflow: "hidden",
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+      fontSize: 10,
+      fontWeight: "800"
+    },
+    description: { color: colors.muted, fontSize: 13, lineHeight: 19 },
+    meta: { color: colors.muted, fontSize: 12 },
+    pillRow: { flexDirection: "row", gap: 8, marginTop: 4 },
+    remindPill: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: colors.blueSoft
+    },
+    remindPillText: { color: colors.primary, fontSize: 13, fontWeight: "600" },
+    donePill: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: colors.surface2
+    },
+    donePillText: { color: colors.muted2, fontSize: 13, fontWeight: "600" },
+    modal: { flex: 1, padding: 20, gap: 12, backgroundColor: colors.bg },
+    typeRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    typeChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface
+    },
+    activeType: { backgroundColor: colors.primary, borderColor: colors.primary },
+    typeText: { color: colors.text, fontWeight: "700" },
+    activeTypeText: { color: colors.textOnAccent }
+  });
+}

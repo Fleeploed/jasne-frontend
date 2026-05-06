@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 
-import { Button, ErrorText, Screen, colors } from "@/components/ui";
+import { Button, ErrorText, Screen, useColors, type ColorPalette } from "@/components/ui";
 import {
   type PickedUpload,
   type ScanProgressEvent,
@@ -40,6 +40,9 @@ const stepLabels: Record<string, ReturnType<typeof t>> = {
 };
 
 export function NewScanScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [files, setFiles] = useState<PickedUpload[]>([]);
   const [pageLimit, setPageLimit] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -184,51 +187,51 @@ export function NewScanScreen() {
 
   return (
     <Screen>
-      <View style={styles.scannerShell}>
-        <View style={styles.scannerTop}>
-          <Pressable onPress={() => router.back()} style={styles.scannerBack}>
-            <Text style={styles.scannerBackText}>{t("common.back")}</Text>
+      <View style={scannerStyles.shell}>
+        <View style={scannerStyles.top}>
+          <Pressable onPress={() => router.back()} style={scannerStyles.back}>
+            <Text style={scannerStyles.backText}>{t("common.back")}</Text>
           </Pressable>
-          <Text style={styles.scannerTitle}>{t("scan.title")}</Text>
-          <View style={styles.topSpacer} />
+          <Text style={scannerStyles.title}>{t("scan.title")}</Text>
+          <View style={scannerStyles.spacer} />
         </View>
 
-        <View style={styles.scannerViewport}>
-          <View style={styles.paper}>
-            <View style={styles.paperTitle} />
+        <View style={scannerStyles.viewport}>
+          <View style={scannerStyles.paper}>
+            <View style={scannerStyles.paperTitle} />
             {[90, 76, 88, 65, 82, 56, 72, 84].map((width, index) => (
-              <View key={index} style={[styles.paperLine, { width: `${width}%` }]} />
+              <View key={index} style={[scannerStyles.paperLine, { width: `${width}%` }]} />
             ))}
           </View>
-          {busy ? <View style={styles.scanLine} /> : null}
-          <View style={[styles.corner, styles.cornerTopLeft]} />
-          <View style={[styles.corner, styles.cornerTopRight]} />
-          <View style={[styles.corner, styles.cornerBottomLeft]} />
-          <View style={[styles.corner, styles.cornerBottomRight]} />
+          {busy ? <View style={scannerStyles.scanLine} /> : null}
+          <View style={[scannerStyles.corner, scannerStyles.cornerTL]} />
+          <View style={[scannerStyles.corner, scannerStyles.cornerTR]} />
+          <View style={[scannerStyles.corner, scannerStyles.cornerBL]} />
+          <View style={[scannerStyles.corner, scannerStyles.cornerBR]} />
         </View>
 
-        <View style={styles.thumbStrip}>
+        <View style={scannerStyles.thumbStrip}>
           {files.map((file, index) => (
-            <Pressable key={`${file.uri}-${index}`} onPress={() => removeFile(index)} style={[styles.pageThumb, index === files.length - 1 && styles.pageThumbActive]}>
-              <Text style={styles.pageThumbText}>{index + 1}</Text>
-              <Text style={styles.removeThumbText}>x</Text>
+            <Pressable key={`${file.uri}-${index}`} onPress={() => removeFile(index)} style={[scannerStyles.thumb, index === files.length - 1 && scannerStyles.thumbActive]}>
+              <Text style={scannerStyles.thumbText}>{index + 1}</Text>
+              <Text style={scannerStyles.thumbRemove}>x</Text>
             </Pressable>
           ))}
-          <Pressable onPress={addImage} disabled={addDisabled} style={[styles.addPage, addDisabled && styles.disabledControl]}>
-            <Text style={styles.addPageText}>+</Text>
+          <Pressable onPress={addImage} disabled={addDisabled} style={[scannerStyles.addPage, addDisabled && scannerStyles.disabled]}>
+            <Text style={scannerStyles.addPageText}>+</Text>
           </Pressable>
         </View>
 
-        <View style={styles.scannerToolbar}>
-          <Pressable onPress={addImage} disabled={addDisabled} style={[styles.toolButton, addDisabled && styles.disabledControl]}>
-            <Text style={styles.toolLabel}>{t("scan.photos")}</Text>
+        <View style={scannerStyles.toolbar}>
+          <Pressable onPress={addImage} disabled={addDisabled} style={[scannerStyles.toolBtn, addDisabled && scannerStyles.disabled]}>
+            <Text style={scannerStyles.toolLabel}>{t("scan.photos")}</Text>
           </Pressable>
-          <Pressable onPress={addCameraScan} disabled={addDisabled} style={[styles.camButton, addDisabled && styles.disabledControl]}>
-            <Text style={styles.camText}>SCAN</Text>
+          <Pressable onPress={addCameraScan} disabled={addDisabled} style={[scannerStyles.camBtn, addDisabled && scannerStyles.disabled]}>
+            <Text style={scannerStyles.camText}>SCAN</Text>
           </Pressable>
-          <Pressable onPress={addDocument} disabled={addDisabled} style={[styles.toolButton, addDisabled && styles.disabledControl]}>
-            <Text style={styles.toolIcon}>PDF</Text>
-            <Text style={styles.toolLabel}>{t("scan.file")}</Text>
+          <Pressable onPress={addDocument} disabled={addDisabled} style={[scannerStyles.toolBtn, addDisabled && scannerStyles.disabled]}>
+            <Text style={scannerStyles.toolIcon}>PDF</Text>
+            <Text style={scannerStyles.toolLabel}>{t("scan.file")}</Text>
           </Pressable>
         </View>
       </View>
@@ -274,7 +277,7 @@ export function NewScanScreen() {
                 <Text style={styles.progressText}>{item}</Text>
               </View>
             ))}
-            <LiveResultCard preview={preview} />
+            <LiveResultCard preview={preview} styles={styles} colors={colors} />
           </View>
         ) : null}
       </ScrollView>
@@ -317,7 +320,7 @@ function updatePreview(current: LiveScanPreview, field: string, value: unknown):
   return current;
 }
 
-function LiveResultCard({ preview }: { preview: LiveScanPreview }) {
+function LiveResultCard({ preview, styles, colors }: { preview: LiveScanPreview; styles: ReturnType<typeof createStyles>; colors: ColorPalette }) {
   const hasContent = Boolean(
     preview.documentType ||
       preview.summary ||
@@ -393,371 +396,70 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-const styles = StyleSheet.create({
-  scannerShell: {
-    height: 520,
-    backgroundColor: "#0A0906"
-  },
-  scannerTop: {
-    height: 56,
-    paddingHorizontal: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between"
-  },
-  scannerTitle: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: "800"
-  },
-  topSpacer: {
-    width: 52,
-    height: 40
-  },
-  scannerBack: {
-    minWidth: 52,
-    minHeight: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(253,251,248,0.14)"
-  },
-  scannerBackText: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "800"
-  },
-  content: {
-    padding: 18,
-    gap: 16
-  },
-  section: {
-    gap: 8
-  },
-  subtle: {
-    color: colors.muted,
-    fontSize: 14,
-    lineHeight: 20
-  },
-  scannerViewport: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden"
-  },
-  paper: {
-    width: 154,
-    height: 196,
-    borderRadius: 4,
-    backgroundColor: "#F8F2EA",
-    padding: 14,
-    gap: 5,
-    transform: [{ rotate: "-1.5deg" }],
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 32
-  },
-  paperTitle: {
-    width: "55%",
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.primary,
-    marginBottom: 5
-  },
-  paperLine: {
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: "#C9C2B9"
-  },
-  scanLine: {
-    position: "absolute",
-    left: 54,
-    right: 54,
-    top: 205,
-    height: 2,
-    backgroundColor: colors.amber
-  },
-  corner: {
-    position: "absolute",
-    width: 22,
-    height: 22,
-    borderColor: colors.amber
-  },
-  cornerTopLeft: {
-    top: 78,
-    left: 24,
-    borderTopWidth: 3,
-    borderLeftWidth: 3
-  },
-  cornerTopRight: {
-    top: 78,
-    right: 24,
-    borderTopWidth: 3,
-    borderRightWidth: 3
-  },
-  cornerBottomLeft: {
-    bottom: 120,
-    left: 24,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3
-  },
-  cornerBottomRight: {
-    bottom: 120,
-    right: 24,
-    borderBottomWidth: 3,
-    borderRightWidth: 3
-  },
-  label: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "800"
-  },
-  thumbStrip: {
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "center",
-    paddingHorizontal: 24,
-    paddingBottom: 12
-  },
-  pageThumb: {
-    width: 44,
-    height: 58,
-    borderRadius: 6,
-    backgroundColor: "#2A2520",
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative"
-  },
-  pageThumbActive: {
-    borderColor: colors.amber
-  },
-  pageThumbText: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: "800"
-  },
-  removeThumbText: {
-    position: "absolute",
-    right: 4,
-    top: 2,
-    color: colors.muted,
-    fontSize: 10,
-    fontWeight: "900"
-  },
-  addPage: {
-    width: 44,
-    height: 58,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderStyle: "dashed",
-    borderColor: "rgba(255,255,255,0.3)",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  addPageText: {
-    color: colors.text,
-    fontSize: 24,
-    lineHeight: 26
-  },
-  disabledControl: {
-    opacity: 0.42
-  },
-  scannerToolbar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 24,
-    paddingBottom: 30,
-    backgroundColor: "rgba(13,11,9,0.95)"
-  },
-  toolButton: {
-    width: 72,
-    alignItems: "center",
-    gap: 5,
-    minHeight: 44,
-    justifyContent: "center"
-  },
-  toolIcon: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "900"
-  },
-  toolLabel: {
-    color: "rgba(253,250,247,0.72)",
-    fontSize: 11,
-    fontWeight: "700"
-  },
-  camButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.primaryDark,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 24
-  },
-  camText: {
-    color: colors.text,
-    fontSize: 11,
-    lineHeight: 13,
-    fontWeight: "900"
-  },
-  selectedSheet: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    gap: 9
-  },
-  fileList: {
-    gap: 8
-  },
-  fileRow: {
-    minHeight: 36,
-    borderRadius: 10,
-    backgroundColor: colors.surface2,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 10
-  },
-  fileIndex: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.blueSoft,
-    color: colors.primary,
-    fontSize: 12,
-    fontWeight: "900",
-    textAlign: "center",
-    lineHeight: 22
-  },
-  fileName: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "700"
-  },
-  removeButton: {
-    minHeight: 30,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 4
-  },
-  removeButtonText: {
-    color: colors.dangerDark,
-    fontSize: 12,
-    fontWeight: "800"
-  },
-  warning: {
-    padding: 10,
-    borderRadius: 8,
-    backgroundColor: colors.warningBg,
-    color: colors.warningText
-  },
-  progress: {
-    padding: 14,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    gap: 8
-  },
-  progressTrack: {
-    height: 4,
-    backgroundColor: colors.border,
-    borderRadius: 999,
-    overflow: "hidden"
-  },
-  progressFill: {
-    height: "100%",
-    backgroundColor: colors.primary,
-    borderRadius: 999
-  },
-  progressText: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 14,
-    lineHeight: 20
-  },
-  progressRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 9
-  },
-  progressDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.amber,
-    marginTop: 7
-  },
-  liveCard: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    paddingTop: 8,
-    gap: 6
-  },
-  liveEyebrow: {
-    color: colors.primary,
-    fontSize: 12,
-    fontWeight: "900",
-    textTransform: "uppercase"
-  },
-  liveTitle: {
-    color: colors.text,
-    fontSize: 19,
-    fontWeight: "800"
-  },
-  liveSummary: {
-    color: colors.muted,
-    fontSize: 14,
-    lineHeight: 20
-  },
-  liveSection: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: "800",
-    marginTop: 4
-  },
-  liveLine: {
-    flex: 1,
-    color: colors.muted,
-    fontSize: 13,
-    lineHeight: 18
-  },
-  liveActionRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 9
-  },
-  liveIndex: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.blueSoft,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  liveIndexText: {
-    color: colors.primary,
-    fontSize: 11,
-    fontWeight: "900"
-  },
-  liveDeadline: {
-    backgroundColor: colors.amberLight,
-    borderRadius: 10,
-    padding: 10,
-    gap: 3
-  },
-  liveDeadlineDate: {
-    color: colors.amberDark,
-    fontSize: 14,
-    fontWeight: "800"
-  }
+// Scanner viewport is intentionally always dark (camera UI)
+const scannerStyles = StyleSheet.create({
+  shell: { height: 520, backgroundColor: "#0A0906" },
+  top: { height: 56, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  title: { color: "#FDFBF8", fontSize: 22, fontWeight: "800" },
+  spacer: { width: 52, height: 40 },
+  back: { minWidth: 52, minHeight: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(253,251,248,0.14)" },
+  backText: { color: "#FDFBF8", fontSize: 13, fontWeight: "800" },
+  viewport: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  paper: { width: 154, height: 196, borderRadius: 4, backgroundColor: "#F8F2EA", padding: 14, gap: 5, transform: [{ rotate: "-1.5deg" }], shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 32 },
+  paperTitle: { width: "55%", height: 6, borderRadius: 3, backgroundColor: "#1B3A6B", marginBottom: 5 },
+  paperLine: { height: 3, borderRadius: 2, backgroundColor: "#C9C2B9" },
+  scanLine: { position: "absolute", left: 54, right: 54, top: 205, height: 2, backgroundColor: "#E8A020" },
+  corner: { position: "absolute", width: 22, height: 22, borderColor: "#E8A020" },
+  cornerTL: { top: 78, left: 24, borderTopWidth: 3, borderLeftWidth: 3 },
+  cornerTR: { top: 78, right: 24, borderTopWidth: 3, borderRightWidth: 3 },
+  cornerBL: { bottom: 120, left: 24, borderBottomWidth: 3, borderLeftWidth: 3 },
+  cornerBR: { bottom: 120, right: 24, borderBottomWidth: 3, borderRightWidth: 3 },
+  thumbStrip: { flexDirection: "row", gap: 8, alignItems: "center", paddingHorizontal: 24, paddingBottom: 12 },
+  thumb: { width: 44, height: 58, borderRadius: 6, backgroundColor: "#2A2520", borderWidth: 2, borderColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
+  thumbActive: { borderColor: "#E8A020" },
+  thumbText: { color: "#FDFBF8", fontSize: 12, fontWeight: "800" },
+  thumbRemove: { position: "absolute", right: 4, top: 2, color: "rgba(253,251,248,0.5)", fontSize: 10, fontWeight: "900" },
+  addPage: { width: 44, height: 58, borderRadius: 6, borderWidth: 2, borderStyle: "dashed", borderColor: "rgba(255,255,255,0.3)", alignItems: "center", justifyContent: "center" },
+  addPageText: { color: "#FDFBF8", fontSize: 24, lineHeight: 26 },
+  toolbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingBottom: 30, backgroundColor: "rgba(13,11,9,0.95)" },
+  toolBtn: { width: 72, alignItems: "center", gap: 5, minHeight: 44, justifyContent: "center" },
+  toolIcon: { color: "#FDFBF8", fontSize: 16, fontWeight: "900" },
+  toolLabel: { color: "rgba(253,250,247,0.72)", fontSize: 11, fontWeight: "700" },
+  camBtn: { width: 72, height: 72, borderRadius: 36, backgroundColor: "#102549", alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 24 },
+  camText: { color: "#FDFBF8", fontSize: 11, lineHeight: 13, fontWeight: "900" },
+  disabled: { opacity: 0.42 }
 });
+
+function createStyles(colors: ColorPalette) {
+  return StyleSheet.create({
+  content: { padding: 18, gap: 16 },
+  section: { gap: 8 },
+  subtle: { color: colors.muted, fontSize: 14, lineHeight: 20 },
+  label: { color: colors.text, fontSize: 16, fontWeight: "800" },
+  selectedSheet: { backgroundColor: colors.surface, borderRadius: 14, padding: 14, gap: 9 },
+  fileList: { gap: 8 },
+  fileRow: { minHeight: 36, borderRadius: 10, backgroundColor: colors.surface2, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 10 },
+  fileIndex: { width: 22, height: 22, borderRadius: 11, backgroundColor: colors.blueSoft, color: colors.primary, fontSize: 12, fontWeight: "900", textAlign: "center", lineHeight: 22 },
+  fileName: { flex: 1, color: colors.text, fontSize: 13, fontWeight: "700" },
+  removeButton: { minHeight: 30, alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
+  removeButtonText: { color: colors.dangerDark, fontSize: 12, fontWeight: "800" },
+  warning: { padding: 10, borderRadius: 8, backgroundColor: colors.warningBg, color: colors.warningText },
+  progress: { padding: 14, borderRadius: 14, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, gap: 8 },
+  progressTrack: { height: 4, backgroundColor: colors.border, borderRadius: 999, overflow: "hidden" },
+  progressFill: { height: "100%", backgroundColor: colors.primary, borderRadius: 999 },
+  progressText: { flex: 1, color: colors.text, fontSize: 14, lineHeight: 20 },
+  progressRow: { flexDirection: "row", alignItems: "flex-start", gap: 9 },
+  progressDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.amber, marginTop: 7 },
+  liveCard: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 8, gap: 6 },
+  liveEyebrow: { color: colors.primary, fontSize: 12, fontWeight: "900", textTransform: "uppercase" },
+  liveTitle: { color: colors.text, fontSize: 19, fontWeight: "800" },
+  liveSummary: { color: colors.muted, fontSize: 14, lineHeight: 20 },
+  liveSection: { color: colors.primary, fontSize: 13, fontWeight: "800", marginTop: 4 },
+  liveLine: { flex: 1, color: colors.muted, fontSize: 13, lineHeight: 18 },
+  liveActionRow: { flexDirection: "row", alignItems: "flex-start", gap: 9 },
+  liveIndex: { width: 22, height: 22, borderRadius: 11, backgroundColor: colors.blueSoft, alignItems: "center", justifyContent: "center" },
+  liveIndexText: { color: colors.primary, fontSize: 11, fontWeight: "900" },
+  liveDeadline: { backgroundColor: colors.amberLight, borderRadius: 10, padding: 10, gap: 3 },
+  liveDeadlineDate: { color: colors.amberDark, fontSize: 14, fontWeight: "800" }
+  });
+}

@@ -3,7 +3,7 @@ import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, StyleSheet
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppBar, Button, ErrorText, Field, IconButton, Screen, colors } from "@/components/ui";
+import { AppBar, Button, ErrorText, Field, IconButton, Screen, useColors, type ColorPalette } from "@/components/ui";
 import { listMessages, streamChat } from "@/features/chat/chatApi";
 import { getLimits, getScan } from "@/features/scans/scansApi";
 import { formatLocalizedDate, t } from "@/lib/i18n";
@@ -23,6 +23,9 @@ export function ChatThreadScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const scanId = params.id;
   const insets = useSafeAreaInsets();
+  const colors = useColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [scan, setScan] = useState<ScanResponse | null>(null);
   const [limits, setLimits] = useState<LimitsResponse | null>(null);
   const [messages, setMessages] = useState<UiMessage[]>([]);
@@ -168,7 +171,7 @@ export function ChatThreadScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={[styles.messages, { paddingBottom: Math.max(insets.bottom, 0) + 104 }]}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
-          renderItem={({ item }) => <MessageBubble message={item} scan={scan} />}
+          renderItem={({ item }) => <MessageBubble message={item} scan={scan} colors={colors} styles={styles} />}
         />
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0} style={styles.footerHost}>
           <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
@@ -189,7 +192,7 @@ export function ChatThreadScreen() {
   );
 }
 
-function ResultCard({ scan }: { scan: ScanResponse }) {
+function ResultCard({ scan, colors, styles }: { scan: ScanResponse; colors: ColorPalette; styles: ReturnType<typeof createStyles> }) {
   const result = scan.result;
   if (!result) return null;
 
@@ -237,10 +240,15 @@ function ResultCard({ scan }: { scan: ScanResponse }) {
   );
 }
 
-function MessageBubble({ message, scan }: { message: UiMessage; scan: ScanResponse | null }) {
+function MessageBubble({ message, scan, colors, styles }: {
+  message: UiMessage;
+  scan: ScanResponse | null;
+  colors: ColorPalette;
+  styles: ReturnType<typeof createStyles>;
+}) {
   const isUser = message.role === "user";
   if (message.message_type === "result_card") {
-    return scan ? <ResultCard scan={scan} /> : null;
+    return scan ? <ResultCard scan={scan} colors={colors} styles={styles} /> : null;
   }
   return (
     <View style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}>
@@ -268,247 +276,162 @@ function deadlineDistance(value: string) {
   return t("common.deadline");
 }
 
-const styles = StyleSheet.create({
-  wrap: {
-    flex: 1,
-    position: "relative"
-  },
-  list: {
-    flex: 1
-  },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  messages: {
-    flexGrow: 1,
-    justifyContent: "flex-end",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 14,
-    gap: 12
-  },
-  resultCard: {
-    alignSelf: "flex-start",
-    maxWidth: "92%",
-    borderRadius: 20,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 22,
-    paddingTop: 20,
-    paddingBottom: 18,
-    gap: 10,
-    shadowColor: "#1E1B17",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 2,
-    elevation: 1
-  },
-  resultHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12
-  },
-  resultIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: colors.blueSoft,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  resultIconText: {
-    color: colors.primary,
-    fontSize: 11,
-    fontWeight: "900"
-  },
-  resultHeaderText: {
-    flex: 1,
-    gap: 4
-  },
-  docKind: {
-    alignSelf: "flex-start",
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: "700",
-    textTransform: "uppercase"
-  },
-  docFrom: {
-    color: colors.muted,
-    fontSize: 12
-  },
-  urgencyPill: {
-    alignSelf: "flex-start",
-    backgroundColor: colors.dangerLight,
-    color: colors.dangerDark,
-    borderRadius: 999,
-    overflow: "hidden",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    fontSize: 11,
-    fontWeight: "800"
-  },
-  resultTitle: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: "700",
-    lineHeight: 28
-  },
-  resultSummary: {
-    color: colors.muted2,
-    fontSize: 17,
-    lineHeight: 26
-  },
-  deadlineCallout: {
-    backgroundColor: colors.amberLight,
-    borderTopWidth: 1,
-    borderTopColor: colors.amber200,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 2
-  },
-  deadlineDate: {
-    color: colors.amberDark,
-    fontSize: 16,
-    fontWeight: "800"
-  },
-  deadlineLabel: {
-    color: colors.amberDark,
-    fontSize: 11,
-    lineHeight: 15
-  },
-  sectionTitle: {
-    color: colors.muted2,
-    fontSize: 13,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-    marginTop: 6
-  },
-  actionRow: {
-    flexDirection: "row",
-    gap: 12,
-    alignItems: "flex-start"
-  },
-  actionIndex: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.blue100,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 1
-  },
-  actionIndexText: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: "700"
-  },
-  resultLine: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 16,
-    lineHeight: 22
-  },
-  deadlineRow: {
-    backgroundColor: colors.surface2,
-    borderRadius: 10,
-    padding: 10,
-    gap: 3
-  },
-  deadlineRowDate: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "800"
-  },
-  deadlineRowText: {
-    color: colors.muted,
-    fontSize: 12,
-    lineHeight: 17
-  },
-  placeLine: {
-    color: colors.text,
-    fontSize: 12,
-    lineHeight: 18,
-    backgroundColor: colors.blueSoft,
-    borderRadius: 8,
-    padding: 9
-  },
-  penalty: {
-    backgroundColor: colors.dangerLight,
-    color: colors.dangerDeep,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 14,
-    lineHeight: 20
-  },
-  verifyNote: {
-    backgroundColor: colors.blueSoft,
-    color: colors.primary,
-    borderRadius: 10,
-    padding: 10,
-    fontSize: 12,
-    lineHeight: 17
-  },
-  bubble: {
-    maxWidth: "84%",
-    paddingHorizontal: 12,
-    paddingVertical: 10
-  },
-  userBubble: {
-    alignSelf: "flex-end",
-    backgroundColor: colors.primary,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 4
-  },
-  assistantBubble: {
-    alignSelf: "flex-start",
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 18,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18
-  },
-  bubbleText: {
-    color: colors.text,
-    fontSize: 14,
-    lineHeight: 20
-  },
-  userText: {
-    color: colors.textOnAccent
-  },
-  footerHost: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0
-  },
-  footer: {
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    backgroundColor: colors.bg,
-    gap: 8
-  },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8
-  },
-  inputWrap: {
-    flex: 1
-  },
-  warning: {
-    color: colors.pro,
-    backgroundColor: colors.proLight,
-    padding: 10,
-    borderRadius: 12,
-    fontSize: 13,
-    fontWeight: "600"
-  }
-});
+function createStyles(colors: ColorPalette) {
+  return StyleSheet.create({
+    wrap: { flex: 1, position: "relative" },
+    list: { flex: 1 },
+    center: { flex: 1, alignItems: "center", justifyContent: "center" },
+    messages: {
+      flexGrow: 1,
+      justifyContent: "flex-end",
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 14,
+      gap: 12
+    },
+    resultCard: {
+      alignSelf: "flex-start",
+      maxWidth: "92%",
+      borderRadius: 20,
+      backgroundColor: colors.surface,
+      paddingHorizontal: 22,
+      paddingTop: 20,
+      paddingBottom: 18,
+      gap: 10,
+      shadowColor: "#1E1B17",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.04,
+      shadowRadius: 2,
+      elevation: 1
+    },
+    resultHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+    resultIcon: {
+      width: 44,
+      height: 44,
+      borderRadius: 12,
+      backgroundColor: colors.blueSoft,
+      alignItems: "center",
+      justifyContent: "center"
+    },
+    resultIconText: { color: colors.primary, fontSize: 11, fontWeight: "900" },
+    resultHeaderText: { flex: 1, gap: 4 },
+    docKind: {
+      alignSelf: "flex-start",
+      color: colors.primary,
+      fontSize: 13,
+      fontWeight: "700",
+      textTransform: "uppercase"
+    },
+    docFrom: { color: colors.muted, fontSize: 12 },
+    urgencyPill: {
+      alignSelf: "flex-start",
+      backgroundColor: colors.dangerLight,
+      color: colors.dangerDark,
+      borderRadius: 999,
+      overflow: "hidden",
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      fontSize: 11,
+      fontWeight: "800"
+    },
+    resultTitle: { color: colors.text, fontSize: 22, fontWeight: "700", lineHeight: 28 },
+    resultSummary: { color: colors.muted2, fontSize: 17, lineHeight: 26 },
+    deadlineCallout: {
+      backgroundColor: colors.amberLight,
+      borderTopWidth: 1,
+      borderTopColor: colors.amber200,
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      gap: 2
+    },
+    deadlineDate: { color: colors.amberDark, fontSize: 16, fontWeight: "800" },
+    deadlineLabel: { color: colors.amberDark, fontSize: 11, lineHeight: 15 },
+    sectionTitle: {
+      color: colors.muted2,
+      fontSize: 13,
+      fontWeight: "600",
+      textTransform: "uppercase",
+      letterSpacing: 0.4,
+      marginTop: 6
+    },
+    actionRow: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
+    actionIndex: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: colors.blue100,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 1
+    },
+    actionIndexText: { color: colors.primary, fontSize: 13, fontWeight: "700" },
+    resultLine: { flex: 1, color: colors.text, fontSize: 16, lineHeight: 22 },
+    deadlineRow: { backgroundColor: colors.surface2, borderRadius: 10, padding: 10, gap: 3 },
+    deadlineRowDate: { color: colors.text, fontSize: 14, fontWeight: "800" },
+    deadlineRowText: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+    placeLine: {
+      color: colors.text,
+      fontSize: 12,
+      lineHeight: 18,
+      backgroundColor: colors.blueSoft,
+      borderRadius: 8,
+      padding: 9
+    },
+    penalty: {
+      backgroundColor: colors.dangerLight,
+      color: colors.dangerDeep,
+      borderRadius: 14,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      fontSize: 14,
+      lineHeight: 20
+    },
+    verifyNote: {
+      backgroundColor: colors.blueSoft,
+      color: colors.primary,
+      borderRadius: 10,
+      padding: 10,
+      fontSize: 12,
+      lineHeight: 17
+    },
+    bubble: { maxWidth: "84%", paddingHorizontal: 12, paddingVertical: 10 },
+    userBubble: {
+      alignSelf: "flex-end",
+      backgroundColor: colors.primary,
+      borderTopLeftRadius: 18,
+      borderTopRightRadius: 18,
+      borderBottomLeftRadius: 18,
+      borderBottomRightRadius: 4
+    },
+    assistantBubble: {
+      alignSelf: "flex-start",
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 4,
+      borderTopRightRadius: 18,
+      borderBottomLeftRadius: 18,
+      borderBottomRightRadius: 18
+    },
+    bubbleText: { color: colors.text, fontSize: 14, lineHeight: 20 },
+    userText: { color: colors.textOnAccent },
+    footerHost: { position: "absolute", left: 0, right: 0, bottom: 0 },
+    footer: {
+      paddingHorizontal: 12,
+      paddingTop: 8,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+      backgroundColor: colors.bg,
+      gap: 8
+    },
+    inputRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    inputWrap: { flex: 1 },
+    warning: {
+      color: colors.pro,
+      backgroundColor: colors.proLight,
+      padding: 10,
+      borderRadius: 12,
+      fontSize: 13,
+      fontWeight: "600"
+    }
+  });
+}
