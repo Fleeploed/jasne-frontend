@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 
-import { EmptyState, ErrorText, Screen, useColors, type ColorPalette } from "@/components/ui";
+import { ErrorText, Screen, useColors, type ColorPalette } from "@/components/ui";
 import { listDeadlines } from "@/features/deadlines/deadlinesApi";
 import { getLimits, listScans } from "@/features/scans/scansApi";
 import { formatLocalizedDate, t } from "@/lib/i18n";
@@ -36,18 +36,30 @@ export function ScanListScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
   const load = useCallback(async () => {
     setError(null);
     try {
       const [nextScans, nextLimits, nextDeadlines] = await Promise.all([listScans(), getLimits(), listDeadlines(true)]);
+      if (!aliveRef.current) return;
       setScans(nextScans);
       setLimits(nextLimits);
       setDeadlines(nextDeadlines);
     } catch (loadError) {
+      if (!aliveRef.current) return;
       setError(loadError instanceof Error ? loadError.message : t("documents.loadError"));
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (aliveRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
@@ -70,6 +82,10 @@ export function ScanListScreen() {
   }
 
   const scanDisabled = Boolean(limits && limits.scans_remaining <= 0);
+  const isEmpty = sections.rows.length === 0;
+  const openNewScan = () => {
+    router.push({ pathname: "/scan/new", params: { fresh: String(Date.now()) } });
+  };
 
   return (
     <Screen>
@@ -79,25 +95,105 @@ export function ScanListScreen() {
       <FlatList
         data={sections.rows}
         keyExtractor={(item) => item.key}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, isEmpty && styles.listEmpty]}
         refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
-        ListHeaderComponent={<ListHeader limits={limits} scanDisabled={scanDisabled} onScan={() => router.push("/scan/new")} styles={styles} colors={colors} />}
-        ListEmptyComponent={<EmptyState title={t("documents.emptyTitle")} detail={t("documents.emptyDetail")} />}
+        ListHeaderComponent={null}
+        ListEmptyComponent={
+          <DocumentsEmpty
+            limits={limits}
+            scanDisabled={scanDisabled}
+            onScan={openNewScan}
+            colors={colors}
+            styles={styles}
+          />
+        }
         renderItem={({ item }) => {
           if (item.type === "section") return <Text style={styles.sectionHeader}>{item.title}</Text>;
           return <DocumentRow item={item.scan} deadline={item.deadline} muted={item.muted} colors={colors} styles={styles} categoryStyleList={categoryStyleList} />;
         }}
       />
-      <Pressable
-        disabled={scanDisabled}
-        onPress={() => router.push("/scan/new")}
-        style={({ pressed }) => [styles.fab, scanDisabled && styles.fabDisabled, pressed && !scanDisabled && styles.pressed]}
-      >
-        <CameraGlyph color={colors.textOnAccent} />
-      </Pressable>
+      {isEmpty ? null : (
+        <Pressable
+          disabled={scanDisabled}
+          hitSlop={10}
+          onPress={(event) => {
+            event.stopPropagation();
+            openNewScan();
+          }}
+          style={({ pressed }) => [styles.fab, scanDisabled && styles.fabDisabled, pressed && !scanDisabled && styles.pressed]}
+        >
+          <CameraGlyph color={colors.textOnAccent} />
+        </Pressable>
+      )}
     </Screen>
   );
 }
+
+function DocumentsEmpty({
+  limits,
+  scanDisabled,
+  onScan,
+  colors,
+  styles,
+}: {
+  limits: LimitsResponse | null;
+  scanDisabled: boolean;
+  onScan: () => void;
+  colors: ColorPalette;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const planFooter = limits?.plan === "pro"
+    ? t("documents.emptyFooterPro")
+    : t("documents.emptyFooterFree");
+
+  return (
+    <View style={styles.emptyWrap}>
+      <View style={styles.emptyHeroIcon}>
+        <View style={styles.emptyHeroFile}>
+          <FileGlyphLarge color={colors.primary} />
+        </View>
+      </View>
+      <Text style={styles.emptyHeroTitle}>{t("documents.emptyTitle")}</Text>
+      <Text style={styles.emptyHeroDetail}>{t("documents.emptyDetail")}</Text>
+
+      <Pressable
+        disabled={scanDisabled}
+        onPress={onScan}
+        style={({ pressed }) => [
+          styles.emptyCta,
+          scanDisabled && styles.fabDisabled,
+          pressed && !scanDisabled && styles.pressed,
+        ]}
+      >
+        <CameraGlyph color={colors.textOnAccent} />
+        <Text style={styles.emptyCtaText}>{t("documents.emptyButton")}</Text>
+      </Pressable>
+
+      <Text style={styles.emptyPlanFooter}>{planFooter}</Text>
+    </View>
+  );
+}
+
+function FileGlyphLarge({ color }: { color: string }) {
+  return (
+    <View style={fileGlyphLarge.wrap}>
+      <View style={[fileGlyphLarge.outline, { borderColor: color }]}>
+        <View style={[fileGlyphLarge.fold, { borderLeftColor: color, borderBottomColor: color }]} />
+        <View style={[fileGlyphLarge.line, { backgroundColor: color }]} />
+        <View style={[fileGlyphLarge.line, { backgroundColor: color, marginTop: 4 }]} />
+        <View style={[fileGlyphLarge.lineShort, { backgroundColor: color, marginTop: 4 }]} />
+      </View>
+    </View>
+  );
+}
+
+const fileGlyphLarge = StyleSheet.create({
+  wrap: { width: 44, height: 52, alignItems: "center", justifyContent: "center" },
+  outline: { width: 38, height: 48, borderRadius: 5, borderWidth: 2.4, padding: 6, paddingTop: 18 },
+  fold: { position: "absolute", right: -2.4, top: -2.4, width: 11, height: 11, borderLeftWidth: 2.4, borderBottomWidth: 2.4, backgroundColor: "transparent" },
+  line: { height: 2, borderRadius: 1, alignSelf: "stretch" },
+  lineShort: { height: 2, borderRadius: 1, width: "65%" },
+});
 
 function HomeHeader({ styles, colors }: { styles: ReturnType<typeof createStyles>; colors: ColorPalette }) {
   return (
@@ -180,7 +276,7 @@ function DocumentRow({ item, deadline, muted, colors, styles, categoryStyleList 
         <Text style={styles.rowPreview} numberOfLines={1}>{item.summary ?? t("documents.analysisReady")}</Text>
       </View>
       <View style={styles.rowEnd}>
-        <Text style={styles.rowTime}>{formatDate(item.created_at)}</Text>
+        <Text style={styles.rowTime}>{formatDate(getActivityDate(item))}</Text>
         {badge ? (
           <View style={[styles.badge, { backgroundColor: badgeColors.badgeBg ?? colors.blueSoft }]}>
             <Text style={[styles.badgeText, { color: badgeColors.badgeFg ?? colors.primary }]}>{badge}</Text>
@@ -192,6 +288,10 @@ function DocumentRow({ item, deadline, muted, colors, styles, categoryStyleList 
   );
 }
 
+function getActivityDate(scan: ScanListItem) {
+  return scan.last_message_at ?? scan.created_at;
+}
+
 function splitScans(scans: ScanListItem[], deadlines: DeadlineResponse[]) {
   const byScanId = new Map<string, DeadlineResponse>();
   [...deadlines]
@@ -201,9 +301,11 @@ function splitScans(scans: ScanListItem[], deadlines: DeadlineResponse[]) {
       if (deadline.scan_id && !byScanId.has(deadline.scan_id)) byScanId.set(deadline.scan_id, deadline);
     });
 
-  const scansWithDeadlines = scans.filter((scan) => byScanId.has(scan.id));
-  const active = scansWithDeadlines.length ? scansWithDeadlines : scans;
-  const done = scansWithDeadlines.length ? scans.filter((scan) => !byScanId.has(scan.id)) : [];
+  const sorted = [...scans].sort((a, b) => getActivityDate(b).localeCompare(getActivityDate(a)));
+
+  const scansWithDeadlines = sorted.filter((scan) => byScanId.has(scan.id));
+  const active = scansWithDeadlines.length ? scansWithDeadlines : sorted;
+  const done = scansWithDeadlines.length ? sorted.filter((scan) => !byScanId.has(scan.id)) : [];
   const rows: Array<
     | { key: string; type: "section"; title: string }
     | { key: string; type: "scan"; scan: ScanListItem; deadline?: DeadlineResponse; muted?: boolean }
@@ -222,7 +324,9 @@ function splitScans(scans: ScanListItem[], deadlines: DeadlineResponse[]) {
 }
 
 function getTitle(item: ScanListItem) {
-  return item.doc_type ?? item.category ?? t("common.document");
+  if (item.document_type_cz) return item.document_type_cz;
+  const raw = item.doc_type ?? item.category ?? t("common.document");
+  return raw.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function getDocVisual(item: ScanListItem, colors: ColorPalette, categoryStyleList: ReturnType<typeof getCategoryStyles>): RowVisual {
@@ -255,8 +359,11 @@ function getDaysUntil(value: string) {
 function formatDate(value: string) {
   const date = new Date(value);
   const today = new Date();
-  const sameDay = date.toDateString() === today.toDateString();
-  if (sameDay) return t("common.today");
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString())
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (date.toDateString() === yesterday.toDateString()) return t("common.yesterday");
   return formatLocalizedDate(date, { day: "numeric", month: "short" });
 }
 
@@ -375,9 +482,73 @@ function createStyles(colors: ColorPalette) {
     },
     list: {
       paddingHorizontal: 16,
-      paddingBottom: 106,
+      paddingBottom: 132,
       gap: 8,
       backgroundColor: colors.bg
+    },
+    listEmpty: { flexGrow: 1, paddingHorizontal: 0, paddingBottom: 0 },
+    emptyWrap: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 32,
+      paddingBottom: 48,
+      gap: 16,
+    },
+    emptyHeroIcon: {
+      width: 96,
+      height: 96,
+      borderRadius: 24,
+      backgroundColor: colors.blueSoft,
+      borderWidth: 1,
+      borderColor: colors.blueMid,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 12,
+    },
+    emptyHeroFile: { alignItems: "center", justifyContent: "center" },
+    emptyHeroTitle: {
+      color: colors.text,
+      fontSize: 24,
+      lineHeight: 30,
+      fontWeight: "700",
+      textAlign: "center",
+      maxWidth: 280,
+    },
+    emptyHeroDetail: {
+      color: colors.muted,
+      fontSize: 16,
+      lineHeight: 22,
+      textAlign: "center",
+      maxWidth: 320,
+    },
+    emptyCta: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 12,
+      marginTop: 16,
+      minHeight: 56,
+      paddingHorizontal: 28,
+      borderRadius: 18,
+      backgroundColor: colors.primary,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.32,
+      shadowRadius: 18,
+    },
+    emptyCtaText: {
+      color: colors.textOnAccent,
+      fontSize: 17,
+      lineHeight: 22,
+      fontWeight: "700",
+    },
+    emptyPlanFooter: {
+      marginTop: 18,
+      color: colors.muted2,
+      fontSize: 14,
+      lineHeight: 19,
+      textAlign: "center",
     },
     sectionHeader: {
       color: colors.muted2,
@@ -415,18 +586,22 @@ function createStyles(colors: ColorPalette) {
     rowChevron: { color: colors.muted3, fontSize: 22, lineHeight: 26, fontWeight: "300", marginTop: -2 },
     fab: {
       position: "absolute",
-      right: 20,
-      bottom: 92,
-      width: 56,
-      height: 56,
-      borderRadius: 28,
+      right: 24,
+      bottom: 28,
+      width: 58,
+      height: 58,
+      borderRadius: 29,
       backgroundColor: colors.primary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: "rgba(244,239,230,0.28)",
       alignItems: "center",
       justifyContent: "center",
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: 0.38,
-      shadowRadius: 22
+      shadowColor: "#000000",
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.36,
+      shadowRadius: 20,
+      elevation: 16,
+      zIndex: 100
     },
     fabDisabled: { opacity: 0.45 },
     pressed: { opacity: 0.72 }

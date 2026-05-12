@@ -33,6 +33,11 @@ export async function getScan(scanId: string) {
   return apiFetch<ScanResponse>(`/scans/${scanId}`);
 }
 
+export async function getScanImageUrls(scanId: string) {
+  const response = await apiFetch<{ urls: string[] }>(`/scans/${scanId}/image-urls`);
+  return response.urls;
+}
+
 export async function getLimits(scanId?: string) {
   return apiFetch<LimitsResponse>(scanId ? `/limits?scan_id=${encodeURIComponent(scanId)}` : "/limits");
 }
@@ -87,27 +92,48 @@ export async function scanWithCamera(): Promise<PickedUpload[] | null> {
 }
 
 export async function uploadToStorage(files: PickedUpload[]) {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+
   const {
     data: { user },
     error: userError
   } = await supabase.auth.getUser();
 
-  if (userError) throw userError;
-  if (!user) throw new Error(t("scanApi.authRequired"));
+  const userId = sessionData.session?.user.id ?? user?.id;
+
+  if (userError && !sessionData.session?.user) throw userError;
+  if (!userId) throw new Error(t("scanApi.authRequired"));
 
   const paths: string[] = [];
 
   for (const [index, file] of files.entries()) {
     const extension = extensionFor(file.name, file.mimeType, file.uri);
     const safeName = file.name.replace(/[^A-Za-z0-9_.-]/g, "_").replace(/\.[^.]+$/, "");
-    const storagePath = `${user.id}/${Date.now()}-${index + 1}-${safeName}${extension}`;
+    const storagePath = `${userId}/${Date.now()}-${index + 1}-${safeName}${extension}`;
+    const fileInfo = await FileSystem.getInfoAsync(file.uri);
+    if (!fileInfo.exists) {
+      throw new Error(t("scanApi.fileReadFailed"));
+    }
+
     const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
     const { error } = await supabase.storage.from("documents").upload(storagePath, decode(base64), {
       contentType: file.mimeType,
       upsert: false
     });
 
-    if (error) throw error;
+    if (error) {
+      if (__DEV__) {
+        console.warn("Supabase storage upload failed", {
+          bucket: "documents",
+          path: storagePath,
+          mimeType: file.mimeType,
+          message: error.message,
+          name: error.name,
+        });
+      }
+      throw new Error(mapStorageUploadError(error.message));
+    }
     paths.push(storagePath);
   }
 
@@ -210,6 +236,33 @@ function extensionFor(name: string, mimeType: string, uri?: string) {
   if (fromName && supportedExtensions.includes(fromName)) return fromName;
 
   return ".jpg";
+}
+
+function mapStorageUploadError(message: string) {
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes("row-level security") ||
+    normalized.includes("violates row-level security") ||
+    normalized.includes("unauthorized") ||
+    normalized.includes("permission")
+  ) {
+    return t("scanApi.storagePermission");
+  }
+
+  if (normalized.includes("bucket not found") || normalized.includes("not found")) {
+    return t("scanApi.storageBucketMissing");
+  }
+
+  if (normalized.includes("jwt") || normalized.includes("token") || normalized.includes("session")) {
+    return t("scanApi.authRequired");
+  }
+
+  if (normalized.includes("network") || normalized.includes("fetch") || normalized.includes("failed")) {
+    return t("scanApi.networkUpload");
+  }
+
+  return `${t("scanApi.uploadFailed")} ${message}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

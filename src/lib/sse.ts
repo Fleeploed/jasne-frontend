@@ -65,8 +65,8 @@ async function streamPostWithXhr(
       resolve();
     };
 
-    request.onerror = () => reject(new Error("Network error while streaming response."));
-    request.ontimeout = () => reject(new Error("Streaming request timed out."));
+    request.onerror = () => reject(new Error(t("common.networkError")));
+    request.ontimeout = () => reject(new Error(t("common.streamTimeout")));
     request.send(JSON.stringify(body));
   });
 }

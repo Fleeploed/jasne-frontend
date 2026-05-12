@@ -31,10 +31,12 @@ export type ScanListItem = {
   id: string;
   category?: string | null;
   doc_type?: string | null;
+  document_type_cz?: string | null;
   summary?: string | null;
   confidence?: number | null;
   page_count: number;
   created_at: string;
+  last_message_at?: string | null;
 };
 
 export type ScanResponse = {

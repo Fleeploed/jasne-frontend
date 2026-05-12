@@ -1,7 +1,16 @@
-import { useMemo } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  ActivityIndicator,
+  Appearance,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type ColorSchemeName,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import type { ReactNode } from "react";
 
 export const lightColors = {
   bg: "#F9F7F4",
@@ -52,44 +61,44 @@ export const lightColors = {
 };
 
 export const darkColors = {
-  bg: "#111317",
-  surface: "#1A1D23",
-  surface2: "#222630",
-  cream: "#1E1A0E",
-  blueSoft: "#131926",
-  blueMid: "#1A2437",
-  border: "#2E3240",
+  bg: "#0F0D0B",
+  surface: "#181512",
+  surface2: "#211D19",
+  cream: "#2D2000",
+  blueSoft: "rgba(111,160,230,0.13)",
+  blueMid: "rgba(111,160,230,0.28)",
+  border: "#2C2722",
 
-  text: "#F2F0EB",
-  muted: "#B8B3AC",
-  muted2: "#7E7870",
-  muted3: "#55504B",
-  textOnAccent: "#FDFBF8",
+  text: "#F4EFE6",
+  muted: "#D9D2C5",
+  muted2: "#A39A8C",
+  muted3: "#6F675D",
+  textOnAccent: "#F4EFE6",
 
-  primary: "#4E81D4",
-  primaryDark: "#2F5EAD",
-  primaryMid: "#7AA3E8",
+  primary: "#6FA0E6",
+  primaryDark: "#3E6FB8",
+  primaryMid: "#5688D4",
 
-  amber: "#E8A020",
-  amberLight: "#1E1A0D",
-  amberMid: "#2A2310",
-  amberDark: "#F5C25A",
-  amberDeep: "#FFD98A",
+  amber: "#E0B45A",
+  amberLight: "rgba(224,180,90,0.13)",
+  amberMid: "rgba(224,180,90,0.30)",
+  amberDark: "#E0B45A",
+  amberDeep: "#FFE8B0",
 
-  green: "#6AAD7B",
-  greenDark: "#4A9060",
-  greenLight: "#111E14",
+  green: "#7FBE9A",
+  greenDark: "#7FBE9A",
+  greenLight: "rgba(127,190,154,0.12)",
 
-  danger: "#E05545",
-  dangerDark: "#F07060",
+  danger: "#E07F73",
+  dangerDark: "#E07F73",
   dangerDeep: "#FFB0A0",
-  dangerLight: "#1E100C",
+  dangerLight: "rgba(224,127,115,0.13)",
 
   warningBg: "#1E1A0D",
-  warningText: "#F5C25A",
+  warningText: "#E0B45A",
 
-  pro: "#A78BFA",
-  proLight: "#1E1535",
+  pro: "#A893E0",
+  proLight: "rgba(168,147,224,0.13)",
 
   ink300: "#3E3A36",
   blue200: "#263042",
@@ -99,14 +108,96 @@ export const darkColors = {
   green100: "#131F16",
 };
 
-// Backward-compatible alias — always light; screens that use useColors() get theming
-export const colors = lightColors;
+// Backward-compatible alias for older code paths. The app is dark-first.
+export const colors = darkColors;
 
 export type ColorPalette = typeof lightColors;
 
+export const fonts = {
+  display: "Geist_600SemiBold",
+  displayBold: "Geist_700Bold",
+  body: "Inter_400Regular",
+  bodyMedium: "Inter_500Medium",
+  bodySemiBold: "Inter_600SemiBold",
+  bodyBold: "Inter_700Bold",
+  bodyExtraBold: "Inter_800ExtraBold",
+};
+
+export type ThemePreference = "system" | "light" | "dark";
+type ResolvedTheme = "light" | "dark";
+type SystemTheme = "light" | "dark" | null | undefined;
+type ThemeContextValue = {
+  preference: ThemePreference;
+  setPreference: (preference: ThemePreference) => void;
+  scheme: ResolvedTheme;
+  colors: ColorPalette;
+};
+
+const THEME_STORAGE_KEY = "app_theme_v3";
+const LEGACY_THEME_STORAGE_KEYS = ["app_theme", "app_theme_v2"];
+const ThemeContext = createContext<ThemeContextValue | null>(null);
+
+function isThemePreference(value: string | null): value is ThemePreference {
+  return value === "system" || value === "light" || value === "dark";
+}
+
+function resolveTheme(preference: ThemePreference, systemTheme: SystemTheme): ResolvedTheme {
+  if (preference === "light" || preference === "dark") return preference;
+  return systemTheme === "dark" ? "dark" : "light";
+}
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [systemTheme, setSystemTheme] = useState<ColorSchemeName>(() => Appearance.getColorScheme());
+  const [preference, setPreferenceState] = useState<ThemePreference>("system");
+
+  useEffect(() => {
+    void AsyncStorage.multiRemove(LEGACY_THEME_STORAGE_KEYS).catch(() => {});
+
+    AsyncStorage.getItem(THEME_STORAGE_KEY)
+      .then((stored) => {
+        if (isThemePreference(stored)) setPreferenceState(stored);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setSystemTheme(Appearance.getColorScheme());
+    const subscription = Appearance.addChangeListener(({ colorScheme }) => {
+      setSystemTheme(colorScheme);
+    });
+
+    return () => subscription.remove();
+  }, []);
+
+  const setPreference = useCallback((next: ThemePreference) => {
+    setPreferenceState(next);
+    void AsyncStorage.setItem(THEME_STORAGE_KEY, next).catch(() => {});
+  }, []);
+
+  const scheme = resolveTheme(preference, systemTheme);
+  const palette = scheme === "light" ? lightColors : darkColors;
+  const value = useMemo(
+    () => ({ preference, setPreference, scheme, colors: palette }),
+    [palette, preference, scheme, setPreference]
+  );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+}
+
+export function useThemePreference(): ThemeContextValue {
+  const context = useContext(ThemeContext);
+  const systemTheme = Appearance.getColorScheme();
+  const scheme = resolveTheme("system", systemTheme);
+  return context ?? {
+    preference: "system",
+    setPreference: () => {},
+    scheme,
+    colors: scheme === "light" ? lightColors : darkColors,
+  };
+}
+
 export function useColors(): ColorPalette {
-  const scheme = useColorScheme();
-  return scheme === "dark" ? darkColors : lightColors;
+  return useThemePreference().colors;
 }
 
 // ── Shared components ────────────────────────────────────────────
@@ -124,12 +215,14 @@ export function AppBar({
   title,
   left,
   right,
-  subtitle
+  subtitle,
+  titleSize = 22,
 }: {
   title: string;
   left?: ReactNode;
   right?: ReactNode;
   subtitle?: string;
+  titleSize?: number;
 }) {
   const colors = useColors();
   const styles = useMemo(() => StyleSheet.create({
@@ -149,7 +242,7 @@ export function AppBar({
       justifyContent: "space-between"
     },
     appbarSide: {
-      width: 44,
+      minWidth: 36,
       minHeight: 36,
       alignItems: "center",
       justifyContent: "center"
@@ -161,7 +254,7 @@ export function AppBar({
     },
     appbarTitle: {
       color: colors.text,
-      fontSize: 22,
+      fontSize: titleSize,
       fontWeight: "500",
       textAlign: "center"
     },
@@ -169,7 +262,7 @@ export function AppBar({
       color: colors.muted,
       fontSize: 13
     }
-  }), [colors]);
+  }), [colors, titleSize]);
 
   return (
     <View style={styles.appbar}>
@@ -207,6 +300,26 @@ export function IconButton({ label, onPress }: { label: string; onPress: () => v
   );
 }
 
+export function BackButton({ onPress }: { onPress: () => void }) {
+  const colors = useColors();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Назад"
+      style={({ pressed }) => ({
+        width: 40,
+        height: 40,
+        alignItems: "center" as const,
+        justifyContent: "center" as const,
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <Text style={{ color: colors.text, fontSize: 28, lineHeight: 32, fontWeight: "300", marginLeft: -10 }}>‹</Text>
+    </Pressable>
+  );
+}
+
 export function Button({
   title,
   onPress,
@@ -223,22 +336,22 @@ export function Button({
   const colors = useColors();
   const styles = useMemo(() => StyleSheet.create({
     button: {
-      minHeight: 50,
-      borderRadius: 12,
+      minHeight: 54,
+      borderRadius: 16,
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: 18
     },
-    primary: { backgroundColor: colors.primary },
+    primary: { backgroundColor: colors.primaryDark },
     secondary: { backgroundColor: colors.blueSoft },
     danger: {
       backgroundColor: "transparent",
       borderWidth: 1.5,
       borderColor: colors.danger
     },
-    primaryText: { color: colors.textOnAccent, fontSize: 16, fontWeight: "600" },
-    secondaryText: { color: colors.primary, fontSize: 16, fontWeight: "600" },
-    dangerText: { color: colors.danger, fontSize: 16, fontWeight: "600" },
+    primaryText: { color: colors.textOnAccent, fontFamily: fonts.bodySemiBold, fontSize: 17, fontWeight: "600" },
+    secondaryText: { color: colors.primary, fontFamily: fonts.bodySemiBold, fontSize: 17, fontWeight: "600" },
+    dangerText: { color: colors.danger, fontFamily: fonts.bodySemiBold, fontSize: 17, fontWeight: "600" },
     disabled: { opacity: 0.55 },
     pressed: { opacity: 0.85 }
   }), [colors]);
@@ -273,7 +386,8 @@ export function Field({
   secureTextEntry,
   autoCapitalize = "none",
   keyboardType = "default",
-  multiline
+  multiline,
+  editable = true
 }: {
   value: string;
   onChangeText: (text: string) => void;
@@ -282,6 +396,7 @@ export function Field({
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
   keyboardType?: "default" | "email-address";
   multiline?: boolean;
+  editable?: boolean;
 }) {
   const colors = useColors();
   return (
@@ -294,6 +409,7 @@ export function Field({
       autoCapitalize={autoCapitalize}
       keyboardType={keyboardType}
       multiline={multiline}
+      editable={editable}
       style={[
         {
           minHeight: 50,
@@ -301,8 +417,9 @@ export function Field({
           borderWidth: 1,
           borderColor: colors.border,
           backgroundColor: colors.surface,
-          color: colors.text,
+          color: editable ? colors.text : colors.muted3,
           paddingHorizontal: 16,
+          fontFamily: fonts.body,
           fontSize: 16
         },
         multiline && { minHeight: 96, paddingTop: 12, textAlignVertical: "top" as const }

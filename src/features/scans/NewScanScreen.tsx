@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 
 import { Button, ErrorText, Screen, useColors, type ColorPalette } from "@/components/ui";
+import { ChatThreadScreen } from "@/features/chat/ChatThreadScreen";
 import {
   type PickedUpload,
   type ScanProgressEvent,
@@ -13,6 +14,12 @@ import {
   streamScan,
   uploadToStorage
 } from "@/features/scans/scansApi";
+import {
+  getPendingScan,
+  pushPendingProgress,
+  resetPendingScan,
+  updatePendingScan,
+} from "@/features/scans/pendingScanStore";
 import { t } from "@/lib/i18n";
 
 type LiveDeadline = {
@@ -40,6 +47,7 @@ const stepLabels: Record<string, ReturnType<typeof t>> = {
 };
 
 export function NewScanScreen() {
+  const params = useLocalSearchParams<{ fresh?: string }>();
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -50,6 +58,21 @@ export function NewScanScreen() {
   const [progress, setProgress] = useState<string[]>([]);
   const [preview, setPreview] = useState<LiveScanPreview>(() => emptyPreview());
   const [upgradeNeeded, setUpgradeNeeded] = useState(false);
+  const [showPendingChat, setShowPendingChat] = useState(false);
+
+  useEffect(() => {
+    const pending = getPendingScan();
+    if (pending.active) return;
+
+    setFiles([]);
+    setBusy(false);
+    setError(null);
+    setProgress([]);
+    setPreview(emptyPreview());
+    setUpgradeNeeded(false);
+    setShowPendingChat(false);
+    resetPendingScan();
+  }, [params.fresh]);
 
   async function addDocument() {
     try {
@@ -105,7 +128,19 @@ export function NewScanScreen() {
         return;
       }
 
+      resetPendingScan();
+      updatePendingScan({
+        active: true,
+        attachments: files.map((file) => ({
+          uri: file.uri,
+          name: file.name,
+          mimeType: file.mimeType,
+        })),
+      });
+      setShowPendingChat(true);
+
       pushProgress(t("scan.uploading"));
+      pushPendingProgress(t("scan.uploading"));
       const paths = await uploadToStorage(files);
       if (paths.length !== files.length) {
         throw new Error(t("scan.uploadCountMismatch"));
@@ -115,6 +150,7 @@ export function NewScanScreen() {
     } catch (scanError) {
       const message = scanError instanceof Error ? scanError.message : t("scan.failed");
       setError(message);
+      updatePendingScan({ error: message, active: false });
       if (message.includes("plan") || message.includes("limit")) setUpgradeNeeded(true);
     } finally {
       setBusy(false);
@@ -124,23 +160,45 @@ export function NewScanScreen() {
   function handleScanEvent(event: ScanProgressEvent) {
     if (event.type === "status") {
       const label = event.step ? stepLabels[event.step] ?? event.message ?? event.step : event.message;
-      if (label) pushProgress(label);
+      if (label) {
+        pushProgress(label);
+        pushPendingProgress(label);
+      }
       return;
     }
     if (event.type === "field") {
       setPreview((current) => updatePreview(current, event.field, event.value));
+      if (event.field === "summary") {
+        updatePendingScan({ preview: { ...getPendingPreview(), summary: String(event.value ?? "") } });
+      }
+      if (event.field === "document_type_localized" || event.field === "document_type") {
+        updatePendingScan({ preview: { ...getPendingPreview(), documentType: String(event.value ?? "") } });
+      }
+      if (event.field === "actions_required" && Array.isArray(event.value)) {
+        updatePendingScan({
+          preview: {
+            ...getPendingPreview(),
+            actions: event.value.filter((value): value is string => typeof value === "string"),
+          },
+        });
+      }
       return;
     }
     if (event.type === "error") {
       setError(event.detail);
+      updatePendingScan({ error: event.detail, active: false });
       if (event.status_code === 402) setUpgradeNeeded(true);
       return;
     }
-    router.replace(`/scan/${event.scan.id}`);
+    updatePendingScan({ scanId: event.scan.id, active: false });
   }
 
   function pushProgress(next: string) {
     setProgress((current) => (current[current.length - 1] === next ? current : [...current, next]));
+  }
+
+  function getPendingPreview() {
+    return getPendingScan().preview;
   }
 
   async function getAvailableSlots() {
@@ -184,6 +242,10 @@ export function NewScanScreen() {
 
   const maxPagesText = pageLimit ? t("scan.maxPages", { count: pageLimit }) : t("scan.pickOneOrMore");
   const addDisabled = busy || Boolean(pageLimit && files.length >= pageLimit);
+
+  if (showPendingChat) {
+    return <ChatThreadScreen />;
+  }
 
   return (
     <Screen>
