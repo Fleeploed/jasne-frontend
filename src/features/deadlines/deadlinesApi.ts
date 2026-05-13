@@ -19,6 +19,7 @@ export async function createManualDeadline(input: {
   description?: string | null;
   due_date: string;
   deadline_type: DeadlineType;
+  scan_id?: string;
 }) {
   return apiFetch<DeadlineResponse>("/deadlines", {
     method: "POST",

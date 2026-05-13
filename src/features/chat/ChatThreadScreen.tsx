@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Easing, FlatList, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, useWindowDimensions, View, type DimensionValue } from "react-native";
+import { ActivityIndicator, Animated, Easing, FlatList, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View, type DimensionValue } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppBar, BackButton, ErrorText, Field, Screen, fonts, useColors, type ColorPalette } from "@/components/ui";
+import { AppBar, BackButton, ErrorText, Screen, fonts, useColors, type ColorPalette } from "@/components/ui";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { listMessages, streamChat } from "@/features/chat/chatApi";
+import { createManualDeadline } from "@/features/deadlines/deadlinesApi";
 import { getLimits, getScan, getScanImageUrls } from "@/features/scans/scansApi";
 import {
   type PendingAttachment,
@@ -14,7 +16,7 @@ import {
 } from "@/features/scans/pendingScanStore";
 import { formatLocalizedDate, t } from "@/lib/i18n";
 import { supabase } from "@/lib/supabase";
-import type { LimitsResponse, ScanMessage, ScanResponse } from "@/lib/types";
+import type { AnalysisDeadline, LimitsResponse, ScanMessage, ScanResponse } from "@/lib/types";
 
 type UiMessage = ScanMessage | {
   id: string;
@@ -247,6 +249,7 @@ export function ChatThreadScreen() {
   const noQuestionsLeft = questionsMax <= 0 || questionsUsed >= questionsMax;
   const chatDisabled = streaming || isPending || Boolean(limits && noQuestionsLeft);
   const canSend = question.trim().length > 0 && !chatDisabled;
+  const displayQuestionLimit = questionsMax > 0 ? questionsMax : 10;
 
   return (
     <Screen>
@@ -289,27 +292,29 @@ export function ChatThreadScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0} style={styles.footerHost}>
           <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
             {limits && noQuestionsLeft ? (
-              <LockedChatComposer styles={styles} onPress={limits.plan === "pro" ? undefined : () => setShowPaywall(true)} />
+              <LockedChatComposer
+                styles={styles}
+                questionsUsed={displayQuestionLimit}
+                questionsMax={displayQuestionLimit}
+                onPress={limits.plan === "pro" ? undefined : () => setShowPaywall(true)}
+              />
             ) : (
               <>
                 {!isPending ? <ErrorText message={error} /> : null}
-                <View style={styles.inputRow}>
-                  <View style={styles.inputWrap}>
-                    <Field
-                      value={question}
-                      onChangeText={setQuestion}
-                      placeholder={t("chat.placeholder")}
-                      editable={!chatDisabled}
-                    />
-                  </View>
-                  <SendButton
-                    streaming={streaming || (isPending && pendingActive)}
-                    disabled={!canSend}
-                    muted={isPending}
-                    onPress={ask}
-                    colors={colors}
-                  />
-                </View>
+                <ChatComposer
+                  value={question}
+                  onChangeText={setQuestion}
+                  placeholder={t("chat.placeholder")}
+                  editable={!chatDisabled}
+                  streaming={streaming || (isPending && pendingActive)}
+                  disabled={!canSend}
+                  muted={isPending}
+                  questionsUsed={questionsUsed}
+                  questionsMax={questionsMax}
+                  onSend={ask}
+                  colors={colors}
+                  styles={styles}
+                />
               </>
             )}
           </View>
@@ -361,10 +366,13 @@ function ResultCard({ scan, colors, styles }: { scan: ScanResponse; colors: Colo
       ))}
       {result.deadlines.length ? <Text style={styles.sectionTitle}>{t("chat.deadlines")}</Text> : null}
       {result.deadlines.map((deadline, index) => (
-        <View key={`${deadline.date}-${index}`} style={styles.deadlineRow}>
-          <Text style={styles.deadlineRowDate}>{formatDeadlineDate(deadline.date)}</Text>
-          <Text style={styles.deadlineRowText}>{deadline.description}</Text>
-        </View>
+        <DeadlineReminderRow
+          key={`${deadline.date}-${index}`}
+          deadline={deadline}
+          scanId={scan.id}
+          styles={styles}
+          colors={colors}
+        />
       ))}
       {result.where_to_go ? (
         <ResultInfoBlock
@@ -398,6 +406,61 @@ function ResultCard({ scan, colors, styles }: { scan: ScanResponse; colors: Colo
           styles={styles}
         />
       ) : null}
+    </View>
+  );
+}
+
+function DeadlineReminderRow({
+  deadline,
+  scanId,
+  styles,
+  colors,
+}: {
+  deadline: AnalysisDeadline;
+  scanId: string;
+  styles: ReturnType<typeof createStyles>;
+  colors: ColorPalette;
+}) {
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function handleAdd() {
+    if (saved || saving) return;
+    setSaving(true);
+    try {
+      await createManualDeadline({
+        title: deadline.description,
+        description: null,
+        due_date: deadline.date,
+        deadline_type: deadline.type,
+        scan_id: scanId,
+      });
+      setSaved(true);
+    } catch {
+      // silent — user can tap again
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <View style={styles.deadlineRow}>
+      <View style={styles.deadlineRowLeft}>
+        <Text style={styles.deadlineRowDate}>{formatDeadlineDate(deadline.date)}</Text>
+        <Text style={styles.deadlineRowText}>{deadline.description}</Text>
+      </View>
+      <Pressable
+        onPress={handleAdd}
+        style={[styles.deadlineReminderBtn, saved && styles.deadlineReminderBtnSaved]}
+        accessibilityLabel={t(saved ? "chat.reminderSaved" : "chat.addReminder")}
+        disabled={saved || saving}
+      >
+        {saving
+          ? <ActivityIndicator size="small" color={colors.primary} />
+          : saved
+            ? <Text style={styles.deadlineReminderCheck}>✓</Text>
+            : <Text style={styles.deadlineReminderPlus}>+</Text>}
+      </Pressable>
     </View>
   );
 }
@@ -437,19 +500,31 @@ function ResultInfoBlock({ tone, title, value, styles }: {
   );
 }
 
-function LockedChatComposer({ styles, onPress }: { styles: ReturnType<typeof createStyles>; onPress?: () => void }) {
+function LockedChatComposer({
+  styles,
+  questionsUsed,
+  questionsMax,
+  onPress
+}: {
+  styles: ReturnType<typeof createStyles>;
+  questionsUsed: number;
+  questionsMax: number;
+  onPress?: () => void;
+}) {
   return (
     <View style={styles.lockedComposer}>
-      <Text style={styles.lockedComposerLabel}>{t("chat.proWarning")}</Text>
+      <Text style={styles.lockedComposerLabel}>{t("chat.questionLimitTitle")}</Text>
       <Pressable
         accessibilityRole="button"
         onPress={onPress}
         style={({ pressed }) => [styles.lockedInputPill, pressed && { opacity: 0.75 }]}
       >
         <LockGlyph styles={styles} />
-        <Text style={styles.lockedInputText} numberOfLines={1}>{t("chat.placeholder")} · Pro</Text>
+        <Text style={styles.lockedInputText} numberOfLines={1}>
+          {t("chat.questionLimitUsed", { used: questionsUsed, max: questionsMax })}
+        </Text>
         <View style={styles.proBadge}>
-          <Text style={styles.proBadgeText}>Pro</Text>
+          <Text style={styles.proBadgeText}>{t("chat.questionLimitBadge")}</Text>
         </View>
       </Pressable>
     </View>
@@ -506,10 +581,10 @@ function DocumentAttachmentBubble({ scanId, content, colors, styles, onOpenViewe
 
   useEffect(() => {
     let alive = true;
-    const imagePaths = paths.filter(isPreviewableImage);
+    const signedPaths = paths.filter(isPreviewableAttachment);
 
     async function loadSignedUrls() {
-      if (!imagePaths.length) {
+      if (!signedPaths.length) {
         if (alive) setLoading(false);
         return;
       }
@@ -519,9 +594,9 @@ function DocumentAttachmentBubble({ scanId, content, colors, styles, onOpenViewe
       let urls: string[] = [];
 
       try {
-        urls = await getScanImageUrls(scanId);
+        urls = await getScanImageUrls(scanId, { renderPdf: true });
       } catch {
-        const { data } = await supabase.storage.from("documents").createSignedUrls(imagePaths, 60 * 60);
+        const { data } = await supabase.storage.from("documents").createSignedUrls(signedPaths, 60 * 60);
         urls = data?.map((item) => item.signedUrl).filter((url): url is string => Boolean(url)) ?? [];
       }
 
@@ -543,6 +618,8 @@ function DocumentAttachmentBubble({ scanId, content, colors, styles, onOpenViewe
 
   const firstPath = paths[0] ?? "";
   const firstUrl = signedUrls[0];
+  const firstIsPdf = isPdfPath(firstPath);
+  const firstUrlIsImage = !firstIsPdf || isPreviewableImage(firstUrl ?? "") || firstUrl?.startsWith("data:image/");
 
   if (!paths.length) return null;
 
@@ -554,13 +631,13 @@ function DocumentAttachmentBubble({ scanId, content, colors, styles, onOpenViewe
     );
   }
 
-  if (firstUrl && !failed) {
+  if (firstUrl && !failed && firstUrlIsImage) {
     return (
       <Pressable style={styles.imageBubble} onPress={onOpenViewer ? () => onOpenViewer(signedUrls, 0) : undefined}>
         <Image source={{ uri: firstUrl }} style={styles.sentImage} resizeMode="cover" />
-        {paths.length > 1 ? (
+        {signedUrls.length > 1 ? (
           <View style={styles.imageCountBadge}>
-            <Text style={styles.imageCountText}>+{paths.length - 1}</Text>
+            <Text style={styles.imageCountText}>+{signedUrls.length - 1}</Text>
           </View>
         ) : null}
       </Pressable>
@@ -568,11 +645,15 @@ function DocumentAttachmentBubble({ scanId, content, colors, styles, onOpenViewe
   }
 
   return (
-    <View style={styles.attachmentBubble}>
+    <Pressable
+      style={styles.attachmentBubble}
+      disabled={!firstUrl || !firstIsPdf}
+      onPress={firstUrl && firstIsPdf ? () => void WebBrowser.openBrowserAsync(firstUrl) : undefined}
+    >
       <Text style={styles.attachmentKind}>{attachmentKind(firstPath)}</Text>
       <Text style={styles.attachmentName} numberOfLines={1}>{fileNameFromPath(firstPath)}</Text>
       {paths.length > 1 ? <Text style={styles.attachmentMeta}>{paths.length} стр.</Text> : null}
-    </View>
+    </Pressable>
   );
 }
 
@@ -618,6 +699,14 @@ function isPreviewableImage(path: string) {
   return /\.(jpe?g|png|gif|webp)$/i.test(path);
 }
 
+function isPdfPath(path: string) {
+  return /\.pdf$/i.test(path);
+}
+
+function isPreviewableAttachment(path: string) {
+  return isPreviewableImage(path) || isPdfPath(path);
+}
+
 function fileNameFromPath(path: string) {
   return path.split("/").pop() || "document";
 }
@@ -625,6 +714,64 @@ function fileNameFromPath(path: string) {
 function attachmentKind(path: string) {
   if (/\.pdf$/i.test(path)) return "PDF";
   return "DOC";
+}
+
+function ChatComposer({
+  value,
+  onChangeText,
+  placeholder,
+  editable,
+  streaming,
+  disabled,
+  muted,
+  questionsUsed,
+  questionsMax,
+  onSend,
+  colors,
+  styles,
+}: {
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder: string;
+  editable: boolean;
+  streaming: boolean;
+  disabled: boolean;
+  muted: boolean;
+  questionsUsed: number;
+  questionsMax: number;
+  onSend: () => void;
+  colors: ColorPalette;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const showCounter = questionsMax > 0;
+
+  return (
+    <View style={styles.composerPill}>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={colors.muted2}
+        editable={editable}
+        autoCapitalize="sentences"
+        returnKeyType="send"
+        onSubmitEditing={() => {
+          if (!disabled && !streaming) onSend();
+        }}
+        style={styles.composerInput}
+      />
+      {showCounter ? (
+        <Text style={styles.composerCounter}>{questionsUsed}/{questionsMax}</Text>
+      ) : null}
+      <SendButton
+        streaming={streaming}
+        disabled={disabled}
+        muted={muted}
+        onPress={onSend}
+        colors={colors}
+      />
+    </View>
+  );
 }
 
 function SendButton({ streaming, disabled, muted = false, onPress, colors }: {
@@ -642,21 +789,20 @@ function SendButton({ streaming, disabled, muted = false, onPress, colors }: {
       onPress={onPress}
       disabled={disabled || streaming}
       style={({ pressed }) => ({
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         backgroundColor,
         alignItems: "center" as const,
         justifyContent: "center" as const,
-        opacity: pressed ? 0.8 : 1,
+        opacity: pressed ? 0.86 : 1,
       })}
     >
       {streaming ? (
         // Square = stop / loading indicator
-        <View style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: iconColor }} />
+        <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: iconColor }} />
       ) : (
-        // Paper plane arrow
-        <Text style={{ color: iconColor, fontSize: 18, lineHeight: 20 }}>▶</Text>
+        <Text style={{ color: iconColor, fontSize: 18, lineHeight: 20, transform: [{ rotate: "-22deg" }] }}>➤</Text>
       )}
     </Pressable>
   );
@@ -864,21 +1010,7 @@ function ImageViewerModal({ images, initialIndex, visible, onClose }: {
             setCurrentIndex(Math.round(e.nativeEvent.contentOffset.x / width));
           }}
           renderItem={({ item }) => (
-            <ScrollView
-              style={{ width, height }}
-              contentContainerStyle={{ width, height }}
-              maximumZoomScale={4}
-              minimumZoomScale={1}
-              centerContent
-              showsHorizontalScrollIndicator={false}
-              showsVerticalScrollIndicator={false}
-            >
-              <Image
-                source={{ uri: item }}
-                style={{ width, height }}
-                resizeMode="contain"
-              />
-            </ScrollView>
+            <ZoomableViewerImage uri={item} width={width} height={height} />
           )}
         />
 
@@ -926,6 +1058,76 @@ function ImageViewerModal({ images, initialIndex, visible, onClose }: {
         ) : null}
       </View>
     </Modal>
+  );
+}
+
+type ZoomRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  animated?: boolean;
+};
+
+type ZoomableScrollViewHandle = ScrollView & {
+  getScrollResponder?: () => {
+    scrollResponderZoomTo?: (rect: ZoomRect, animated?: boolean) => void;
+  };
+  scrollResponderZoomTo?: (rect: ZoomRect, animated?: boolean) => void;
+};
+
+function ZoomableViewerImage({ uri, width, height }: { uri: string; width: number; height: number }) {
+  const scrollRef = useRef<ZoomableScrollViewHandle>(null);
+  const lastTapRef = useRef(0);
+  const [zoomed, setZoomed] = useState(false);
+
+  function zoomTo(rect: ZoomRect) {
+    const responder = scrollRef.current?.getScrollResponder?.();
+    const zoom = responder?.scrollResponderZoomTo ?? scrollRef.current?.scrollResponderZoomTo;
+    zoom?.({ ...rect, animated: true }, true);
+  }
+
+  function handlePress(locationX: number, locationY: number) {
+    const now = Date.now();
+    if (now - lastTapRef.current > 280) {
+      lastTapRef.current = now;
+      return;
+    }
+
+    lastTapRef.current = 0;
+    if (zoomed) {
+      zoomTo({ x: 0, y: 0, width, height });
+      setZoomed(false);
+      return;
+    }
+
+    const zoomScale = 2.6;
+    const zoomWidth = width / zoomScale;
+    const zoomHeight = height / zoomScale;
+    zoomTo({
+      x: Math.max(locationX - zoomWidth / 2, 0),
+      y: Math.max(locationY - zoomHeight / 2, 0),
+      width: zoomWidth,
+      height: zoomHeight,
+    });
+    setZoomed(true);
+  }
+
+  return (
+    <ScrollView
+      ref={scrollRef}
+      style={{ width, height }}
+      contentContainerStyle={{ width, height }}
+      maximumZoomScale={4}
+      minimumZoomScale={1}
+      centerContent
+      showsHorizontalScrollIndicator={false}
+      showsVerticalScrollIndicator={false}
+    >
+      <Pressable onPress={(event) => handlePress(event.nativeEvent.locationX, event.nativeEvent.locationY)}>
+        <Image source={{ uri }} style={{ width, height }} resizeMode="contain" />
+      </Pressable>
+    </ScrollView>
   );
 }
 
@@ -1139,9 +1341,14 @@ function createStyles(colors: ColorPalette) {
     },
     actionIndexText: { color: colors.primary, fontSize: 12, fontWeight: "700" },
     resultLine: { flex: 1, color: colors.text, fontFamily: fonts.body, fontSize: 14.5, lineHeight: 22 },
-    deadlineRow: { backgroundColor: colors.surface2, borderRadius: 10, padding: 10, gap: 3 },
+    deadlineRow: { backgroundColor: colors.surface2, borderRadius: 10, padding: 10, flexDirection: "row", alignItems: "center", gap: 10 },
+    deadlineRowLeft: { flex: 1, gap: 3 },
     deadlineRowDate: { color: colors.text, fontSize: 14, fontWeight: "800" },
     deadlineRowText: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+    deadlineReminderBtn: { width: 32, height: 32, borderRadius: 9, backgroundColor: colors.border, alignItems: "center", justifyContent: "center" },
+    deadlineReminderBtnSaved: { backgroundColor: colors.greenLight },
+    deadlineReminderPlus: { color: colors.muted2, fontSize: 22, fontWeight: "300", lineHeight: 26, marginTop: -2 },
+    deadlineReminderCheck: { color: colors.greenDark, fontSize: 14, fontWeight: "700" },
     placeLine: {
       color: colors.text,
       fontSize: 12,
@@ -1276,15 +1483,44 @@ function createStyles(colors: ColorPalette) {
     },
     footerHost: { position: "absolute", left: 0, right: 0, bottom: 0 },
     footer: {
-      paddingHorizontal: 12,
-      paddingTop: 8,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: colors.border,
-      backgroundColor: colors.bg,
+      paddingHorizontal: 28,
+      paddingTop: 10,
+      backgroundColor: "rgba(15,13,11,0.94)",
       gap: 8
     },
-    inputRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-    inputWrap: { flex: 1 },
+    composerPill: {
+      height: 48,
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface2,
+      flexDirection: "row",
+      alignItems: "center",
+      paddingLeft: 18,
+      paddingRight: 6,
+      gap: 10,
+      shadowColor: "#000",
+      shadowOpacity: 0,
+      shadowRadius: 0,
+      shadowOffset: { width: 0, height: 0 }
+    },
+    composerInput: {
+      flex: 1,
+      minWidth: 0,
+      color: colors.text,
+      fontFamily: fonts.body,
+      fontSize: 14,
+      lineHeight: 17,
+      paddingVertical: 0
+    },
+    composerCounter: {
+      color: colors.muted3,
+      fontFamily: fonts.body,
+      fontSize: 11,
+      lineHeight: 13,
+      minWidth: 24,
+      textAlign: "right"
+    },
     lockedComposer: {
       gap: 8
     },
