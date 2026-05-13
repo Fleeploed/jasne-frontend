@@ -346,15 +346,10 @@ function ResultCard({ scan, colors, styles }: { scan: ScanResponse; colors: Colo
           {result.sender ? <Text style={styles.docFrom}>{result.sender}</Text> : null}
         </View>
         {result.deadlines[0] ? <Text style={styles.urgencyPill}>{deadlineDistance(result.deadlines[0].date)}</Text> : null}
+
       </View>
       <Text style={styles.resultTitle}>{result.document_type_cz ?? result.document_type_localized ?? formatDocTitle(result.document_type ?? scan.doc_type)}</Text>
       <Text style={styles.resultSummary}>{result.summary}</Text>
-      {result.deadlines[0] ? (
-        <View style={styles.deadlineCallout}>
-          <Text style={styles.deadlineDate}>{formatDeadlineDate(result.deadlines[0].date)}</Text>
-          <Text style={styles.deadlineLabel}>{result.deadlines[0].description}</Text>
-        </View>
-      ) : null}
       {result.actions_required.length ? <Text style={styles.sectionTitle}>{t("chat.actions")}</Text> : null}
       {result.actions_required.map((action, index) => (
         <View key={`${action}-${index}`} style={styles.actionRow}>
@@ -370,6 +365,7 @@ function ResultCard({ scan, colors, styles }: { scan: ScanResponse; colors: Colo
           key={`${deadline.date}-${index}`}
           deadline={deadline}
           scanId={scan.id}
+          whereToGo={result.where_to_go ?? null}
           styles={styles}
           colors={colors}
         />
@@ -413,16 +409,22 @@ function ResultCard({ scan, colors, styles }: { scan: ScanResponse; colors: Colo
 function DeadlineReminderRow({
   deadline,
   scanId,
+  whereToGo,
   styles,
   colors,
 }: {
   deadline: AnalysisDeadline;
   scanId: string;
+  whereToGo: string | null;
   styles: ReturnType<typeof createStyles>;
   colors: ColorPalette;
 }) {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const showAddress = (deadline.type === "action" || deadline.type === "response") && Boolean(whereToGo);
+  const time = parseTimeFromDescription(deadline.description) ?? parseTimeFromDate(deadline.date);
+  const dateLabel = time ? `${formatDeadlineDate(deadline.date)} · ${time}` : formatDeadlineDate(deadline.date);
 
   async function handleAdd() {
     if (saved || saving) return;
@@ -444,22 +446,29 @@ function DeadlineReminderRow({
   }
 
   return (
-    <View style={styles.deadlineRow}>
-      <View style={styles.deadlineRowLeft}>
-        <Text style={styles.deadlineRowDate}>{formatDeadlineDate(deadline.date)}</Text>
-        <Text style={styles.deadlineRowText}>{deadline.description}</Text>
-      </View>
+    <View style={styles.deadlineCard}>
+      <Text style={styles.deadlineCardLabel}>{t(`deadlineType.${deadline.type}` as Parameters<typeof t>[0]).toUpperCase()}</Text>
+      <Text style={styles.deadlineCardDate}>{dateLabel}</Text>
+      {deadline.description ? <Text style={styles.deadlineCardDesc}>{deadline.description}</Text> : null}
+      {showAddress && whereToGo ? (
+        <View style={styles.deadlineCardAddress}>
+          <Text style={styles.deadlineCardPin}>📍</Text>
+          <Text style={styles.deadlineCardAddressText}>{whereToGo}</Text>
+        </View>
+      ) : null}
       <Pressable
         onPress={handleAdd}
-        style={[styles.deadlineReminderBtn, saved && styles.deadlineReminderBtnSaved]}
-        accessibilityLabel={t(saved ? "chat.reminderSaved" : "chat.addReminder")}
+        style={[styles.deadlineCardBtn, saved && styles.deadlineCardBtnSaved]}
+        accessibilityLabel={t(saved ? "chat.reminderSaved" : "chat.createReminder")}
         disabled={saved || saving}
       >
-        {saving
-          ? <ActivityIndicator size="small" color={colors.primary} />
-          : saved
-            ? <Text style={styles.deadlineReminderCheck}>✓</Text>
-            : <Text style={styles.deadlineReminderPlus}>+</Text>}
+        {saving ? (
+          <ActivityIndicator size="small" color={saved ? colors.greenDark : colors.textOnAccent} />
+        ) : (
+          <Text style={[styles.deadlineCardBtnText, saved && styles.deadlineCardBtnTextSaved]}>
+            {saved ? `✓  ${t("chat.reminderSaved")}` : t("chat.createReminder")}
+          </Text>
+        )}
       </Pressable>
     </View>
   );
@@ -945,6 +954,16 @@ function formatDocTitle(raw?: string | null) {
   return raw.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function parseTimeFromDescription(description: string): string | null {
+  const match = /\b(\d{1,2}:\d{2})\b/.exec(description);
+  return match?.[1] ?? null;
+}
+
+function parseTimeFromDate(dateStr: string): string | null {
+  const match = /T(\d{2}:\d{2})/.exec(dateStr);
+  return match?.[1] ?? null;
+}
+
 function formatDeadlineDate(value: string) {
   const parsed = new Date(`${value}T12:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return value;
@@ -1309,17 +1328,6 @@ function createStyles(colors: ColorPalette) {
     },
     resultTitle: { color: colors.text, fontFamily: fonts.displayBold, fontSize: 22, fontWeight: "700", lineHeight: 27 },
     resultSummary: { color: colors.muted2, fontFamily: fonts.body, fontSize: 14.5, lineHeight: 22 },
-    deadlineCallout: {
-      backgroundColor: colors.amberLight,
-      borderTopWidth: 1,
-      borderTopColor: colors.amber200,
-      borderRadius: 10,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-      gap: 2
-    },
-    deadlineDate: { color: colors.amberDark, fontSize: 16, fontWeight: "800" },
-    deadlineLabel: { color: colors.amberDark, fontSize: 11, lineHeight: 15 },
     sectionTitle: {
       color: colors.muted2,
       fontFamily: fonts.bodyExtraBold,
@@ -1341,14 +1349,64 @@ function createStyles(colors: ColorPalette) {
     },
     actionIndexText: { color: colors.primary, fontSize: 12, fontWeight: "700" },
     resultLine: { flex: 1, color: colors.text, fontFamily: fonts.body, fontSize: 14.5, lineHeight: 22 },
-    deadlineRow: { backgroundColor: colors.surface2, borderRadius: 10, padding: 10, flexDirection: "row", alignItems: "center", gap: 10 },
-    deadlineRowLeft: { flex: 1, gap: 3 },
-    deadlineRowDate: { color: colors.text, fontSize: 14, fontWeight: "800" },
-    deadlineRowText: { color: colors.muted, fontSize: 12, lineHeight: 17 },
-    deadlineReminderBtn: { width: 32, height: 32, borderRadius: 9, backgroundColor: colors.border, alignItems: "center", justifyContent: "center" },
-    deadlineReminderBtnSaved: { backgroundColor: colors.greenLight },
-    deadlineReminderPlus: { color: colors.muted2, fontSize: 22, fontWeight: "300", lineHeight: 26, marginTop: -2 },
-    deadlineReminderCheck: { color: colors.greenDark, fontSize: 14, fontWeight: "700" },
+    deadlineCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 16,
+      gap: 6,
+    },
+    deadlineCardLabel: {
+      color: colors.primary,
+      fontFamily: fonts.bodyExtraBold,
+      fontSize: 11,
+      letterSpacing: 1.6,
+      textTransform: "uppercase",
+    },
+    deadlineCardDate: {
+      color: colors.text,
+      fontFamily: fonts.displayBold,
+      fontSize: 26,
+      fontWeight: "800",
+      lineHeight: 32,
+    },
+    deadlineCardDesc: {
+      color: colors.muted2,
+      fontFamily: fonts.body,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    deadlineCardAddress: {
+      flexDirection: "row" as const,
+      gap: 5,
+      alignItems: "flex-start" as const,
+      marginTop: 2,
+    },
+    deadlineCardPin: { fontSize: 13, lineHeight: 18 },
+    deadlineCardAddressText: {
+      flex: 1,
+      color: colors.muted2,
+      fontFamily: fonts.body,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    deadlineCardBtn: {
+      marginTop: 6,
+      height: 46,
+      borderRadius: 23,
+      backgroundColor: colors.primary,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+    },
+    deadlineCardBtnSaved: { backgroundColor: colors.greenLight },
+    deadlineCardBtnText: {
+      color: colors.textOnAccent,
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 15,
+      fontWeight: "600",
+    },
+    deadlineCardBtnTextSaved: { color: colors.greenDark },
     placeLine: {
       color: colors.text,
       fontSize: 12,
