@@ -4,6 +4,8 @@ import { router, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { LinearGradient } from "expo-linear-gradient";
+
 import { AppBar, BackButton, ErrorText, Screen, fonts, useColors, type ColorPalette } from "@/components/ui";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { listMessages, streamChat } from "@/features/chat/chatApi";
@@ -446,13 +448,15 @@ function DeadlineReminderRow({
   }
 
   return (
-    <View style={styles.deadlineCard}>
+    <LinearGradient
+      colors={["rgba(111,160,230,0.16)", "rgba(111,160,230,0.06)"]}
+      style={styles.deadlineCard}
+    >
       <Text style={styles.deadlineCardLabel}>{t(`deadlineType.${deadline.type}` as Parameters<typeof t>[0]).toUpperCase()}</Text>
       <Text style={styles.deadlineCardDate}>{dateLabel}</Text>
-      {deadline.description ? <Text style={styles.deadlineCardDesc}>{deadline.description}</Text> : null}
       {showAddress && whereToGo ? (
         <View style={styles.deadlineCardAddress}>
-          <Text style={styles.deadlineCardPin}>📍</Text>
+          <Text style={styles.deadlineCardPin}>⊙</Text>
           <Text style={styles.deadlineCardAddressText}>{whereToGo}</Text>
         </View>
       ) : null}
@@ -463,14 +467,14 @@ function DeadlineReminderRow({
         disabled={saved || saving}
       >
         {saving ? (
-          <ActivityIndicator size="small" color={saved ? colors.greenDark : colors.textOnAccent} />
+          <ActivityIndicator size="small" color={colors.textOnAccent} />
         ) : (
           <Text style={[styles.deadlineCardBtnText, saved && styles.deadlineCardBtnTextSaved]}>
-            {saved ? `✓  ${t("chat.reminderSaved")}` : t("chat.createReminder")}
+            {saved ? `✓  ${t("chat.reminderSaved")}` : `🗓  ${t("chat.createReminder")}`}
           </Text>
         )}
       </Pressable>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -1350,60 +1354,59 @@ function createStyles(colors: ColorPalette) {
     actionIndexText: { color: colors.primary, fontSize: 12, fontWeight: "700" },
     resultLine: { flex: 1, color: colors.text, fontFamily: fonts.body, fontSize: 14.5, lineHeight: 22 },
     deadlineCard: {
-      backgroundColor: colors.surface,
-      borderRadius: 16,
+      borderRadius: 14,
       borderWidth: 1,
-      borderColor: colors.border,
-      padding: 16,
-      gap: 6,
+      borderColor: colors.blueMid,
+      padding: 14,
     },
     deadlineCardLabel: {
       color: colors.primary,
       fontFamily: fonts.bodyExtraBold,
       fontSize: 11,
-      letterSpacing: 1.6,
+      fontWeight: "700",
+      letterSpacing: 1.54,
       textTransform: "uppercase",
     },
     deadlineCardDate: {
       color: colors.text,
       fontFamily: fonts.displayBold,
       fontSize: 26,
-      fontWeight: "800",
-      lineHeight: 32,
-    },
-    deadlineCardDesc: {
-      color: colors.muted2,
-      fontFamily: fonts.body,
-      fontSize: 13,
-      lineHeight: 18,
+      fontWeight: "600",
+      letterSpacing: -0.52,
+      marginTop: 6,
     },
     deadlineCardAddress: {
       flexDirection: "row" as const,
-      gap: 5,
-      alignItems: "flex-start" as const,
-      marginTop: 2,
+      alignItems: "center" as const,
+      gap: 6,
+      marginTop: 4,
     },
-    deadlineCardPin: { fontSize: 13, lineHeight: 18 },
+    deadlineCardPin: {
+      color: colors.primary,
+      fontSize: 11,
+      lineHeight: 15,
+    },
     deadlineCardAddressText: {
       flex: 1,
-      color: colors.muted2,
+      color: colors.muted,
       fontFamily: fonts.body,
       fontSize: 13,
-      lineHeight: 18,
     },
     deadlineCardBtn: {
-      marginTop: 6,
-      height: 46,
-      borderRadius: 23,
-      backgroundColor: colors.primary,
+      marginTop: 12,
+      height: 38,
+      borderRadius: 10,
+      backgroundColor: colors.primaryDark,
+      flexDirection: "row" as const,
       alignItems: "center" as const,
       justifyContent: "center" as const,
+      gap: 8,
     },
     deadlineCardBtnSaved: { backgroundColor: colors.greenLight },
     deadlineCardBtnText: {
       color: colors.textOnAccent,
       fontFamily: fonts.bodySemiBold,
-      fontSize: 15,
+      fontSize: 13.5,
       fontWeight: "600",
     },
     deadlineCardBtnTextSaved: { color: colors.greenDark },
