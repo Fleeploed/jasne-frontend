@@ -1,0 +1,497 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "meta": {
+    "project": "Jasne frontend",
+    "snapshot_date": "2026-05-12",
+    "repo_path": "/Users/alisheribrayev/Documents/Jasne/jasne-frontend",
+    "app_name": "Jasne",
+    "current_version": "0.1.0",
+    "phase": "Expo MVP core loop in active development",
+    "backend_live_url": "https://jasne-backend-production.up.railway.app",
+    "backend_repo_path": "/Users/alisheribrayev/Documents/Jasne/jasne-backend"
+  },
+
+  "infrastructure": {
+    "mobile_runtime": {
+      "framework": "Expo",
+      "expo_sdk": "52",
+      "react_native": "0.76.9",
+      "react": "18.3.1",
+      "router": "expo-router 4",
+      "typescript": "5.3.3",
+      "typescript_strict_expected": true,
+      "native_build_required": true,
+      "expo_go_status": "partial only",
+      "expo_go_notes": [
+        "Core JS screens can run in Expo Go.",
+        "Native document scanner, custom URL schemes, OAuth redirects, and password reset links should be tested in a development build."
+      ]
+    },
+    "app_identity": {
+      "scheme": "jasne",
+      "ios_bundle_identifier": "app.jasne.mobile",
+      "android_package": "app.jasne.mobile",
+      "orientation": "portrait",
+      "supports_tablet": false,
+      "user_interface_style": "automatic"
+    },
+    "supabase": {
+      "project_id": "ndestbxknbgaxxdjoqkv",
+      "services_used": [
+        "Auth",
+        "Storage",
+        "Postgres through backend API"
+      ],
+      "storage_bucket": "documents",
+      "storage_bucket_public": false,
+      "storage_path_contract": "<user_id>/<filename>",
+      "storage_rls_expected": "auth.uid()::text = (storage.foldername(name))[1]"
+    },
+    "backend_api": {
+      "base_url": "https://jasne-backend-production.up.railway.app",
+      "auth_header": "Authorization: Bearer <supabase_access_token>",
+      "health": "GET /health",
+      "deep_health": "GET /health/deep"
+    },
+    "local_environment": {
+      "required_public_env": [
+        "EXPO_PUBLIC_SUPABASE_URL",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY",
+        "EXPO_PUBLIC_API_BASE_URL"
+      ],
+      "optional_public_env": [
+        "EXPO_PUBLIC_APP_LOCALE"
+      ],
+      "current_api_base_url_default": "https://jasne-backend-production.up.railway.app",
+      "secrets_policy": "STATUS.json intentionally does not store anon key or other secrets."
+    },
+    "ios_native": {
+      "xcode_required": true,
+      "cocoapods_required": true,
+      "physical_device_requires_signing": true,
+      "known_device": "iPhone Alisher (iOS 18.7.2)",
+      "apple_developer_program_required_for": [
+        "Sign in with Apple capability",
+        "App Store/TestFlight distribution",
+        "stable production signing"
+      ]
+    }
+  },
+
+  "frontend": {
+    "stack": {
+      "navigation": "Expo Router file-based routing",
+      "state": "React hooks + small local stores",
+      "auth_client": "@supabase/supabase-js",
+      "storage_client": "@supabase/supabase-js Storage",
+      "http": "fetch wrapper in src/lib/api.ts",
+      "sse": "custom fetch stream parser in src/lib/sse.ts",
+      "file_access": [
+        "expo-image-picker",
+        "expo-document-picker",
+        "expo-file-system"
+      ],
+      "native_scanner": "react-native-document-scanner-plugin",
+      "styling": "React Native StyleSheet + shared color tokens in src/components/ui.tsx",
+      "i18n": "local dictionary in src/lib/i18n.ts"
+    },
+    "routes": {
+      "root": [
+        {
+          "file": "app/_layout.tsx",
+          "purpose": "Safe area, locale provider, auth provider, root auth/app switch"
+        }
+      ],
+      "tabs": [
+        {
+          "file": "app/(app)/_layout.tsx",
+          "route": "(app)",
+          "purpose": "Bottom tab shell: documents, deadlines, profile"
+        },
+        {
+          "file": "app/(app)/index.tsx",
+          "route": "/",
+          "screen": "Documents / scan threads"
+        },
+        {
+          "file": "app/(app)/deadlines.tsx",
+          "route": "/deadlines",
+          "screen": "Deadlines"
+        },
+        {
+          "file": "app/(app)/profile.tsx",
+          "route": "/profile",
+          "screen": "Profile"
+        }
+      ],
+      "scan": [
+        {
+          "file": "app/(app)/scan/new.tsx",
+          "route": "/scan/new",
+          "screen": "New scan"
+        },
+        {
+          "file": "app/(app)/scan/[id].tsx",
+          "route": "/scan/:id",
+          "screen": "Chat thread with result card"
+        }
+      ]
+    },
+    "modules": {
+      "components": {
+        "file": "src/components/ui.tsx",
+        "contains": [
+          "shared colors",
+          "Screen",
+          "AppBar",
+          "Button",
+          "IconButton",
+          "Field",
+          "EmptyState",
+          "ErrorText"
+        ]
+      },
+      "auth": {
+        "files": [
+          "src/features/auth/AuthProvider.tsx",
+          "src/features/auth/AuthScreen.tsx",
+          "src/features/auth/ResetPasswordScreen.tsx",
+          "src/features/auth/ProfileScreen.tsx"
+        ],
+        "features": {
+          "email_password_signup": true,
+          "email_password_login": true,
+          "google_oauth": true,
+          "password_reset_email": true,
+          "password_reset_deep_link_screen": true,
+          "apple_sign_in": false,
+          "session_persistence": true,
+          "auth_error_mapping": true
+        },
+        "redirects": {
+          "google_callback": "jasne://auth/callback",
+          "password_reset": "generated by expo-linking, printed as Password reset redirect URL in Metro logs"
+        }
+      },
+      "scans": {
+        "files": [
+          "src/features/scans/ScanListScreen.tsx",
+          "src/features/scans/NewScanScreen.tsx",
+          "src/features/scans/scansApi.ts",
+          "src/features/scans/pendingScanStore.ts"
+        ],
+        "features": {
+          "scan_thread_list": true,
+          "new_scan_flow": true,
+          "multi_image_selection": true,
+          "document_pdf_selection": true,
+          "native_camera_scanner_hook": true,
+          "supabase_storage_upload": true,
+          "scan_stream_sse": true,
+          "pending_chat_progress": true,
+          "navigate_to_created_thread_on_done": true,
+          "storage_upload_error_mapping": true,
+          "limits_gate_before_scan": true
+        },
+        "storage_upload_contract": {
+          "bucket": "documents",
+          "path_format": "<supabase_user_id>/<timestamp>-<page_index>-<safe_filename>.<ext>",
+          "supported_input_mime_types": [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+            "application/pdf"
+          ],
+          "backend_body": "{ image_paths: string[], language: cs|ru|uk|en }"
+        }
+      },
+      "chat": {
+        "files": [
+          "src/features/chat/ChatThreadScreen.tsx",
+          "src/features/chat/chatApi.ts"
+        ],
+        "features": {
+          "load_scan_detail": true,
+          "load_thread_messages": true,
+          "result_card": true,
+          "uploaded_document_image_preview": true,
+          "signed_storage_urls_for_images": true,
+          "chat_stream_sse": true,
+          "assistant_token_append": true,
+          "input_disabled_while_streaming": true,
+          "free_plan_chat_warning": true
+        }
+      },
+      "deadlines": {
+        "files": [
+          "src/features/deadlines/DeadlinesScreen.tsx",
+          "src/features/deadlines/deadlinesApi.ts"
+        ],
+        "features": {
+          "list_deadlines": true,
+          "group_active_by_month": true,
+          "single_completed_section": true,
+          "manual_deadline_create": true,
+          "deadline_edit": true,
+          "deadline_complete": true,
+          "deadline_delete": true,
+          "swipe_left_edit_delete": true,
+          "swipe_right_complete": true,
+          "completed_swipe_disabled": true
+        },
+        "ux_state": "Dark Jasne design system applied, swipe cards still being iterated visually."
+      },
+      "localization": {
+        "files": [
+          "src/lib/i18n.ts",
+          "src/lib/LocaleContext.tsx"
+        ],
+        "locales": [
+          "cs",
+          "ru",
+          "uk",
+          "en"
+        ],
+        "default_locale": "cs unless EXPO_PUBLIC_APP_LOCALE is set",
+        "runtime_locale_switch": true
+      },
+      "shared_lib": {
+        "files": [
+          "src/lib/api.ts",
+          "src/lib/config.ts",
+          "src/lib/sse.ts",
+          "src/lib/supabase.ts",
+          "src/lib/types.ts"
+        ],
+        "responsibilities": [
+          "runtime env config",
+          "Supabase client",
+          "authorized API fetch",
+          "SSE parsing",
+          "shared API response types"
+        ]
+      }
+    },
+    "api_usage": {
+      "profile": [
+        "GET /profile",
+        "PUT /profile"
+      ],
+      "limits": [
+        "GET /limits",
+        "GET /limits?scan_id=<uuid>"
+      ],
+      "scans": [
+        "GET /scans?limit=50&offset=0",
+        "GET /scans/{scan_id}",
+        "POST /scans/stream"
+      ],
+      "chat": [
+        "GET /scans/{scan_id}/chat",
+        "POST /scans/{scan_id}/chat/stream"
+      ],
+      "deadlines": [
+        "GET /deadlines?only_active=false",
+        "POST /deadlines",
+        "PATCH /deadlines/{deadline_id}",
+        "DELETE /deadlines/{deadline_id}"
+      ]
+    }
+  },
+
+  "product_scope": {
+    "mvp_core_loop": {
+      "supabase_auth": "implemented",
+      "scan_list": "implemented",
+      "new_scan": "implemented",
+      "storage_upload": "implemented",
+      "scan_stream_progress": "implemented",
+      "chat_thread_result_card": "implemented",
+      "chat_stream": "implemented",
+      "deadlines_basic": "implemented"
+    },
+    "explicitly_deferred": [
+      "RevenueCat / subscriptions",
+      "push notifications",
+      "full onboarding",
+      "paywall",
+      "production App Store release",
+      "Apple Sign In until Apple Developer account setup is complete"
+    ],
+    "plan_limits_expected_from_backend": {
+      "free": {
+        "scans_per_month": 5,
+        "pages_per_scan": 3,
+        "chat_questions_per_scan": 0
+      },
+      "pro": {
+        "scans_per_month": 100,
+        "pages_per_scan": 10,
+        "chat_questions_per_scan": 10
+      }
+    }
+  },
+
+  "external_setup_required": {
+    "supabase_auth": {
+      "redirect_urls": [
+        "jasne://auth/callback",
+        "jasne://auth/reset-password",
+        "the exact Password reset redirect URL printed by Metro when pressing forgot password"
+      ],
+      "email_password": "enabled in Supabase Auth",
+      "password_reset": "requires redirect URL allowlist and testing from mobile app environment, not desktop Chrome"
+    },
+    "google_oauth": {
+      "supabase_provider_enabled": true,
+      "google_cloud_required": [
+        "OAuth consent screen configured",
+        "Web OAuth Client ID created",
+        "Client ID and Client Secret copied into Supabase Google provider",
+        "Supabase callback URL added to Google authorized redirect URIs"
+      ],
+      "supabase_callback_url": "https://ndestbxknbgaxxdjoqkv.supabase.co/auth/v1/callback"
+    },
+    "apple_sign_in": {
+      "enabled_in_app": false,
+      "reason": "Requires paid Apple Developer Program and Sign in with Apple capability.",
+      "expected_next_steps": [
+        "Enroll in Apple Developer Program",
+        "Enable Sign in with Apple capability for app.jasne.mobile",
+        "Add expo-apple-authentication back if native Apple auth is desired"
+      ]
+    },
+    "supabase_storage": {
+      "bucket": "documents",
+      "bucket_public": false,
+      "required_policies": [
+        "documents_owner_read",
+        "documents_owner_insert",
+        "documents_owner_delete"
+      ],
+      "policy_pattern": "bucket_id = 'documents' and auth.uid()::text = (storage.foldername(name))[1]"
+    },
+    "ios_signing": {
+      "simulator": "works without paid Apple account",
+      "physical_device": "requires Xcode signing certificate and trusted developer profile",
+      "error_seen": "No code signing certificates are available to use."
+    }
+  },
+
+  "local_commands": {
+    "install_dependencies": "npm install",
+    "start_metro": "npm start",
+    "run_ios": "npm run ios",
+    "run_ios_device": "npx expo run:ios --device",
+    "run_android": "npm run android",
+    "web": "npm run web",
+    "typecheck": "npm run typecheck",
+    "ios_export_smoke": "npx expo export --platform ios --output-dir /private/tmp/jasne-frontend-export"
+  },
+
+  "tested_locally": {
+    "date": "2026-05-12",
+    "environment": "MacBook Air Alisher, Expo SDK 52, iOS Simulator",
+    "checks": [
+      {
+        "command": "npm run typecheck",
+        "status": "passed",
+        "purpose": "TypeScript compile without emit"
+      },
+      {
+        "command": "npx expo export --platform ios --output-dir /private/tmp/jasne-frontend-export",
+        "status": "passed",
+        "purpose": "Metro bundle smoke test for iOS"
+      },
+      {
+        "command": "node -e \"JSON.parse(require('fs').readFileSync('STATUS.json','utf8'))\"",
+        "status": "passed",
+        "purpose": "STATUS.json is valid JSON"
+      }
+    ],
+    "manual_flows_observed": [
+      "email/password auth screen renders",
+      "Google OAuth launches browser flow after provider setup",
+      "photo picker supports multiple selections",
+      "scan pending screen opens and shows progress/errors",
+      "chat thread shows uploaded image preview and result card",
+      "deadlines screen dark UI and swipe actions render"
+    ]
+  },
+
+  "bug_fixes_applied": [
+    { "id": "fe-fix-1", "area": "AuthProvider", "fix": "Wrap new URL(url) in try/catch — malformed deep-link URLs no longer crash the app on startup" },
+    { "id": "fe-fix-2", "area": "AuthProvider", "fix": "signOut rewritten as proper async function (was .then() fire-and-forget)" },
+    { "id": "fe-fix-3", "area": "AuthScreen", "fix": "completeOAuthRedirect wraps new URL() in try/catch — returns error string instead of throwing" },
+    { "id": "fe-fix-4", "area": "DeadlinesScreen", "fix": "Extract compareDeadlines to module level so edit-modal sort matches load and markDone order" },
+    { "id": "fe-fix-5", "area": "DeadlinesScreen", "fix": "Add aliveRef + cleanup useEffect to prevent setState after unmount on slow network" },
+    { "id": "fe-fix-6", "area": "ChatThreadScreen", "fix": "Replace pendingDoneHandled state with useRef — eliminates stale closure bug in SSE event listener" },
+    { "id": "fe-fix-7", "area": "ChatThreadScreen", "fix": "Add alive flags in both useEffects to prevent setState after unmount" },
+    { "id": "fe-fix-8", "area": "ChatThreadScreen", "fix": "Make onOpenViewer optional on DocumentAttachmentBubble — crash with multiple images fixed" },
+    { "id": "fe-fix-9", "area": "ProfileScreen", "fix": "Move SHEET_HIDDEN constant to module level (was re-created on every render)" },
+    { "id": "fe-fix-10", "area": "ProfileScreen", "fix": "Add aliveRef + cleanup to prevent setState after unmount in loadLimits" },
+    { "id": "fe-fix-11", "area": "ScanListScreen", "fix": "Add aliveRef + bail-out in load callback to prevent setState after unmount" }
+  ],
+
+  "known_issues_and_risks": [
+    {
+      "area": "password reset",
+      "status": "needs mobile-environment verification",
+      "detail": "Recovery links opened in desktop Chrome will not open the iOS app. Test from Mail/Gmail inside simulator or real iPhone with the app installed.",
+      "mitigation": "Use development build and add the exact Metro-printed reset redirect URL to Supabase Redirect URLs."
+    },
+    {
+      "area": "Expo Go",
+      "status": "limited",
+      "detail": "Custom URL schemes and native scanner are not reliable in Expo Go.",
+      "mitigation": "Use npx expo run:ios or EAS development build."
+    },
+    {
+      "area": "Google OAuth",
+      "status": "setup-dependent",
+      "detail": "Fails if Supabase Google provider is disabled, Google OAuth client is wrong, or redirect URLs are missing.",
+      "mitigation": "Verify Supabase provider settings and Google Cloud authorized redirect URI."
+    },
+    {
+      "area": "Supabase Storage upload",
+      "status": "setup-dependent",
+      "detail": "New users can upload only if Storage RLS policies permit writes under their own user id folder.",
+      "mitigation": "Check pg_policies for storage.objects and bucket documents."
+    },
+    {
+      "area": "Apple Sign In",
+      "status": "deferred",
+      "detail": "Not enabled because Apple Developer Program/capability is not ready."
+    },
+    {
+      "area": "RevenueCat",
+      "status": "scaffolded",
+      "detail": "PaywallSheet component exists. SDK wiring and offering fetch not yet implemented.",
+      "mitigation": "Wire Purchases.configure() in app/_layout.tsx before launch."
+    }
+  ],
+
+  "next_steps": {
+    "high_priority": [
+      "Verify password reset from iPhone simulator Mail/Gmail or real iPhone development build.",
+      "Confirm Supabase Redirect URLs contain the exact reset redirect URL printed by Metro.",
+      "Confirm Google OAuth end-to-end on development build.",
+      "Test new account Storage upload and inspect error message if it fails.",
+      "Run scan stream end-to-end with 1, 2, and 3 images.",
+      "Wire Expo Notifications token registration and save to profile (coordinate with be-todo-4 push scheduler)."
+    ],
+    "medium_priority": [
+      "Implement RevenueCat SDK wiring (Purchases.configure + PaywallSheet offering fetch).",
+      "Polish deadline swipe animation and final visual spacing.",
+      "Move remaining hardcoded debug logs behind dev-only guard or remove before release.",
+      "Add frontend smoke/e2e checklist for simulator manual testing.",
+      "Add Android emulator test pass."
+    ],
+    "deferred": [
+      "Full 6-screen onboarding flow",
+      "Apple Sign In",
+      "TestFlight/App Store distribution"
+    ]
+  }
+}
