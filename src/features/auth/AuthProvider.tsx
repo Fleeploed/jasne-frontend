@@ -5,6 +5,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Session, User } from "@supabase/supabase-js";
 
 import { supabase } from "@/lib/supabase";
+import { clearPurchasesIdentity, identifyPurchasesUser } from "@/lib/purchases";
 
 const HAS_HAD_ACCOUNT_KEY = "jasne_has_had_account";
 
@@ -62,6 +63,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.remove();
   }, []);
 
+  // Sync RevenueCat identity with Supabase session. Without this the backend
+  // webhook receives `app_user_id = $RCAnonymousID:...`, fails UUID parse,
+  // and the user pays for Pro but profiles.plan never flips. logIn is
+  // idempotent, safe to call on every session change.
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!userId) return;
+    void identifyPurchasesUser(userId);
+  }, [session?.user.id]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       initializing,
@@ -71,6 +82,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       passwordRecovery,
       clearPasswordRecovery: () => setPasswordRecovery(false),
       signOut: async () => {
+        // Reset RevenueCat to anonymous BEFORE signing out of Supabase so
+        // the next user on this device doesn't inherit purchases.
+        await clearPurchasesIdentity();
         await supabase.auth.signOut();
       }
     }),

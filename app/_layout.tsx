@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -9,8 +10,16 @@ import { AuthScreen } from "@/features/auth/AuthScreen";
 import { ResetPasswordScreen } from "@/features/auth/ResetPasswordScreen";
 import { ThemeProvider, lightColors, useColors } from "@/components/ui";
 import { LocaleProvider } from "@/lib/LocaleContext";
+import { configurePurchases } from "@/lib/purchases";
 
 export default function RootLayout() {
+  // Initialize RevenueCat once for the whole app session. Safe to call
+  // before sign-in — purchases start in anonymous mode and get re-aliased
+  // to the Supabase UUID in AuthProvider once a session arrives.
+  useEffect(() => {
+    void configurePurchases();
+  }, []);
+
   const [fontsLoaded] = useFonts({
     Geist_600SemiBold: require("@expo-google-fonts/geist/600SemiBold/Geist_600SemiBold.ttf"),
     Geist_700Bold: require("@expo-google-fonts/geist/700Bold/Geist_700Bold.ttf"),
@@ -74,8 +83,20 @@ function RootNavigator() {
   if (!session) return <AuthScreen initialMode={hasHadAccount ? "login" : "register"} />;
 
   return (
-    <Stack screenOptions={{ headerShadowVisible: false, headerStyle: { backgroundColor: colors.bg } }}>
-      <Stack.Screen name="(app)" options={{ headerShown: false }} />
+    <Stack
+      screenOptions={{
+        headerShadowVisible: false,
+        headerStyle: { backgroundColor: colors.bg },
+        headerShown: false,
+        // iOS-style edge swipe-back, default on but explicit for clarity
+        gestureEnabled: true,
+        gestureDirection: "horizontal",
+        animation: "slide_from_right",
+      }}
+    >
+      <Stack.Screen name="(app)" />
+      <Stack.Screen name="scan/new" />
+      <Stack.Screen name="scan/[id]" />
     </Stack>
   );
 }

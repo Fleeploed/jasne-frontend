@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Easing, FlatList, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View, type DimensionValue } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Animated, Easing, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View, type DimensionValue, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { AppBar, BackButton, ErrorText, Screen, fonts, useColors, type ColorPalette } from "@/components/ui";
+import { Icon } from "@/components/Icon";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { listMessages, streamChat } from "@/features/chat/chatApi";
 import { createManualDeadline } from "@/features/deadlines/deadlinesApi";
@@ -19,6 +20,10 @@ import {
 import { formatLocalizedDate, t } from "@/lib/i18n";
 import { supabase } from "@/lib/supabase";
 import type { AnalysisDeadline, LimitsResponse, ScanMessage, ScanResponse } from "@/lib/types";
+
+// In-memory cache of last scroll offset per scan id.
+// Survives navigation but resets on app restart — that's fine for chat UX.
+const chatScrollOffsets = new Map<string, number>();
 
 type UiMessage = ScanMessage | {
   id: string;
@@ -44,6 +49,19 @@ export function ChatThreadScreen() {
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardOpen(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardOpen(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   const [scan, setScan] = useState<ScanResponse | null>(null);
   const [limits, setLimits] = useState<LimitsResponse | null>(null);
   const [messages, setMessages] = useState<UiMessage[]>([]);
@@ -64,6 +82,39 @@ export function ChatThreadScreen() {
   const scanId = isPending ? "pending" : params.id;
   const listRef = useRef<FlatList<UiMessage>>(null);
   const pendingDoneHandledRef = useRef(false);
+  // Whether the FlatList already laid out its content for the first time —
+  // used to distinguish initial scroll restore vs subsequent content growth.
+  const initialLayoutDoneRef = useRef(false);
+  // Whether the user is near the bottom of the chat — controls whether
+  // a new streaming token should auto-scroll the view down.
+  const isAtBottomRef = useRef(true);
+
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    isAtBottomRef.current = distanceFromBottom < 80;
+    if (initialLayoutDoneRef.current && scanId && scanId !== "pending") {
+      chatScrollOffsets.set(scanId, contentOffset.y);
+    }
+  }, [scanId]);
+
+  const handleContentSizeChange = useCallback(() => {
+    if (!initialLayoutDoneRef.current) {
+      initialLayoutDoneRef.current = true;
+      const saved = scanId && scanId !== "pending" ? chatScrollOffsets.get(scanId) : undefined;
+      if (saved !== undefined) {
+        listRef.current?.scrollToOffset({ offset: saved, animated: false });
+      } else {
+        listRef.current?.scrollToEnd({ animated: false });
+      }
+      return;
+    }
+    // Subsequent content growth (new message / streaming token) — only follow
+    // along if the user was already pinned to the bottom.
+    if (isAtBottomRef.current) {
+      listRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [scanId]);
 
   useEffect(() => {
     if (initialPending || !params.id) return;
@@ -256,11 +307,15 @@ export function ChatThreadScreen() {
   return (
     <Screen>
       <AppBar title={scan?.result?.document_type_cz ?? scan?.doc_type ?? t("chat.title")} titleSize={20} left={<BackButton onPress={() => router.back()} />} />
-      <View style={styles.wrap}>
+      <KeyboardAvoidingView
+        style={styles.wrap}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={0}
+      >
         {isPending ? (
           <ScrollView
             style={styles.pendingScroll}
-            contentContainerStyle={[styles.pendingWrap, { paddingBottom: Math.max(insets.bottom, 0) + 122 }]}
+            contentContainerStyle={styles.pendingWrap}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -278,8 +333,11 @@ export function ChatThreadScreen() {
             style={styles.list}
             data={displayMessages}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={[styles.messages, { paddingBottom: Math.max(insets.bottom, 0) + 104 }]}
-            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+            contentContainerStyle={styles.messages}
+            onContentSizeChange={handleContentSizeChange}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => (
               <MessageBubble
                 message={item}
@@ -291,37 +349,48 @@ export function ChatThreadScreen() {
             )}
           />
         )}
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0} style={styles.footerHost}>
-          <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-            {limits && noQuestionsLeft ? (
-              <LockedChatComposer
+        <View
+          style={[
+            styles.footer,
+            {
+              paddingBottom: keyboardOpen
+                ? 4
+                : Platform.OS === "android"
+                  ? insets.bottom
+                  : Math.max(insets.bottom, 10),
+            },
+          ]}
+        >
+          {limits && noQuestionsLeft ? (
+            <LockedChatComposer
+              styles={styles}
+              colors={colors}
+              plan={limits.plan}
+              questionsUsed={questionsUsed}
+              questionsMax={questionsMax > 0 ? questionsMax : 10}
+              onPress={limits.plan === "pro" ? undefined : () => setShowPaywall(true)}
+            />
+          ) : (
+            <>
+              {!isPending ? <ErrorText message={error} /> : null}
+              <ChatComposer
+                value={question}
+                onChangeText={setQuestion}
+                placeholder={t("chat.placeholder")}
+                editable={!chatDisabled}
+                streaming={streaming || (isPending && pendingActive)}
+                disabled={!canSend}
+                muted={isPending}
+                questionsUsed={questionsUsed}
+                questionsMax={questionsMax}
+                onSend={ask}
+                colors={colors}
                 styles={styles}
-                questionsUsed={displayQuestionLimit}
-                questionsMax={displayQuestionLimit}
-                onPress={limits.plan === "pro" ? undefined : () => setShowPaywall(true)}
               />
-            ) : (
-              <>
-                {!isPending ? <ErrorText message={error} /> : null}
-                <ChatComposer
-                  value={question}
-                  onChangeText={setQuestion}
-                  placeholder={t("chat.placeholder")}
-                  editable={!chatDisabled}
-                  streaming={streaming || (isPending && pendingActive)}
-                  disabled={!canSend}
-                  muted={isPending}
-                  questionsUsed={questionsUsed}
-                  questionsMax={questionsMax}
-                  onSend={ask}
-                  colors={colors}
-                  styles={styles}
-                />
-              </>
-            )}
-          </View>
-        </KeyboardAvoidingView>
-      </View>
+            </>
+          )}
+        </View>
+      </KeyboardAvoidingView>
       <ImageViewerModal
         images={viewerImages}
         initialIndex={viewerIndex}
@@ -347,7 +416,7 @@ function ResultCard({ scan, colors, styles }: { scan: ScanResponse; colors: Colo
           <Text style={styles.docKind}>{result.document_type_cz ?? scan.category ?? t("common.document")}</Text>
           {result.sender ? <Text style={styles.docFrom}>{result.sender}</Text> : null}
         </View>
-        {result.deadlines[0] ? <Text style={styles.urgencyPill}>{deadlineDistance(result.deadlines[0].date)}</Text> : null}
+        {result.deadlines[0] ? <Text style={[styles.urgencyPill, urgencyPillColors(result.deadlines[0].date, colors)]}>{deadlineDistance(result.deadlines[0].date)}</Text> : null}
 
       </View>
       <Text style={styles.resultTitle}>{result.document_type_cz ?? result.document_type_localized ?? formatDocTitle(result.document_type ?? scan.doc_type)}</Text>
@@ -468,10 +537,15 @@ function DeadlineReminderRow({
       >
         {saving ? (
           <ActivityIndicator size="small" color={colors.textOnAccent} />
-        ) : (
-          <Text style={[styles.deadlineCardBtnText, saved && styles.deadlineCardBtnTextSaved]}>
-            {saved ? `✓  ${t("chat.reminderSaved")}` : `🗓  ${t("chat.createReminder")}`}
+        ) : saved ? (
+          <Text style={[styles.deadlineCardBtnText, styles.deadlineCardBtnTextSaved]}>
+            {`✓  ${t("chat.reminderSaved")}`}
           </Text>
+        ) : (
+          <>
+            <Icon name="calendar" size={16} color={colors.textOnAccent} />
+            <Text style={styles.deadlineCardBtnText}>{t("chat.createReminder")}</Text>
+          </>
         )}
       </Pressable>
     </LinearGradient>
@@ -515,40 +589,51 @@ function ResultInfoBlock({ tone, title, value, styles }: {
 
 function LockedChatComposer({
   styles,
+  colors,
+  plan,
   questionsUsed,
   questionsMax,
   onPress
 }: {
   styles: ReturnType<typeof createStyles>;
+  colors: ColorPalette;
+  plan: string;
   questionsUsed: number;
   questionsMax: number;
   onPress?: () => void;
 }) {
-  return (
-    <View style={styles.lockedComposer}>
-      <Text style={styles.lockedComposerLabel}>{t("chat.questionLimitTitle")}</Text>
+  // Free user — never had access → show upgrade CTA
+  if (plan !== "pro") {
+    return (
       <Pressable
         accessibilityRole="button"
         onPress={onPress}
         style={({ pressed }) => [styles.lockedInputPill, pressed && { opacity: 0.75 }]}
       >
-        <LockGlyph styles={styles} />
+        <Icon name="lock-small" size={18} color={colors.muted3} />
+        <Text style={styles.lockedInputText} numberOfLines={1}>
+          {t("chat.proWarning")}
+        </Text>
+        <View style={styles.proBadge}>
+          <Text style={styles.proBadgeText}>Pro</Text>
+        </View>
+      </Pressable>
+    );
+  }
+
+  // Pro user exhausted quota → show counter + label
+  return (
+    <View style={styles.lockedComposer}>
+      <Text style={styles.lockedComposerLabel}>{t("chat.questionLimitTitle")}</Text>
+      <View style={[styles.lockedInputPill, { opacity: 0.72 }]}>
+        <Icon name="lock-small" size={18} color={colors.muted3} />
         <Text style={styles.lockedInputText} numberOfLines={1}>
           {t("chat.questionLimitUsed", { used: questionsUsed, max: questionsMax })}
         </Text>
         <View style={styles.proBadge}>
           <Text style={styles.proBadgeText}>{t("chat.questionLimitBadge")}</Text>
         </View>
-      </Pressable>
-    </View>
-  );
-}
-
-function LockGlyph({ styles }: { styles: ReturnType<typeof createStyles> }) {
-  return (
-    <View style={styles.lockGlyph}>
-      <View style={styles.lockShackle} />
-      <View style={styles.lockBody} />
+      </View>
     </View>
   );
 }
@@ -974,6 +1059,13 @@ function formatDeadlineDate(value: string) {
   return formatLocalizedDate(parsed, { day: "numeric", month: "long", year: "numeric" });
 }
 
+function urgencyPillColors(date: string, colors: ColorPalette) {
+  const days = Math.ceil((new Date(`${date}T12:00:00Z`).getTime() - Date.now()) / 86_400_000);
+  if (days < 7) return { backgroundColor: colors.dangerLight, color: colors.dangerDark };
+  if (days <= 30) return { backgroundColor: colors.amberLight, color: colors.amberDark };
+  return { backgroundColor: colors.greenLight, color: colors.greenDark };
+}
+
 function deadlineDistance(value: string) {
   const parsed = new Date(`${value}T12:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return t("common.deadline");
@@ -1156,7 +1248,7 @@ function ZoomableViewerImage({ uri, width, height }: { uri: string; width: numbe
 
 function createStyles(colors: ColorPalette) {
   return StyleSheet.create({
-    wrap: { flex: 1, position: "relative" },
+    wrap: { flex: 1 },
     list: { flex: 1 },
     center: { flex: 1, alignItems: "center", justifyContent: "center" },
     pendingScroll: { flex: 1 },
@@ -1165,6 +1257,7 @@ function createStyles(colors: ColorPalette) {
       justifyContent: "flex-end",
       paddingHorizontal: 16,
       paddingTop: 18,
+      paddingBottom: 16,
       gap: 14
     },
     pendingResultCard: {
@@ -1275,7 +1368,7 @@ function createStyles(colors: ColorPalette) {
       justifyContent: "flex-end",
       paddingHorizontal: 16,
       paddingTop: 12,
-      paddingBottom: 14,
+      paddingBottom: 16,
       gap: 12
     },
     resultCard: {
@@ -1321,8 +1414,6 @@ function createStyles(colors: ColorPalette) {
     docFrom: { color: colors.muted2, fontFamily: fonts.body, fontSize: 12.5, lineHeight: 17 },
     urgencyPill: {
       alignSelf: "flex-start",
-      backgroundColor: colors.dangerLight,
-      color: colors.dangerDark,
       borderRadius: 999,
       overflow: "hidden",
       paddingHorizontal: 8,
@@ -1542,11 +1633,10 @@ function createStyles(colors: ColorPalette) {
       fontSize: 12,
       fontWeight: "700"
     },
-    footerHost: { position: "absolute", left: 0, right: 0, bottom: 0 },
     footer: {
       paddingHorizontal: 28,
-      paddingTop: 10,
-      backgroundColor: "rgba(15,13,11,0.94)",
+      paddingTop: 8,
+      backgroundColor: colors.bg,
       gap: 8
     },
     composerPill: {

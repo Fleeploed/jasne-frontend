@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Animated, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensions, Vibration, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 
+import { AppIcon } from "@/components/AppIcon";
 import { Button, EmptyState, ErrorText, Field, Screen, useColors, type ColorPalette } from "@/components/ui";
 import { completeDeadline, createManualDeadline, deleteDeadline, listDeadlines, updateManualDeadline } from "@/features/deadlines/deadlinesApi";
 import { formatLocalizedDate, t } from "@/lib/i18n";
@@ -116,12 +117,13 @@ export function DeadlinesScreen() {
             style={({ pressed }) => [styles.headerIcon, pressed && styles.pressed]}
             hitSlop={8}
           >
-            <Text style={styles.headerIconText}>+</Text>
+            <AppIcon name="plus" size={24} color={colors.muted} strokeWidth={1.9} />
           </Pressable>
         </View>
       </View>
       <ErrorText message={error} />
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={deadlines.length ? styles.list : styles.emptyList}
         refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
       >
@@ -338,7 +340,7 @@ function DeadlineCard({
               </Text>
             </View>
           ) : (
-            <Text style={styles.doneCheck}>✓</Text>
+            <AppIcon name="check" size={18} color={colors.green} strokeWidth={2.4} />
           )}
         </View>
         <Text style={[styles.title, done && styles.titleDone]} numberOfLines={2} ellipsizeMode="tail">{item.title}</Text>
@@ -366,14 +368,14 @@ function DeadlineCard({
     <View style={[styles.rowShell, { width: cardWidth }]}>
       <View style={styles.swipeActionLayer} pointerEvents="box-none">
         <Pressable onPress={commitDone} style={({ pressed }) => [styles.swipeDoneArea, pressed && styles.pressed]}>
-          <Text style={styles.swipeDoneText}>✓</Text>
+          <AppIcon name="check" size={31} color={colors.greenDark} strokeWidth={2.5} />
         </Pressable>
         <View style={styles.swipeLeftActions}>
           <Pressable onPress={commitEdit} style={({ pressed }) => [styles.swipeEditArea, pressed && styles.pressed]}>
-            <Text style={styles.swipeEditText}>✎</Text>
+            <AppIcon name="sliders" size={28} color={colors.primary} strokeWidth={1.9} />
           </Pressable>
           <Pressable onPress={commitDelete} style={({ pressed }) => [styles.swipeDeleteArea, pressed && styles.pressed]}>
-            <Text style={styles.swipeDeleteText}>×</Text>
+            <AppIcon name="x" size={31} color={colors.dangerDark} strokeWidth={2.2} />
           </Pressable>
         </View>
       </View>
@@ -544,11 +546,11 @@ function CalendarPicker({ value, onChange, colors, styles }: {
     <View style={styles.calWrap}>
       <View style={styles.calHeader}>
         <Pressable onPress={() => shiftMonth(-1)} style={({ pressed }) => [styles.calNav, pressed && styles.pressed]}>
-          <Text style={styles.calNavText}>‹</Text>
+          <AppIcon name="chevron-left" size={23} color={colors.text} />
         </Pressable>
         <Text style={styles.calMonth}>{monthLabel}</Text>
         <Pressable onPress={() => shiftMonth(1)} style={({ pressed }) => [styles.calNav, pressed && styles.pressed]}>
-          <Text style={styles.calNavText}>›</Text>
+          <AppIcon name="chevron-right" size={23} color={colors.text} />
         </Pressable>
       </View>
       <View style={styles.calWeekRow}>
@@ -713,14 +715,18 @@ function createStyles(colors: ColorPalette) {
       fontWeight: "400"
     },
     heading: { color: colors.text, fontSize: 30, fontWeight: "800" },
+    scroll: {
+      flex: 1,
+      backgroundColor: colors.bg
+    },
     list: {
       paddingHorizontal: 24,
       paddingTop: 20,
       paddingBottom: 100,
       gap: 24
     },
-    emptyList: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 24 },
-    section: { gap: 12 },
+    emptyList: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 24, backgroundColor: colors.bg },
+    section: { gap: 12, backgroundColor: colors.bg },
     sectionCards: { gap: 12 },
     sectionTitle: {
       color: colors.muted3,
@@ -728,70 +734,95 @@ function createStyles(colors: ColorPalette) {
       fontWeight: "800",
       letterSpacing: 1.2
     },
+    // Outer wrapper clips the action layer + card to the same radius so
+    // nothing peeks past the rounded corners. Background transparent —
+    // any color underneath would bleed through translucent rgba action tints.
     rowShell: {
       minHeight: 96,
       borderRadius: DEADLINE_ROW_RADIUS,
       overflow: "hidden",
-      backgroundColor: colors.bg
+      backgroundColor: "transparent"
     },
+    // Underlay holding the action buttons. Buttons sit at flex-start (done)
+    // and flex-end (edit/delete); the visible middle band is intentionally
+    // covered by the card itself, so transparent here means no bg-color
+    // hairline ever shows on rounded corners.
     swipeActionLayer: {
       ...StyleSheet.absoluteFillObject,
       minHeight: 96,
       flexDirection: "row",
       alignItems: "stretch",
       justifyContent: "space-between",
-      borderRadius: DEADLINE_ROW_RADIUS,
-      overflow: "hidden",
-      backgroundColor: colors.bg
+      backgroundColor: "transparent"
     },
+    // Solid color (not rgba) — translucent tints would let whatever is
+    // underneath the swipe layer bleed through, producing the white halo
+    // the user was seeing on rounded corners.
     swipeDoneArea: {
       width: SWIPE_RIGHT_WIDTH,
+      height: "100%",
+      minHeight: 96,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.greenLight
+      backgroundColor: colors.green
     },
+    // Container for edit + delete on the right. Transparent — the two
+    // children fully fill it (72 + 72 = 144 = SWIPE_LEFT_WIDTH).
     swipeLeftActions: {
       width: SWIPE_LEFT_WIDTH,
+      height: "100%",
+      minHeight: 96,
       flexDirection: "row",
       alignItems: "stretch",
-      justifyContent: "flex-end"
+      justifyContent: "flex-end",
+      backgroundColor: "transparent"
     },
     swipeEditArea: {
       width: SWIPE_LEFT_ACTION_WIDTH,
+      height: "100%",
+      minHeight: 96,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.blueMid
+      backgroundColor: colors.primary
     },
     swipeDeleteArea: {
       width: SWIPE_LEFT_ACTION_WIDTH,
+      height: "100%",
+      minHeight: 96,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.dangerLight
+      backgroundColor: colors.danger
     },
+    // White-on-color contrast for solid action button backgrounds.
     swipeDoneText: {
-      color: colors.greenDark,
+      color: colors.textOnAccent,
       fontSize: 30,
       lineHeight: 32,
       fontWeight: "900"
     },
     swipeEditText: {
-      color: colors.primary,
+      color: colors.textOnAccent,
       fontSize: 27,
       lineHeight: 29,
       fontWeight: "900"
     },
     swipeDeleteText: {
-      color: colors.dangerDark,
+      color: colors.textOnAccent,
       fontSize: 34,
       lineHeight: 34,
       fontWeight: "900"
     },
+    // Animated wrapper that slides the card. Transparent — the inner
+    // `deadline` View carries `colors.surface`. If we set bg here it would
+    // form a 1-2px halo on the rounded corners when translateX moves it
+    // over the action layer (the underlay tint would bleed at the curve).
     swipeCard: {
       borderRadius: DEADLINE_ROW_RADIUS,
-      backgroundColor: colors.bg
+      overflow: "hidden",
+      backgroundColor: "transparent"
     },
     swipeCardActive: {
-      borderRadius: 0
+      borderRadius: DEADLINE_ROW_RADIUS
     },
     deadline: {
       flexDirection: "row",
@@ -803,7 +834,7 @@ function createStyles(colors: ColorPalette) {
       borderColor: colors.border
     },
     deadlineSwiping: {
-      borderRadius: 0
+      borderRadius: DEADLINE_ROW_RADIUS
     },
     deadlineDone: { opacity: 0.52 },
     spine: { width: 5 },

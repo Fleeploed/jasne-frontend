@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Keyboard, LayoutAnimation, Platform, Pressable, RefreshControl, StyleSheet, Text, TextInput, UIManager, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
-
-import { ErrorText, Screen, useColors, type ColorPalette } from "@/components/ui";
+import { Icon } from "@/components/Icon";
+import { ErrorText, Screen, fonts, useColors, type ColorPalette } from "@/components/ui";
 import { listDeadlines } from "@/features/deadlines/deadlinesApi";
 import { getLimits, listScans } from "@/features/scans/scansApi";
 import { formatLocalizedDate, t } from "@/lib/i18n";
 import type { DeadlineResponse, LimitsResponse, ScanListItem } from "@/lib/types";
+
+// Enable LayoutAnimation on Android (iOS has it by default).
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type RowVisual = {
   bg: string;
@@ -35,6 +40,10 @@ export function ScanListScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [doneExpanded, setDoneExpanded] = useState(false);
+  const searchInputRef = useRef<TextInput>(null);
 
   const aliveRef = useRef(true);
   useEffect(() => {
@@ -69,7 +78,11 @@ export function ScanListScreen() {
     }, [load])
   );
 
-  const sections = useMemo(() => splitScans(scans, deadlines), [deadlines, scans]);
+  const filteredScans = useMemo(() => filterScans(scans, deadlines, search), [scans, deadlines, search]);
+  const sections = useMemo(
+    () => splitScans(filteredScans, deadlines, doneExpanded),
+    [deadlines, doneExpanded, filteredScans]
+  );
 
   if (loading) {
     return (
@@ -87,9 +100,30 @@ export function ScanListScreen() {
     router.push({ pathname: "/scan/new", params: { fresh: String(Date.now()) } });
   };
 
+  const toggleSearch = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.create(220, "easeInEaseOut", "opacity"));
+    if (searchOpen) {
+      Keyboard.dismiss();
+      setSearch("");
+      setSearchOpen(false);
+    } else {
+      setSearchOpen(true);
+      // Defer focus to next frame so the input is mounted
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    }
+  };
+
   return (
     <Screen>
-      <HomeHeader styles={styles} colors={colors} />
+      <HomeHeader
+        styles={styles}
+        colors={colors}
+        searchOpen={searchOpen}
+        search={search}
+        onSearch={setSearch}
+        onToggleSearch={toggleSearch}
+        searchInputRef={searchInputRef}
+      />
       <ErrorText message={error} />
       {scanDisabled ? <Text style={styles.warning}>{t("documents.limitReached")}</Text> : null}
       <FlatList
@@ -97,35 +131,94 @@ export function ScanListScreen() {
         keyExtractor={(item) => item.key}
         contentContainerStyle={[styles.list, isEmpty && styles.listEmpty]}
         refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
-        ListHeaderComponent={null}
         ListEmptyComponent={
-          <DocumentsEmpty
-            limits={limits}
-            scanDisabled={scanDisabled}
-            onScan={openNewScan}
-            colors={colors}
-            styles={styles}
-          />
+          search.trim() ? (
+            <SearchEmpty query={search.trim()} colors={colors} styles={styles} />
+          ) : (
+            <DocumentsEmpty
+              limits={limits}
+              scanDisabled={scanDisabled}
+              onScan={openNewScan}
+              colors={colors}
+              styles={styles}
+            />
+          )
         }
         renderItem={({ item }) => {
           if (item.type === "section") return <Text style={styles.sectionHeader}>{item.title}</Text>;
-          return <DocumentRow item={item.scan} deadline={item.deadline} muted={item.muted} colors={colors} styles={styles} categoryStyleList={categoryStyleList} />;
+          if (item.type === "doneToggle") {
+            return (
+              <DoneSectionToggle
+                count={item.count}
+                expanded={item.expanded}
+                onPress={() => setDoneExpanded((prev) => !prev)}
+                colors={colors}
+                styles={styles}
+              />
+            );
+          }
+          return <DocumentRow item={item.scan} deadline={item.deadline} muted={item.muted} query={search} colors={colors} styles={styles} categoryStyleList={categoryStyleList} />;
         }}
       />
-      {isEmpty ? null : (
-        <Pressable
-          disabled={scanDisabled}
-          hitSlop={10}
-          onPress={(event) => {
-            event.stopPropagation();
-            openNewScan();
-          }}
-          style={({ pressed }) => [styles.fab, scanDisabled && styles.fabDisabled, pressed && !scanDisabled && styles.pressed]}
-        >
-          <CameraGlyph color={colors.textOnAccent} />
-        </Pressable>
-      )}
+      <Pressable
+        onPress={openNewScan}
+        disabled={scanDisabled}
+        style={({ pressed }) => [styles.fab, scanDisabled && styles.fabDisabled, pressed && !scanDisabled && { opacity: 0.88, transform: [{ scale: 0.94 }] }]}
+        accessibilityRole="button"
+        accessibilityLabel={t("documents.emptyButton")}
+      >
+        <Icon name="camera" size={24} color={colors.textOnAccent} />
+      </Pressable>
     </Screen>
+  );
+}
+
+function DoneSectionToggle({
+  count,
+  expanded,
+  onPress,
+  colors,
+  styles,
+}: {
+  count: number;
+  expanded: boolean;
+  onPress: () => void;
+  colors: ColorPalette;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.doneToggle, pressed && { opacity: 0.65 }]}
+      accessibilityRole="button"
+      accessibilityLabel={t(expanded ? "documents.doneCollapseAria" : "documents.doneExpandAria", { count })}
+    >
+      <Text style={styles.doneToggleText}>
+        {t("documents.done")} · {count}
+      </Text>
+      <Icon
+        name="chevron-down"
+        size={16}
+        color={colors.muted2}
+        style={expanded ? { transform: [{ rotate: "180deg" }] } : undefined}
+      />
+    </Pressable>
+  );
+}
+
+function SearchEmpty({ query, colors, styles }: {
+  query: string;
+  colors: ColorPalette;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <View style={styles.searchEmpty}>
+      <Icon name="search" size={40} color={colors.muted3} />
+      <Text style={styles.searchEmptyTitle}>{t("documents.searchEmptyTitle")}</Text>
+      <Text style={styles.searchEmptyDetail}>
+        {t("documents.searchEmptyDetail", { query })}
+      </Text>
+    </View>
   );
 }
 
@@ -150,7 +243,7 @@ function DocumentsEmpty({
     <View style={styles.emptyWrap}>
       <View style={styles.emptyHeroIcon}>
         <View style={styles.emptyHeroFile}>
-          <FileGlyphLarge color={colors.primary} />
+          <Icon name="doc-text" size={44} color={colors.primary} />
         </View>
       </View>
       <Text style={styles.emptyHeroTitle}>{t("documents.emptyTitle")}</Text>
@@ -165,7 +258,7 @@ function DocumentsEmpty({
           pressed && !scanDisabled && styles.pressed,
         ]}
       >
-        <CameraGlyph color={colors.textOnAccent} />
+        <Icon name="camera" size={24} color={colors.textOnAccent} />
         <Text style={styles.emptyCtaText}>{t("documents.emptyButton")}</Text>
       </Pressable>
 
@@ -174,41 +267,75 @@ function DocumentsEmpty({
   );
 }
 
-function FileGlyphLarge({ color }: { color: string }) {
-  return (
-    <View style={fileGlyphLarge.wrap}>
-      <View style={[fileGlyphLarge.outline, { borderColor: color }]}>
-        <View style={[fileGlyphLarge.fold, { borderLeftColor: color, borderBottomColor: color }]} />
-        <View style={[fileGlyphLarge.line, { backgroundColor: color }]} />
-        <View style={[fileGlyphLarge.line, { backgroundColor: color, marginTop: 4 }]} />
-        <View style={[fileGlyphLarge.lineShort, { backgroundColor: color, marginTop: 4 }]} />
+function HomeHeader({
+  styles,
+  colors,
+  searchOpen,
+  search,
+  onSearch,
+  onToggleSearch,
+  searchInputRef,
+}: {
+  styles: ReturnType<typeof createStyles>;
+  colors: ColorPalette;
+  searchOpen: boolean;
+  search: string;
+  onSearch: (text: string) => void;
+  onToggleSearch: () => void;
+  searchInputRef: React.RefObject<TextInput>;
+}) {
+  if (searchOpen) {
+    return (
+      <View style={styles.header}>
+        <View style={styles.searchBar}>
+          <Icon name="search" size={18} color={colors.muted2} style={{ marginRight: 8 }} />
+          <TextInput
+            ref={searchInputRef}
+            value={search}
+            onChangeText={onSearch}
+            placeholder={t("documents.searchPlaceholder")}
+            placeholderTextColor={colors.muted3}
+            style={styles.searchInput}
+            returnKeyType="search"
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="never"
+          />
+          {search.length > 0 ? (
+            <Pressable
+              onPress={() => onSearch("")}
+              hitSlop={10}
+              style={styles.searchClear}
+              accessibilityLabel={t("documents.searchClearAria")}
+            >
+              <Icon name="x" size={18} color={colors.muted3} />
+            </Pressable>
+          ) : null}
+        </View>
+        <Pressable
+          onPress={onToggleSearch}
+          hitSlop={8}
+          style={({ pressed }) => [styles.searchCancel, pressed && { opacity: 0.6 }]}
+        >
+          <Text style={styles.searchCancelText}>{t("common.cancel")}</Text>
+        </Pressable>
       </View>
-    </View>
-  );
-}
+    );
+  }
 
-const fileGlyphLarge = StyleSheet.create({
-  wrap: { width: 44, height: 52, alignItems: "center", justifyContent: "center" },
-  outline: { width: 38, height: 48, borderRadius: 5, borderWidth: 2.4, padding: 6, paddingTop: 18 },
-  fold: { position: "absolute", right: -2.4, top: -2.4, width: 11, height: 11, borderLeftWidth: 2.4, borderBottomWidth: 2.4, backgroundColor: "transparent" },
-  line: { height: 2, borderRadius: 1, alignSelf: "stretch" },
-  lineShort: { height: 2, borderRadius: 1, width: "65%" },
-});
-
-function HomeHeader({ styles, colors }: { styles: ReturnType<typeof createStyles>; colors: ColorPalette }) {
   return (
     <View style={styles.header}>
       <Text style={styles.logo}>jasně</Text>
       <View style={styles.headerActions}>
-        <View style={styles.searchIcon}>
-          <View style={[styles.searchCircle, { borderColor: colors.muted2 }]} />
-          <View style={[styles.searchHandle, { backgroundColor: colors.muted2 }]} />
-        </View>
-        <View style={styles.bellIcon}>
-          <View style={[styles.bellDome, { borderColor: colors.muted2 }]} />
-          <View style={[styles.bellBase, { backgroundColor: colors.muted2 }]} />
-          <View style={[styles.notifyDot, { backgroundColor: colors.danger, borderColor: colors.bg }]} />
-        </View>
+        <Pressable
+          onPress={onToggleSearch}
+          hitSlop={6}
+          style={({ pressed }) => [styles.searchIcon, pressed && { opacity: 0.6 }]}
+          accessibilityRole="button"
+          accessibilityLabel={t("documents.searchAria")}
+        >
+          <Icon name="search" size={22} color={colors.muted2} />
+        </Pressable>
       </View>
     </View>
   );
@@ -245,7 +372,7 @@ function ScanCTACard({ limits, scanDisabled, onScan, styles, colors }: {
           onPress={onScan}
           style={({ pressed }) => [styles.ctaButton, scanDisabled && styles.ctaButtonDisabled, pressed && !scanDisabled && styles.pressed]}
         >
-          <CameraGlyph color={colors.text} />
+          <Icon name="camera" size={22} color={colors.text} />
           <Text style={styles.ctaButtonText}>{t("documents.ctaButton")}</Text>
         </Pressable>
         <Text style={styles.ctaUsage}>{used} / {max} · {limits?.plan === "pro" ? t("documents.proPlan") : t("documents.freePlan")}</Text>
@@ -254,10 +381,11 @@ function ScanCTACard({ limits, scanDisabled, onScan, styles, colors }: {
   );
 }
 
-function DocumentRow({ item, deadline, muted, colors, styles, categoryStyleList }: {
+function DocumentRow({ item, deadline, muted, query, colors, styles, categoryStyleList }: {
   item: ScanListItem;
   deadline?: DeadlineResponse;
   muted?: boolean;
+  query?: string;
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
   categoryStyleList: ReturnType<typeof getCategoryStyles>;
@@ -265,24 +393,50 @@ function DocumentRow({ item, deadline, muted, colors, styles, categoryStyleList 
   const visual = getDocVisual(item, colors, categoryStyleList);
   const badge = muted || !deadline ? null : getDeadlineBadge(deadline.due_date);
   const badgeColors = deadline ? getDeadlineBadgeColors(deadline.due_date, colors) : visual;
+  const secondaryBadge = muted ? t("documents.done") : t("scan.pageCount", { count: item.page_count });
 
   return (
-    <Pressable style={({ pressed }) => [styles.row, pressed && styles.pressed]} onPress={() => router.push(`/scan/${item.id}`)}>
-      <View style={[styles.thumb, { backgroundColor: visual.bg }]}>
-        <FileGlyph color={visual.fg} />
+    <Pressable
+      style={({ pressed }) => [
+        styles.row,
+        muted && styles.rowMuted,
+        pressed && { opacity: 0.92, transform: [{ scale: 0.99 }] }
+      ]}
+      onPress={() => router.push(`/scan/${item.id}`)}
+    >
+      <View style={styles.rowTop}>
+        <View style={[styles.thumb, { backgroundColor: visual.bg }]}>
+          <Icon name="doc-text" size={20} color={visual.fg} />
+        </View>
+        <View style={styles.rowHeadText}>
+          <View style={styles.rowMetaLine}>
+            <Text style={styles.rowEyebrow} numberOfLines={1}>{getDocMeta(item)}</Text>
+            <Text style={styles.rowTime}>{formatDate(getActivityDate(item))}</Text>
+          </View>
+          <Text style={[styles.rowTitle, muted && styles.rowTitleMuted]} numberOfLines={1}>
+            {highlightMatch(getTitle(item), query, styles.highlight)}
+          </Text>
+          {item.sender ? (
+            <Text style={styles.rowSender} numberOfLines={1}>
+              {highlightMatch(item.sender, query, styles.highlight)}
+            </Text>
+          ) : null}
+        </View>
       </View>
-      <View style={styles.rowMid}>
-        <Text style={[styles.rowTitle, muted && styles.rowTitleMuted]} numberOfLines={1}>{getTitle(item)}</Text>
-        <Text style={styles.rowPreview} numberOfLines={1}>{item.summary ?? t("documents.analysisReady")}</Text>
-      </View>
-      <View style={styles.rowEnd}>
-        <Text style={styles.rowTime}>{formatDate(getActivityDate(item))}</Text>
+      {item.summary ? (
+        <Text style={styles.rowPreview} numberOfLines={2}>
+          {highlightMatch(item.summary, query, styles.highlight)}
+        </Text>
+      ) : null}
+      <View style={styles.rowPills}>
         {badge ? (
           <View style={[styles.badge, { backgroundColor: badgeColors.badgeBg ?? colors.blueSoft }]}>
             <Text style={[styles.badgeText, { color: badgeColors.badgeFg ?? colors.primary }]}>{badge}</Text>
           </View>
         ) : null}
-        <Text style={styles.rowChevron}>›</Text>
+        <View style={[styles.badge, styles.secondaryBadge]}>
+          <Text style={[styles.badgeText, styles.secondaryBadgeText]}>{secondaryBadge}</Text>
+        </View>
       </View>
     </Pressable>
   );
@@ -292,7 +446,61 @@ function getActivityDate(scan: ScanListItem) {
   return scan.last_message_at ?? scan.created_at;
 }
 
-function splitScans(scans: ScanListItem[], deadlines: DeadlineResponse[]) {
+function highlightMatch(text: string, query: string | undefined, highlightStyle: object) {
+  const q = query?.trim();
+  if (!q) return text;
+  const lowerText = text.toLowerCase();
+  const lowerQ = q.toLowerCase();
+  const idx = lowerText.indexOf(lowerQ);
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <Text style={highlightStyle}>{text.slice(idx, idx + q.length)}</Text>
+      {text.slice(idx + q.length)}
+    </>
+  );
+}
+
+function filterScans(scans: ScanListItem[], deadlines: DeadlineResponse[], query: string): ScanListItem[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return scans;
+
+  // Pre-compute which scan ids have a deadline that matches the query
+  const matchingScanIdsByDeadline = new Set<string>();
+  deadlines.forEach((d) => {
+    if (!d.scan_id) return;
+    const deadlineHaystack = [d.title, d.description, d.due_date]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    if (deadlineHaystack.includes(q)) {
+      matchingScanIdsByDeadline.add(d.scan_id);
+    }
+  });
+
+  return scans.filter((scan) => {
+    if (matchingScanIdsByDeadline.has(scan.id)) return true;
+    const haystack = [
+      scan.document_type_cz,
+      scan.doc_type,
+      scan.category,
+      scan.sender,
+      scan.summary,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q);
+  });
+}
+
+type SectionRow = { key: string; type: "section"; title: string };
+type DoneToggleRow = { key: string; type: "doneToggle"; count: number; expanded: boolean };
+type ScanRow = { key: string; type: "scan"; scan: ScanListItem; deadline?: DeadlineResponse; muted?: boolean };
+type ListRow = SectionRow | DoneToggleRow | ScanRow;
+
+function splitScans(scans: ScanListItem[], deadlines: DeadlineResponse[], doneExpanded: boolean) {
   const byScanId = new Map<string, DeadlineResponse>();
   [...deadlines]
     .filter((deadline) => Boolean(deadline.scan_id))
@@ -306,18 +514,18 @@ function splitScans(scans: ScanListItem[], deadlines: DeadlineResponse[]) {
   const scansWithDeadlines = sorted.filter((scan) => byScanId.has(scan.id));
   const active = scansWithDeadlines.length ? scansWithDeadlines : sorted;
   const done = scansWithDeadlines.length ? sorted.filter((scan) => !byScanId.has(scan.id)) : [];
-  const rows: Array<
-    | { key: string; type: "section"; title: string }
-    | { key: string; type: "scan"; scan: ScanListItem; deadline?: DeadlineResponse; muted?: boolean }
-  > = [];
+  const rows: ListRow[] = [];
 
   if (active.length) {
     rows.push({ key: "section-active", type: "section", title: t("documents.active") });
     active.forEach((scan) => rows.push({ key: scan.id, type: "scan", scan, deadline: byScanId.get(scan.id) }));
   }
   if (done.length) {
-    rows.push({ key: "section-done", type: "section", title: t("documents.done") });
-    done.forEach((scan) => rows.push({ key: scan.id, type: "scan", scan, muted: true }));
+    // Compact collapsible header: "Vyřízeno (N) ▾". Items only render when expanded.
+    rows.push({ key: "section-done-toggle", type: "doneToggle", count: done.length, expanded: doneExpanded });
+    if (doneExpanded) {
+      done.forEach((scan) => rows.push({ key: scan.id, type: "scan", scan, muted: true }));
+    }
   }
 
   return { rows };
@@ -327,6 +535,16 @@ function getTitle(item: ScanListItem) {
   if (item.document_type_cz) return item.document_type_cz;
   const raw = item.doc_type ?? item.category ?? t("common.document");
   return raw.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function getDocMeta(item: ScanListItem) {
+  const category = formatDocLabel(item.category ?? item.doc_type);
+  return `${t("common.document").toUpperCase()} · ${category}`;
+}
+
+function formatDocLabel(value?: string | null) {
+  if (!value) return t("common.document");
+  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function getDocVisual(item: ScanListItem, colors: ColorPalette, categoryStyleList: ReturnType<typeof getCategoryStyles>): RowVisual {
@@ -356,78 +574,139 @@ function getDaysUntil(value: string) {
   return Math.ceil((dueDate.getTime() - today.getTime()) / 86_400_000);
 }
 
+/**
+ * Unified relative timestamp for chat-list rows. Mirrors the Telegram /
+ * Apple Mail pattern so the column never mixes "7:14 PM" with "vчera" with
+ * "12. 5." styles inconsistently.
+ *
+ *   today           → "19:14"           (24-hour, no AM/PM marker)
+ *   yesterday       → "Včera" / "Вчера"
+ *   this year       → "12. května"      (day + short month)
+ *   older           → "12. 5. 2024"     (day + month + year)
+ */
 function formatDate(value: string) {
   const date = new Date(value);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  if (date.toDateString() === today.toDateString())
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const now = new Date();
+
+  const sameDay = date.toDateString() === now.toDateString();
+  if (sameDay) {
+    return formatLocalizedDate(date, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
   if (date.toDateString() === yesterday.toDateString()) return t("common.yesterday");
-  return formatLocalizedDate(date, { day: "numeric", month: "short" });
+
+  const sameYear = date.getFullYear() === now.getFullYear();
+  if (sameYear) {
+    return formatLocalizedDate(date, { day: "numeric", month: "short" });
+  }
+  return formatLocalizedDate(date, { day: "numeric", month: "numeric", year: "numeric" });
 }
-
-function FileGlyph({ color }: { color: string }) {
-  return (
-    <View style={[fileGlyphBase.wrap, { borderColor: color }]}>
-      <View style={[fileGlyphBase.fold, { borderLeftColor: color, borderBottomColor: color }]} />
-    </View>
-  );
-}
-
-const fileGlyphBase = StyleSheet.create({
-  wrap: { width: 15, height: 18, borderRadius: 2, borderWidth: 1.4 },
-  fold: { position: "absolute", right: -1.4, top: -1.4, width: 6, height: 6, borderLeftWidth: 1.4, borderBottomWidth: 1.4, backgroundColor: "transparent" }
-});
-
-function CameraGlyph({ color }: { color: string }) {
-  return (
-    <View style={cameraGlyphBase.wrap}>
-      <View style={[cameraGlyphBase.body, { borderColor: color }]}>
-        <View style={[cameraGlyphBase.top, { backgroundColor: color }]} />
-        <View style={[cameraGlyphBase.lens, { borderColor: color }]} />
-      </View>
-    </View>
-  );
-}
-
-const cameraGlyphBase = StyleSheet.create({
-  wrap: { width: 26, height: 22, alignItems: "center", justifyContent: "center" },
-  body: { width: 24, height: 17, borderRadius: 4, borderWidth: 1.8, alignItems: "center", justifyContent: "center" },
-  top: { position: "absolute", top: -5, width: 9, height: 5, borderTopLeftRadius: 3, borderTopRightRadius: 3 },
-  lens: { width: 8, height: 8, borderRadius: 4, borderWidth: 1.7 }
-});
 
 function createStyles(colors: ColorPalette) {
   return StyleSheet.create({
     center: { flex: 1, alignItems: "center", justifyContent: "center" },
     header: {
-      minHeight: 72,
-      paddingHorizontal: 20,
-      paddingTop: 10,
-      paddingBottom: 14,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
+      minHeight: 61,
+      paddingHorizontal: 16,
+      paddingTop: 8,
+      paddingBottom: 12,
       backgroundColor: colors.bg,
       flexDirection: "row",
-      alignItems: "flex-end",
-      justifyContent: "space-between"
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8,
     },
     logo: {
       color: colors.primary,
-      fontSize: 26,
-      lineHeight: 28,
-      fontWeight: "800",
-      letterSpacing: -1
+      fontSize: 30,
+      lineHeight: 39,
+      fontFamily: "Geist_600SemiBold",
+      fontWeight: "600",
+      letterSpacing: -1.2
     },
     headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
     searchIcon: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
-    searchCircle: { width: 15, height: 15, borderRadius: 8, borderWidth: 1.6 },
-    searchHandle: { width: 8, height: 1.6, borderRadius: 2, transform: [{ rotate: "45deg" }], marginTop: -1, marginLeft: 12 },
-    bellIcon: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
-    bellDome: { width: 15, height: 16, borderTopLeftRadius: 9, borderTopRightRadius: 9, borderWidth: 1.5, borderBottomWidth: 0 },
-    bellBase: { width: 19, height: 1.5, borderRadius: 2, marginTop: -1 },
-    notifyDot: { position: "absolute", right: 8, top: 9, width: 7, height: 7, borderRadius: 4, borderWidth: 1.5 },
+    searchBar: {
+      flex: 1,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      flexDirection: "row",
+      alignItems: "center",
+      paddingLeft: 12,
+      paddingRight: 6,
+    },
+    searchInput: {
+      flex: 1,
+      color: colors.text,
+      fontFamily: fonts.body,
+      fontSize: 15,
+      paddingVertical: 0,
+    },
+    searchClear: {
+      width: 24,
+      height: 24,
+      alignItems: "center",
+      justifyContent: "center",
+      marginLeft: 6,
+    },
+    searchCancel: {
+      paddingHorizontal: 4,
+      paddingVertical: 6,
+    },
+    searchCancelText: {
+      color: colors.primary,
+      fontFamily: fonts.bodyMedium,
+      fontSize: 15,
+    },
+    searchEmpty: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 32,
+      paddingVertical: 64,
+      gap: 12,
+    },
+    searchEmptyTitle: {
+      color: colors.text,
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 18,
+      textAlign: "center",
+      marginTop: 4,
+    },
+    searchEmptyDetail: {
+      color: colors.muted2,
+      fontFamily: fonts.body,
+      fontSize: 14,
+      lineHeight: 20,
+      textAlign: "center",
+      maxWidth: 280,
+    },
+    highlight: {
+      backgroundColor: colors.amberLight,
+      color: colors.amberDark,
+      fontWeight: "700",
+    },
+    doneToggle: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: 8,
+      paddingHorizontal: 2,
+      marginTop: 4,
+    },
+    doneToggleText: {
+      color: colors.muted2,
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 11,
+      fontWeight: "600",
+      letterSpacing: 1.54,
+      textTransform: "uppercase",
+    },
     ctaCard: {
       marginHorizontal: 16,
       marginTop: 14,
@@ -482,8 +761,9 @@ function createStyles(colors: ColorPalette) {
     },
     list: {
       paddingHorizontal: 16,
-      paddingBottom: 132,
-      gap: 8,
+      paddingTop: 20,
+      paddingBottom: 120,
+      gap: 14,
       backgroundColor: colors.bg
     },
     listEmpty: { flexGrow: 1, paddingHorizontal: 0, paddingBottom: 0 },
@@ -552,38 +832,73 @@ function createStyles(colors: ColorPalette) {
     },
     sectionHeader: {
       color: colors.muted2,
-      fontSize: 13,
+      fontSize: 11,
       fontWeight: "600",
-      letterSpacing: 0.4,
+      letterSpacing: 1.54,
       textTransform: "uppercase",
-      paddingHorizontal: 4,
-      paddingTop: 16,
-      paddingBottom: 4
+      paddingHorizontal: 0,
+      paddingTop: 0,
+      paddingBottom: 0
     },
     row: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 14,
-      paddingHorizontal: 14,
-      paddingVertical: 14,
+      gap: 12,
+      padding: 16,
       borderRadius: 20,
       backgroundColor: colors.surface,
-      shadowColor: "#1E1B17",
-      shadowOffset: { width: 0, height: 1 },
+      borderWidth: 1,
+      borderColor: colors.borderSoft,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.04,
-      shadowRadius: 2,
+      shadowRadius: 12,
       elevation: 1
     },
-    thumb: { width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-    rowMid: { flex: 1, minWidth: 0, gap: 3 },
-    rowTitle: { color: colors.text, fontSize: 15, fontWeight: "500" },
+    rowMuted: { opacity: 0.65 },
+    rowTop: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+    thumb: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+    rowHeadText: { flex: 1, minWidth: 0 },
+    rowMetaLine: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 8 },
+    rowEyebrow: {
+      flex: 1,
+      minWidth: 0,
+      color: colors.muted3,
+      fontSize: 10,
+      lineHeight: 12,
+      fontWeight: "600",
+      letterSpacing: 1.4,
+      textTransform: "uppercase"
+    },
+    rowTitle: {
+      color: colors.text,
+      fontFamily: "Geist_600SemiBold",
+      fontSize: 17,
+      lineHeight: 21.25,
+      fontWeight: "600",
+      letterSpacing: -0.17,
+      marginTop: 2
+    },
     rowTitleMuted: { color: colors.muted2 },
-    rowPreview: { color: colors.muted, fontSize: 13, lineHeight: 18 },
-    rowEnd: { alignItems: "flex-end", gap: 5 },
-    rowTime: { color: colors.muted2, fontSize: 12 },
-    badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+    rowSender: {
+      color: colors.muted2,
+      fontFamily: fonts.body,
+      fontSize: 13,
+      lineHeight: 17,
+      marginTop: 2
+    },
+    rowPreview: { color: colors.muted, fontSize: 14.5, lineHeight: 21.025 },
+    rowPills: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+    rowTime: { color: colors.muted3, fontSize: 12, lineHeight: 14.5 },
+    badge: {
+      minHeight: 24,
+      paddingHorizontal: 10,
+      borderRadius: 999,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center"
+    },
     badgeText: { fontSize: 12, fontWeight: "600" },
-    rowChevron: { color: colors.muted3, fontSize: 22, lineHeight: 26, fontWeight: "300", marginTop: -2 },
+    secondaryBadge: { backgroundColor: colors.blueSoft },
+    secondaryBadgeText: { color: colors.primary },
     fab: {
       position: "absolute",
       right: 24,
@@ -604,6 +919,6 @@ function createStyles(colors: ColorPalette) {
       zIndex: 100
     },
     fabDisabled: { opacity: 0.45 },
-    pressed: { opacity: 0.72 }
+    pressed: { opacity: 0.85 }
   });
 }

@@ -12,6 +12,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AppIcon } from "@/components/AppIcon";
+
 export const lightColors = {
   bg: "#F9F7F4",
   surface: "#FDFBF8",
@@ -315,7 +317,7 @@ export function BackButton({ onPress }: { onPress: () => void }) {
         opacity: pressed ? 0.6 : 1,
       })}
     >
-      <Text style={{ color: colors.text, fontSize: 28, lineHeight: 32, fontWeight: "300", marginLeft: -10 }}>‹</Text>
+      <AppIcon name="chevron-left" size={28} color={colors.text} strokeWidth={1.9} />
     </Pressable>
   );
 }

@@ -5,6 +5,7 @@ import * as WebBrowser from "expo-web-browser";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AppIcon } from "@/components/AppIcon";
 import { supabase } from "@/lib/supabase";
 import { AuthGradient } from "@/components/AuthGradient";
 import { Button, fonts, useColors, type ColorPalette } from "@/components/ui";
@@ -146,7 +147,7 @@ export function AuthScreen({ initialMode = "register" }: { initialMode?: "regist
               onPress={() => switchMode("login")}
               style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
             >
-              <Text style={styles.backIcon}>‹</Text>
+              <AppIcon name="chevron-left" size={22} color={colors.text} />
               <Text style={styles.backText}>{t("common.back")}</Text>
             </Pressable>
           ) : null}
@@ -248,7 +249,7 @@ export function AuthScreen({ initialMode = "register" }: { initialMode?: "regist
           {formMessage ? <Text style={styles.formMessage}>{formMessage}</Text> : null}
           {mode === "forgot" ? (
             <View style={styles.infoBox}>
-              <Text style={styles.infoIcon}>i</Text>
+              <AppIcon name="info" size={18} color={colors.primary} />
               <Text style={styles.infoText}>{t("auth.resetHint")}</Text>
             </View>
           ) : null}

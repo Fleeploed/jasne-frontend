@@ -33,8 +33,9 @@ export async function getScan(scanId: string) {
   return apiFetch<ScanResponse>(`/scans/${scanId}`);
 }
 
-export async function getScanImageUrls(scanId: string) {
-  const response = await apiFetch<{ urls: string[] }>(`/scans/${scanId}/image-urls`);
+export async function getScanImageUrls(scanId: string, options: { renderPdf?: boolean } = {}) {
+  const query = options.renderPdf ? "?render_pdf=true" : "";
+  const response = await apiFetch<{ urls: string[] }>(`/scans/${scanId}/image-urls${query}`);
   return response.urls;
 }
 

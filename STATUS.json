@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "meta": {
     "project": "Jasne frontend",
-    "snapshot_date": "2026-05-12",
+    "snapshot_date": "2026-05-17",
     "repo_path": "/Users/alisheribrayev/Documents/Jasne/jasne-frontend",
     "app_name": "Jasne",
     "current_version": "0.1.0",
-    "phase": "Expo MVP core loop in active development",
+    "phase": "Expo MVP core loop; UX polish pass on chat, search, deadlines",
     "backend_live_url": "https://jasne-backend-production.up.railway.app",
     "backend_repo_path": "/Users/alisheribrayev/Documents/Jasne/jasne-backend"
   },
@@ -24,7 +24,14 @@
       "expo_go_status": "partial only",
       "expo_go_notes": [
         "Core JS screens can run in Expo Go.",
-        "Native document scanner, custom URL schemes, OAuth redirects, and password reset links should be tested in a development build."
+        "Native document scanner, custom URL schemes, OAuth redirects, and password reset links should be tested in a development build.",
+        "Document scanner uses lazy dynamic import + TurboModuleRegistry.get('DocumentScanner') guard so app loads cleanly in Expo Go and only the scanner button errors when pressed."
+      ],
+      "added_packages_this_session": [
+        "expo-navigation-bar (Android system nav bar coloring synced with theme)",
+        "@expo/ngrok (tunneled dev server for testing on phones over different networks)",
+        "react-native-purchases ~10.1 (RevenueCat SDK, native module)",
+        "react-native-purchases-ui ~10.1 (paywall UI primitives, available for future use)"
       ]
     },
     "app_identity": {
@@ -60,7 +67,9 @@
         "EXPO_PUBLIC_API_BASE_URL"
       ],
       "optional_public_env": [
-        "EXPO_PUBLIC_APP_LOCALE"
+        "EXPO_PUBLIC_APP_LOCALE",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY",
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY"
       ],
       "current_api_base_url_default": "https://jasne-backend-production.up.railway.app",
       "secrets_policy": "STATUS.json intentionally does not store anon key or other secrets."
@@ -99,14 +108,14 @@
       "root": [
         {
           "file": "app/_layout.tsx",
-          "purpose": "Safe area, locale provider, auth provider, root auth/app switch"
+          "purpose": "Safe area, locale provider, auth provider, root Stack with scan/[id] and scan/new pushed over tabs; iOS edge-swipe back enabled here"
         }
       ],
       "tabs": [
         {
           "file": "app/(app)/_layout.tsx",
           "route": "(app)",
-          "purpose": "Bottom tab shell: documents, deadlines, profile"
+          "purpose": "Bottom tab shell: documents, deadlines, profile; Android nav-bar themed via expo-navigation-bar"
         },
         {
           "file": "app/(app)/index.tsx",
@@ -126,30 +135,40 @@
       ],
       "scan": [
         {
-          "file": "app/(app)/scan/new.tsx",
+          "file": "app/scan/new.tsx",
           "route": "/scan/new",
-          "screen": "New scan"
+          "screen": "New scan",
+          "notes": "moved to root Stack so iOS edge swipe-back works"
         },
         {
-          "file": "app/(app)/scan/[id].tsx",
+          "file": "app/scan/[id].tsx",
           "route": "/scan/:id",
-          "screen": "Chat thread with result card"
+          "screen": "Chat thread with result card",
+          "notes": "key={id} on ChatThreadScreen forces remount to avoid previous-chat flash"
         }
       ]
     },
     "modules": {
       "components": {
-        "file": "src/components/ui.tsx",
-        "contains": [
-          "shared colors",
+        "files": [
+          "src/components/ui.tsx",
+          "src/components/ActionSheet.tsx",
+          "src/components/PaywallSheet.tsx"
+        ],
+        "ui_contains": [
+          "shared colors (lightColors warm-paper palette + darkColors)",
+          "ThemeProvider syncs Android navigation bar via expo-navigation-bar",
           "Screen",
           "AppBar",
           "Button",
           "IconButton",
           "Field",
           "EmptyState",
-          "ErrorText"
-        ]
+          "ErrorText",
+          "fonts tokens (Geist / Inter)"
+        ],
+        "action_sheet": "Reusable iOS-style bottom sheet (Modal + slide). Accepts title/subtitle/actions[]; supports destructive style and Ionicons. Used by DeadlinesScreen long-press menu.",
+        "paywall_sheet": "Custom Modal scaffold — SDK wiring deferred (RevenueCat)."
       },
       "auth": {
         "files": [
@@ -191,7 +210,17 @@
           "pending_chat_progress": true,
           "navigate_to_created_thread_on_done": true,
           "storage_upload_error_mapping": true,
-          "limits_gate_before_scan": true
+          "limits_gate_before_scan": true,
+          "doc_card_v2_layout": true,
+          "sender_line_in_card": true,
+          "inline_header_search": true,
+          "search_cancel_button": true,
+          "search_layout_animation": true,
+          "search_match_highlight": true,
+          "search_includes_deadlines": true,
+          "search_empty_state": true,
+          "fab_camera_button": true,
+          "bell_icon_removed": true
         },
         "storage_upload_contract": {
           "bucket": "documents",
@@ -220,7 +249,15 @@
           "chat_stream_sse": true,
           "assistant_token_append": true,
           "input_disabled_while_streaming": true,
-          "free_plan_chat_warning": true
+          "free_plan_chat_warning": true,
+          "free_vs_pro_locked_composer": true,
+          "keyboard_avoiding_view_wraps_full_content": true,
+          "platform_aware_footer_padding": true,
+          "scroll_position_memory_per_scan": true,
+          "auto_scroll_only_if_at_bottom": true,
+          "key_remount_per_scan_id_no_flash": true,
+          "deadline_card_three_tone_urgency": true,
+          "footer_transparent_no_hairline": true
         }
       },
       "deadlines": {
@@ -238,9 +275,13 @@
           "deadline_delete": true,
           "swipe_left_edit_delete": true,
           "swipe_right_complete": true,
-          "completed_swipe_disabled": true
+          "completed_swipe_disabled": true,
+          "long_press_action_sheet": true,
+          "haptic_on_long_press": true,
+          "day_month_baseline_date_layout": true,
+          "three_tone_urgency_pill": true
         },
-        "ux_state": "Dark Jasne design system applied, swipe cards still being iterated visually."
+        "ux_state": "v2 design tokens applied (warm-paper light + dark). Long-press opens shared ActionSheet for edit/delete/mark-done. Swipe gestures retained as alternative."
       },
       "localization": {
         "files": [
@@ -262,14 +303,16 @@
           "src/lib/config.ts",
           "src/lib/sse.ts",
           "src/lib/supabase.ts",
-          "src/lib/types.ts"
+          "src/lib/types.ts",
+          "src/lib/purchases.ts"
         ],
         "responsibilities": [
           "runtime env config",
           "Supabase client",
           "authorized API fetch",
           "SSE parsing",
-          "shared API response types"
+          "shared API response types",
+          "RevenueCat configure/identify/clear wrapped with Expo Go + missing-module guards"
         ]
       }
     },
@@ -431,7 +474,28 @@
     { "id": "fe-fix-8", "area": "ChatThreadScreen", "fix": "Make onOpenViewer optional on DocumentAttachmentBubble — crash with multiple images fixed" },
     { "id": "fe-fix-9", "area": "ProfileScreen", "fix": "Move SHEET_HIDDEN constant to module level (was re-created on every render)" },
     { "id": "fe-fix-10", "area": "ProfileScreen", "fix": "Add aliveRef + cleanup to prevent setState after unmount in loadLimits" },
-    { "id": "fe-fix-11", "area": "ScanListScreen", "fix": "Add aliveRef + bail-out in load callback to prevent setState after unmount" }
+    { "id": "fe-fix-11", "area": "ScanListScreen", "fix": "Add aliveRef + bail-out in load callback to prevent setState after unmount" },
+    { "id": "fe-fix-12", "area": "ui.tsx", "fix": "Rewrote lightColors palette with v2 design tokens (warm paper bg, deeper amber/danger/green/pro) and added bgDeep / surface3 / borderSoft to both schemes for type parity" },
+    { "id": "fe-fix-13", "area": "ChatThreadScreen", "fix": "Footer background changed from hardcoded rgba(15,13,11,0.94) to colors.bg so light theme no longer shows a black chat bar" },
+    { "id": "fe-fix-14", "area": "ChatThreadScreen", "fix": "Urgency pill now uses three-tone helper (urgent < 7d red, soon ≤ 30d amber, later green) instead of always red" },
+    { "id": "fe-fix-15", "area": "ChatThreadScreen", "fix": "LockedChatComposer split into free (paywall CTA) vs pro-exhausted (counter) renderings; receives plan and real questionsUsed instead of duplicate displayQuestionLimit" },
+    { "id": "fe-fix-16", "area": "ChatThreadScreen", "fix": "KeyboardAvoidingView now wraps the full content area (FlatList + footer in normal flow) so messages compress and footer pins above the keyboard; previously absolute footer caused messages to hide under the keyboard" },
+    { "id": "fe-fix-17", "area": "ChatThreadScreen", "fix": "Keyboard listener resets footer paddingBottom when keyboard is open so the input pill sits flush against the keyboard with no safe-area gap" },
+    { "id": "fe-fix-18", "area": "ChatThreadScreen", "fix": "Platform-aware footer padding: iOS max(insets.bottom, 10) for home indicator, Android raw insets.bottom; KeyboardAvoidingView behavior undefined on Android to avoid double-resize with system adjustResize" },
+    { "id": "fe-fix-19", "area": "ChatThreadScreen", "fix": "Per-scan in-memory scrollOffset Map + onScroll/onContentSizeChange handlers restore scroll position when reopening a chat and only auto-scroll on new tokens when user is near bottom" },
+    { "id": "fe-fix-20", "area": "app/scan/[id]", "fix": "Route key={params.id} forces a fresh mount on scan change, eliminating the flash of the previous chat's data while the new one loads" },
+    { "id": "fe-fix-21", "area": "ui.tsx ThemeProvider", "fix": "Sync Android system navigation bar background and button style with current theme via expo-navigation-bar useEffect" },
+    { "id": "fe-fix-22", "area": "tabs/_layout", "fix": "Platform-aware tab bar paddingBottom — iOS uses safe area for home indicator, Android clamps to ≤8pt to avoid wasted space under gesture nav" },
+    { "id": "fe-fix-23", "area": "app/_layout", "fix": "Moved scan/[id] and scan/new from Tabs to root Stack so iOS edge swipe-back gesture works; animation slide_from_right" },
+    { "id": "fe-fix-24", "area": "ScanListScreen", "fix": "Replaced broken hand-drawn search/bell glyph Views with Ionicons; removed bell entirely; search now inline in AppBar with Cancel button and LayoutAnimation transition" },
+    { "id": "fe-fix-25", "area": "ScanListScreen", "fix": "Added SearchEmpty state, amber-highlight on matched substrings in title/sender/summary, and extended filterScans to match against linked deadline title/description" },
+    { "id": "fe-fix-26", "area": "ScanListScreen", "fix": "Restored FAB camera button (was missing from JSX though style existed); DocCard now shows sender line and uses v2 border + soft shadow" },
+    { "id": "fe-fix-27", "area": "DeadlinesScreen", "fix": "Card date split into day (Geist 24) + month (Inter 14) baseline-aligned; description hidden when done; new compact ux still pending" },
+    { "id": "fe-fix-28", "area": "DeadlinesScreen", "fix": "Long-press on card triggers shared ActionSheet (edit / delete destructive / mark-done) with 15ms haptic; PanResponder swipes retained as alternative" },
+    { "id": "fe-fix-29", "area": "i18n", "fix": "Added searchClearAria, searchEmptyTitle, searchEmptyDetail across cs/ru/uk/en; cleaned duplicate deadlines.markDone keys" },
+    { "id": "fe-fix-30", "area": "purchases", "fix": "Added src/lib/purchases.ts — RevenueCat wrapper with configure/identify/clear, all guarded by Expo Go + dynamic-import detection so missing native module never crashes JS bundle" },
+    { "id": "fe-fix-31", "area": "app/_layout", "fix": "configurePurchases() runs once on mount (idempotent) so RevenueCat is ready before sign-in screen renders" },
+    { "id": "fe-fix-32", "area": "AuthProvider", "fix": "On session arrival useEffect aliases RevenueCat to session.user.id; signOut calls clearPurchasesIdentity BEFORE supabase.auth.signOut so next user on device doesn't inherit purchases" }
   ],
 
   "known_issues_and_risks": [
@@ -466,32 +530,65 @@
     },
     {
       "area": "RevenueCat",
-      "status": "scaffolded",
-      "detail": "PaywallSheet component exists. SDK wiring and offering fetch not yet implemented.",
-      "mitigation": "Wire Purchases.configure() in app/_layout.tsx before launch."
+      "status": "sdk wired, paywall pending",
+      "detail": "Purchases.configure() runs at app start, logIn/logOut tied to Supabase session. PaywallSheet still shows local mock — needs Purchases.getOfferings() integration to render real product prices and purchase buttons.",
+      "mitigation": "Set EXPO_PUBLIC_REVENUECAT_IOS_KEY / EXPO_PUBLIC_REVENUECAT_ANDROID_KEY in env. Then wire offerings inside PaywallSheet."
+    },
+    {
+      "area": "iOS device install with corporate MDM",
+      "status": "external blocker",
+      "detail": "Test iPhone is managed by Skupina ČEZ MDM, which blocks trusting Personal Team developer certificates. App installs but cannot launch.",
+      "mitigation": "Use iOS Simulator, an iPhone without MDM, or a paid Apple Developer Account with TestFlight."
+    },
+    {
+      "area": "Czech grammar in usage labels",
+      "status": "open",
+      "detail": "Profile shows 'Skeny v květen' instead of locative 'Skeny v květnu'. All months will be miscased.",
+      "mitigation": "Switch to plain noun ('Skeny — květen 2026') or generate proper Czech locative server-side."
+    },
+    {
+      "area": "Time format inconsistency in document list",
+      "status": "open",
+      "detail": "Card timestamps mix '12. 5.', '7:14 PM', 'včera' depending on age — should be unified.",
+      "mitigation": "Pick one strategy (relative or absolute) in formatDate() in ScanListScreen."
+    },
+    {
+      "area": "Done section weight",
+      "status": "open",
+      "detail": "Completed deadlines/documents still render as full cards equal to active items; visually dominates the list.",
+      "mitigation": "Earlier compact-row attempt was reverted. Consider collapsing into 'Vyřízeno (N)' expander or moving to Archive tab."
+    },
+    {
+      "area": "Notification bell removed",
+      "status": "intentional",
+      "detail": "Bell icon dropped from documents AppBar — no in-app notification inbox exists. System push will use OS shade only."
     }
   ],
 
   "next_steps": {
     "high_priority": [
+      "Fix Czech grammar 'Skeny v květen' → 'Skeny v květnu' in ProfileScreen usage label.",
+      "Unify document/scan list timestamp format (pick relative or absolute).",
       "Verify password reset from iPhone simulator Mail/Gmail or real iPhone development build.",
       "Confirm Supabase Redirect URLs contain the exact reset redirect URL printed by Metro.",
-      "Confirm Google OAuth end-to-end on development build.",
-      "Test new account Storage upload and inspect error message if it fails.",
-      "Run scan stream end-to-end with 1, 2, and 3 images.",
-      "Wire Expo Notifications token registration and save to profile (coordinate with be-todo-4 push scheduler)."
+      "Wire Expo Notifications token registration and save to profile (coordinate with be-todo-4 push scheduler).",
+      "Decide done-section treatment (compact rows / 'Vyřízeno (N)' expander / Archive tab) — earlier compact attempt reverted, needs rethink."
     ],
     "medium_priority": [
-      "Implement RevenueCat SDK wiring (Purchases.configure + PaywallSheet offering fetch).",
+      "Wire PaywallSheet to Purchases.getOfferings() — render real product prices and call Purchases.purchasePackage on tap; SDK configure + identify already done.",
+      "Reuse ActionSheet component for ScanListScreen long-press (share / archive / delete).",
+      "Add recent-searches list to ScanListScreen when search input is empty (AsyncStorage, 3-5 items).",
+      "Replace remaining hand-drawn glyphs (calendar/profile/chat in tab bar, FileGlyph, CameraGlyph) with Ionicons for consistency.",
       "Polish deadline swipe animation and final visual spacing.",
-      "Move remaining hardcoded debug logs behind dev-only guard or remove before release.",
       "Add frontend smoke/e2e checklist for simulator manual testing.",
       "Add Android emulator test pass."
     ],
     "deferred": [
       "Full 6-screen onboarding flow",
-      "Apple Sign In",
-      "TestFlight/App Store distribution"
+      "Apple Sign In (requires Apple Developer Program)",
+      "TestFlight/App Store distribution",
+      "iOS native context menu (react-native-ios-context-menu) — current ActionSheet is sufficient for MVP",
+      "Voice search via expo-speech-recognition"
     ]
   }
 }

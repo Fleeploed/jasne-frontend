@@ -32,6 +32,7 @@ export type ScanListItem = {
   category?: string | null;
   doc_type?: string | null;
   document_type_cz?: string | null;
+  sender?: string | null;
   summary?: string | null;
   confidence?: number | null;
   page_count: number;

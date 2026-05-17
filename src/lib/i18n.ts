@@ -78,6 +78,13 @@ const translations = {
 
     "documents.loadError": "Nepovedlo se načíst dokumenty",
     "documents.limitReached": "Limit skenů je vyčerpaný. Další skeny budou dostupné v Pro účtu.",
+    "documents.searchPlaceholder": "Hledat v dokumentech",
+    "documents.searchAria": "Hledat",
+    "documents.searchClearAria": "Smazat dotaz",
+    "documents.searchEmptyTitle": "Nic se nenašlo",
+    "documents.searchEmptyDetail": "Pro „{{query}}\" nejsou žádné dokumenty ani termíny. Zkus jiné slovo.",
+    "documents.doneExpandAria": "Zobrazit {{count}} vyřízených",
+    "documents.doneCollapseAria": "Skrýt vyřízené",
     "documents.emptyTitle": "Tady budou tvé dokumenty",
     "documents.emptyDetail": "Naskenuj první dokument — Jasně ti vysvětlí, co to je, a připomene termíny.",
     "documents.emptyButton": "Naskenovat dokument",
@@ -335,6 +342,13 @@ const translations = {
     "auth.errorAppleUnavailable": "Вход через Apple недоступен на этом устройстве.",
     "auth.errorFallback": "Что-то пошло не так. Попробуйте ещё раз.",
     "documents.loadError": "Не удалось загрузить документы",
+    "documents.searchPlaceholder": "Поиск по документам",
+    "documents.searchAria": "Поиск",
+    "documents.searchClearAria": "Очистить запрос",
+    "documents.searchEmptyTitle": "Ничего не найдено",
+    "documents.searchEmptyDetail": "По запросу «{{query}}» нет документов и сроков. Попробуйте другое слово.",
+    "documents.doneExpandAria": "Показать {{count}} выполненных",
+    "documents.doneCollapseAria": "Скрыть выполненные",
     "documents.limitReached": "Лимит сканов исчерпан. Следующие сканы будут доступны в Pro.",
     "documents.emptyTitle": "Здесь будут ваши документы",
     "documents.emptyDetail": "Отсканируйте первый документ — Jasně объяснит, что это, и напомнит о сроках.",
@@ -588,6 +602,13 @@ const translations = {
     "auth.errorAppleUnavailable": "Вхід через Apple недоступний на цьому пристрої.",
     "auth.errorFallback": "Щось пішло не так. Спробуйте ще раз.",
     "documents.loadError": "Не вдалося завантажити документи",
+    "documents.searchPlaceholder": "Пошук по документах",
+    "documents.searchAria": "Пошук",
+    "documents.searchClearAria": "Очистити запит",
+    "documents.searchEmptyTitle": "Нічого не знайдено",
+    "documents.searchEmptyDetail": "За запитом «{{query}}» немає документів і термінів. Спробуйте інше слово.",
+    "documents.doneExpandAria": "Показати {{count}} виконаних",
+    "documents.doneCollapseAria": "Сховати виконані",
     "documents.limitReached": "Ліміт сканів вичерпано. Наступні скани будуть доступні в Pro.",
     "documents.emptyTitle": "Тут будуть ваші документи",
     "documents.emptyDetail": "Відскануйте перший документ — Jasně пояснить, що це, і нагадає про терміни.",
@@ -841,6 +862,13 @@ const translations = {
     "auth.errorAppleUnavailable": "Sign in with Apple is not available on this device.",
     "auth.errorFallback": "Something went wrong. Try again.",
     "documents.loadError": "Could not load documents",
+    "documents.searchPlaceholder": "Search documents",
+    "documents.searchAria": "Search",
+    "documents.searchClearAria": "Clear search",
+    "documents.searchEmptyTitle": "Nothing found",
+    "documents.searchEmptyDetail": "No documents or deadlines match \"{{query}}\". Try another word.",
+    "documents.doneExpandAria": "Show {{count}} done items",
+    "documents.doneCollapseAria": "Hide done items",
     "documents.limitReached": "Scan limit is used up. More scans will be available in Pro.",
     "documents.emptyTitle": "Your documents will appear here",
     "documents.emptyDetail": "Scan your first document — Jasně will explain what it is and remind you about deadlines.",
@@ -1059,6 +1087,31 @@ export function formatLocalizedDate(value: string | Date, options: Intl.DateTime
 
 export function formatLocalizedMonth(value: Date, locale?: AppLocale) {
   return formatLocalizedDate(value, { month: "long" }, locale);
+}
+
+/**
+ * Czech month names in the locative case (after preposition "v").
+ * `Intl.DateTimeFormat` only emits the nominative ("květen"), but Czech
+ * grammar requires the locative ("květnu") after "v". Mapped manually because
+ * neither Intl nor CLDR exposes Slavic case inflections.
+ */
+const CZECH_MONTHS_LOCATIVE = [
+  "lednu", "únoru", "březnu", "dubnu", "květnu", "červnu",
+  "červenci", "srpnu", "září", "říjnu", "listopadu", "prosinci",
+];
+
+/**
+ * Returns the month name inflected for the preposition the surrounding copy
+ * uses. Currently only Czech (locative after "v") needs special handling —
+ * other locales use prepositions that take a case matching Intl's nominative
+ * output ("за май", "in May", etc.), so they fall through to formatLocalizedMonth.
+ */
+export function formatLocalizedMonthAfterIn(value: Date, locale?: AppLocale) {
+  const resolved = normalizeLocale(locale ?? _currentLocale);
+  if (resolved === "cs") {
+    return CZECH_MONTHS_LOCATIVE[value.getMonth()];
+  }
+  return formatLocalizedMonth(value, locale);
 }
 
 export function toIntlLocale(locale?: AppLocale) {

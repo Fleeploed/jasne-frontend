@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Modal, PanResponder, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import { ErrorText, Screen, fonts, useColors, useThemePreference, type ColorPalette, type ThemePreference } from "@/components/ui";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -183,21 +184,21 @@ export function ProfileScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t("profile.settings")}</Text>
-          <ProfileRow icon="文" label={t("profile.language")} value={currentLocale?.label ?? locale} tone="blue" onPress={openLangSheet} colors={colors} styles={styles} />
-          <ProfileRow icon="◐" label={t("profile.theme")} value={themeLabel} tone="neutral" onPress={cycleTheme} colors={colors} styles={styles} />
-          <ProfileRow icon="⌂" label={t("profile.notifications")} value={t("profile.notificationsOn")} tone="green" colors={colors} styles={styles} />
-          <ProfileRow icon="□" label={t("profile.privacy")} tone="neutral" colors={colors} styles={styles} />
+          <ProfileRow icon="languages" label={t("profile.language")} value={currentLocale?.label ?? locale} tone="blue" onPress={openLangSheet} colors={colors} styles={styles} />
+          <ProfileRow icon="sliders" label={t("profile.theme")} value={themeLabel} tone="neutral" onPress={cycleTheme} colors={colors} styles={styles} />
+          <ProfileRow icon="bell" label={t("profile.notifications")} value={t("profile.notificationsOn")} tone="green" colors={colors} styles={styles} />
+          <ProfileRow icon="shield" label={t("profile.privacy")} tone="neutral" colors={colors} styles={styles} />
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t("profile.subscription")}</Text>
-          <ProfileRow icon="☆" label="Jasně Pro" value="99 Kč/měs" detail={t("profile.proDetail")} tone="pro" valueTone="pro" onPress={limits?.plan === "pro" ? undefined : () => setShowPaywall(true)} colors={colors} styles={styles} />
-          <ProfileRow icon="▢" label={t("profile.restore")} tone="neutral" colors={colors} styles={styles} />
+          <ProfileRow icon="star" label="Jasně Pro" value="99 Kč/měs" detail={t("profile.proDetail")} tone="pro" valueTone="pro" onPress={limits?.plan === "pro" ? undefined : () => setShowPaywall(true)} colors={colors} styles={styles} />
+          <ProfileRow icon="restore" label={t("profile.restore")} tone="neutral" colors={colors} styles={styles} />
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t("profile.accountSection")}</Text>
-          <ProfileRow icon="↗" label={t("profile.signOut")} tone="danger" labelTone="danger" onPress={() => void signOut()} colors={colors} styles={styles} />
+          <ProfileRow icon="log-out" label={t("profile.signOut")} tone="danger" labelTone="danger" onPress={() => void signOut()} colors={colors} styles={styles} />
         </View>
 
         <View style={styles.footer}>
@@ -225,7 +226,7 @@ export function ProfileScreen() {
                 onPress={closeLangSheet}
                 style={({ pressed }) => [styles.langClose, pressed && styles.pressed]}
               >
-                <Text style={styles.langCloseText}>×</Text>
+                <AppIcon name="x" size={22} color={colors.muted2} />
               </Pressable>
             </View>
             {LOCALE_OPTIONS.map((opt, idx) => (
@@ -245,7 +246,7 @@ export function ProfileScreen() {
                   <Text style={[styles.langOptionText, opt.code === locale && styles.langOptionActive]}>{opt.label}</Text>
                   {opt.sub ? <Text style={styles.langSub}>{opt.sub}</Text> : null}
                 </View>
-                {opt.code === locale ? <Text style={styles.langCheck}>✓</Text> : null}
+                  {opt.code === locale ? <AppIcon name="check" size={20} color={colors.primary} strokeWidth={2.4} /> : null}
               </Pressable>
             ))}
           </Animated.View>
@@ -301,7 +302,7 @@ function ProfileRow({
   colors,
   styles
 }: {
-  icon: string;
+  icon: AppIconName;
   label: string;
   value?: string;
   detail?: string;
@@ -327,14 +328,14 @@ function ProfileRow({
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
     >
       <View style={[styles.rowIcon, { backgroundColor: toneColors.iconBg }]}>
-        <Text style={[styles.rowIconText, { color: toneColors.iconText }]}>{icon}</Text>
+        <AppIcon name={icon} size={22} color={toneColors.iconText} />
       </View>
       <View style={styles.rowTextBlock}>
         <Text style={[styles.rowLabel, labelTone === "danger" && styles.dangerLabel]} numberOfLines={1}>{label}</Text>
         {detail ? <Text style={styles.rowDetail} numberOfLines={1}>{detail}</Text> : null}
       </View>
       {value ? <Text style={[styles.rowValue, valueTone === "pro" && styles.proValue]} numberOfLines={1}>{value}</Text> : null}
-      <Text style={styles.chevron}>›</Text>
+      <AppIcon name="chevron-right" size={22} color={colors.muted3} />
     </Pressable>
   );
 }

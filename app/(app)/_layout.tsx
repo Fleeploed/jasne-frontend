@@ -3,6 +3,7 @@ import { Tabs } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 
+import { AppIcon } from "@/components/AppIcon";
 import { useColors, type ColorPalette } from "@/components/ui";
 import { t } from "@/lib/i18n";
 import { useLocale } from "@/lib/LocaleContext";
@@ -68,31 +69,8 @@ function getTabLabel(route: string): string {
 }
 
 function TabGlyph({ name, color }: { name: "docs" | "deadlines" | "profile"; color: string }) {
-  if (name === "docs") {
-    return (
-      <View style={glyphStyles.iconWrap}>
-        <View style={[glyphStyles.chatGlyph, { borderColor: color }]} />
-        <View style={[glyphStyles.chatTail, { borderTopColor: color }]} />
-      </View>
-    );
-  }
-  if (name === "deadlines") {
-    return (
-      <View style={glyphStyles.iconWrap}>
-        <View style={[glyphStyles.calendarGlyph, { borderColor: color }]}>
-          <View style={[glyphStyles.calendarLine, { backgroundColor: color }]} />
-          <View style={[glyphStyles.calendarPin, { backgroundColor: color, left: 4 }]} />
-          <View style={[glyphStyles.calendarPin, { backgroundColor: color, right: 4 }]} />
-        </View>
-      </View>
-    );
-  }
-  return (
-    <View style={glyphStyles.iconWrap}>
-      <View style={[glyphStyles.profileHead, { borderColor: color }]} />
-      <View style={[glyphStyles.profileBody, { borderColor: color }]} />
-    </View>
-  );
+  const iconName = name === "docs" ? "doc-text" : name === "deadlines" ? "calendar" : "user";
+  return <AppIcon name={iconName} size={23} color={color} strokeWidth={1.8} />;
 }
 
 function MockupTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
@@ -140,26 +118,6 @@ function MockupTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
     </View>
   );
 }
-
-// Tab glyphs are pure geometry — color comes from props, no theme needed
-const glyphStyles = StyleSheet.create({
-  // All three icons live inside the same 22x22 wrap so layout heights match
-  // and tab labels align horizontally on the same baseline.
-  iconWrap: { width: 22, height: 22, alignItems: "center", justifyContent: "center" },
-
-  // Chat bubble (15h) + tail (4h) ≈ 19h total → vertically centred via wrap
-  chatGlyph: { width: 18, height: 14, borderWidth: 1.5, borderRadius: 3, marginBottom: 4 },
-  chatTail: { position: "absolute", bottom: 1, alignSelf: "center", marginLeft: -2, width: 0, height: 0, borderTopWidth: 4, borderRightWidth: 4, borderRightColor: "transparent" },
-
-  // Calendar body (16h) + pins extend up 3 → 19h total → wrap centres it
-  calendarGlyph: { width: 18, height: 16, borderWidth: 1.5, borderRadius: 3 },
-  calendarLine: { position: "absolute", left: 0, right: 0, top: 4, height: 1.5 },
-  calendarPin: { position: "absolute", top: -3, width: 1.5, height: 5, borderRadius: 1 },
-
-  // Profile head (8h) + 1px gap + body (9h) = 18h → wrap centres it
-  profileHead: { width: 8, height: 8, borderRadius: 4, borderWidth: 1.5 },
-  profileBody: { width: 16, height: 9, borderTopLeftRadius: 9, borderTopRightRadius: 9, borderWidth: 1.5, borderBottomWidth: 0, marginTop: 1 }
-});
 
 function createTabStyles(colors: ColorPalette) {
   return StyleSheet.create({
