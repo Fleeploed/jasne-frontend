@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Dimensions, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon, type IconName } from "@/components/Icon";
@@ -10,8 +10,10 @@ import {
   type PickedUpload,
   type ScanProgressEvent,
   getLimits,
+  getPdfPageCount,
   pickDocument,
   pickImage,
+  renderPdfPage,
   scanWithCamera,
   streamScan,
   uploadToStorage
@@ -79,10 +81,18 @@ export function NewScanScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [importSheetOpen, setImportSheetOpen] = useState(false);
-  const [pdfFiles, setPdfFiles] = useState<PickedUpload[] | null>(null);
+  const [pdfPicker, setPdfPicker] = useState<{
+    uri: string;
+    pageCount: number;
+    available: number;
+    thumbnails: Record<number, PickedUpload>;
+  } | null>(null);
+  const [pdfRendering, setPdfRendering] = useState(false);
+  const [pdfConverting, setPdfConverting] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const [showPendingChat, setShowPendingChat] = useState(() => getPendingScan().active);
+  const [previewOpen, setPreviewOpen] = useState(false);
   // Transient "page added" feedback — pill auto-hides 2s after each capture.
   const [pillFlash, setPillFlash] = useState<{ label: string; key: number } | null>(null);
 
@@ -100,7 +110,9 @@ export function NewScanScreen() {
     setBusy(false);
     setError(null);
     setImportSheetOpen(false);
-    setPdfFiles(null);
+    setPdfPicker(null);
+    setPdfRendering(false);
+    setPdfConverting(false);
     setPermissionDenied(false);
     setShowPendingChat(false);
     resetPendingScan();
@@ -133,16 +145,96 @@ export function NewScanScreen() {
       if (!pickedFiles?.length) return;
 
       setImportSheetOpen(false);
-      if (pickedFiles.some(isPdfUpload)) {
-        setPdfFiles(pickedFiles);
+
+      const pdfFile = pickedFiles.find(isPdfUpload);
+      if (!pdfFile) {
+        appendFiles(pickedFiles, availableSlots);
         return;
       }
 
-      appendFiles(pickedFiles, availableSlots);
+      // Parse PDF metadata to get page count without rendering — fast (<200ms).
+      setPdfRendering(true);
+      let pageCount: number;
+      try {
+        pageCount = await getPdfPageCount(pdfFile.uri);
+      } catch {
+        setPdfRendering(false);
+        setError(copy.pdfRenderError);
+        return;
+      }
+      setPdfRendering(false);
+
+      if (pageCount <= 0) {
+        setError(copy.pdfRenderError);
+        return;
+      }
+
+      if (pageCount === 1) {
+        // Single-page PDF → render once and add directly.
+        setPdfConverting(true);
+        try {
+          const page = await renderPdfPage(pdfFile.uri, 0);
+          appendFiles([page], availableSlots);
+        } catch {
+          setError(copy.pdfRenderError);
+        } finally {
+          setPdfConverting(false);
+        }
+        return;
+      }
+
+      // Multi-page → open picker with placeholders. Thumbnails stream in via useEffect.
+      setPdfPicker({ uri: pdfFile.uri, pageCount, available: availableSlots, thumbnails: {} });
     } catch (pickError) {
+      setPdfRendering(false);
       setError(pickError instanceof Error ? pickError.message : t("scan.pickDocumentError"));
     }
   }
+
+  async function confirmPdfSelection(indices: number[]) {
+    if (!pdfPicker || indices.length === 0) return;
+    const { uri, available, thumbnails } = pdfPicker;
+    setPdfConverting(true);
+    try {
+      // Reuse already-rendered thumbnails; render only the missing ones.
+      const pages = await Promise.all(
+        indices.map(async (idx) => thumbnails[idx] ?? (await renderPdfPage(uri, idx)))
+      );
+      setPdfPicker(null);
+      appendFiles(pages, available);
+    } catch {
+      setError(copy.pdfRenderError);
+    } finally {
+      setPdfConverting(false);
+    }
+  }
+
+  // Stream thumbnails into the picker one-by-one after it opens. Cancelled
+  // automatically when the picker closes or the source URI changes.
+  useEffect(() => {
+    if (!pdfPicker) return;
+    const { uri, pageCount } = pdfPicker;
+    let cancelled = false;
+    (async () => {
+      for (let i = 0; i < pageCount; i++) {
+        if (cancelled) return;
+        try {
+          const page = await renderPdfPage(uri, i);
+          if (cancelled) return;
+          setPdfPicker((current) =>
+            current && current.uri === uri
+              ? { ...current, thumbnails: { ...current.thumbnails, [i]: page } }
+              : current
+          );
+        } catch {
+          return;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pdfPicker?.uri, pdfPicker?.pageCount]);
 
   async function addImage() {
     try {
@@ -308,13 +400,6 @@ export function NewScanScreen() {
     setError(null);
   }
 
-  function confirmPdfImport() {
-    if (!pdfFiles?.length) return;
-    const limit = pageLimit ?? 3;
-    appendFiles(pdfFiles, Math.max(limit - files.length, 0));
-    setPdfFiles(null);
-  }
-
   const maxPages = pageLimit ?? 3;
   const isPro = plan === "pro";
   const limitReached = files.length >= maxPages;
@@ -356,8 +441,16 @@ export function NewScanScreen() {
         files={files}
         limitReached={limitReached}
         flashPill={pillFlash ? { label: pillFlash.label, visible: true } : undefined}
+        pdfRendering={pdfRendering}
       >
-        {files.length > 0 ? <ThumbnailStrip files={files} onRemove={removeFile} /> : null}
+        {files.length > 0 ? (
+          <ThumbnailStrip
+            files={files}
+            onRemove={removeFile}
+            onPreview={() => setPreviewOpen(true)}
+            previewLabel={copy.preview}
+          />
+        ) : null}
       </ScannerCamera>
 
       {error ? (
@@ -395,17 +488,29 @@ export function NewScanScreen() {
         onPickPdf={() => void addDocument()}
         onPickPhotos={() => void addImage()}
       />
-      <PdfSheet
-        visible={Boolean(pdfFiles)}
+      <PdfPagePicker
+        visible={Boolean(pdfPicker)}
+        pageCount={pdfPicker?.pageCount ?? 0}
+        available={pdfPicker?.available ?? 0}
+        thumbnails={pdfPicker?.thumbnails ?? {}}
+        converting={pdfConverting}
         copy={copy}
         isPro={isPro}
         maxPages={maxPages}
-        count={pdfFiles?.length ?? 0}
-        onCancel={() => setPdfFiles(null)}
-        onConfirm={confirmPdfImport}
+        onCancel={() => {
+          if (pdfConverting) return;
+          setPdfPicker(null);
+        }}
+        onConfirm={(indices) => void confirmPdfSelection(indices)}
         onUpgrade={() => setShowPaywall(true)}
       />
       <PaywallSheet visible={showPaywall} onClose={() => setShowPaywall(false)} />
+      <PreviewModal
+        visible={previewOpen}
+        files={files}
+        copy={copy}
+        onClose={() => setPreviewOpen(false)}
+      />
     </View>
   );
 }
@@ -454,8 +559,8 @@ function ScannerAppBar({
 
 function ScannerCamera({
   copy,
-  files,
   flashPill,
+  pdfRendering,
   children,
 }: {
   copy: ScannerCopy;
@@ -463,10 +568,9 @@ function ScannerCamera({
   files: PickedUpload[];
   limitReached: boolean;
   flashPill?: { label: string; visible: boolean };
+  pdfRendering?: boolean;
   children?: React.ReactNode;
 }) {
-  const hasDocument = files.length > 0;
-
   return (
     <View style={scannerStyles.camera}>
       <View style={[scannerStyles.corner, scannerStyles.cornerTL]} />
@@ -474,20 +578,20 @@ function ScannerCamera({
       <View style={[scannerStyles.corner, scannerStyles.cornerBL]} />
       <View style={[scannerStyles.corner, scannerStyles.cornerBR]} />
 
-      {hasDocument ? (
-        <FilePreview file={files[files.length - 1]} totalCount={files.length} />
-      ) : (
-        <View style={scannerStyles.emptyState}>
-          <Icon name="doc-text" size={48} color={scannerDark.ink3} />
-          <Text style={scannerStyles.emptyHint}>{copy.pointCamera}</Text>
-        </View>
-      )}
+      <View style={scannerStyles.emptyState}>
+        <Icon name="doc-text" size={48} color={scannerDark.ink3} />
+        <Text style={scannerStyles.emptyHint}>{copy.pointCamera}</Text>
+      </View>
 
-      {/* Children (thumbnail strip) — rendered absolute-bottom inside camera viewport */}
       {children}
 
-      {/* Transient "page added" pill — shown for ~2s after each capture */}
-      {flashPill?.visible ? (
+      {pdfRendering ? (
+        <View style={[scannerStyles.statusPill, scannerStyles.statusPillBlue]}>
+          <Text style={[scannerStyles.statusPillText, scannerStyles.statusPillTextBlue]}>
+            {copy.pdfRendering}
+          </Text>
+        </View>
+      ) : flashPill?.visible ? (
         <View style={[scannerStyles.statusPill, scannerStyles.statusPillGreen]}>
           <Icon name="check" size={14} color={scannerDark.green} />
           <Text style={[scannerStyles.statusPillText, scannerStyles.statusPillTextGreen]}>
@@ -499,42 +603,22 @@ function ScannerCamera({
   );
 }
 
-function FilePreview({ file, totalCount }: { file: PickedUpload; totalCount: number }) {
-  const isImage = isImageUpload(file);
-  if (isImage) {
-    return (
-      <View style={scannerStyles.previewWrap}>
-        <Image
-          source={{ uri: file.uri }}
-          style={scannerStyles.previewImage}
-          resizeMode="cover"
-        />
-        {totalCount > 1 ? (
-          <View style={scannerStyles.previewBadge}>
-            <Text style={scannerStyles.previewBadgeText}>+{totalCount - 1}</Text>
-          </View>
-        ) : null}
-      </View>
-    );
-  }
-  // PDF (or other non-image) — show a generic file card
-  return (
-    <View style={scannerStyles.previewPdf}>
-      <Icon name="doc" size={48} color={scannerDark.blue} />
-      <Text style={scannerStyles.previewPdfName} numberOfLines={1}>{file.name}</Text>
-      {totalCount > 1 ? (
-        <Text style={scannerStyles.previewPdfCount}>+{totalCount - 1}</Text>
-      ) : null}
-    </View>
-  );
-}
-
 function isImageUpload(file: PickedUpload) {
   if (file.mimeType?.startsWith("image/")) return true;
   return /\.(jpe?g|png|gif|webp|heic)$/i.test(file.name) || /\.(jpe?g|png|gif|webp|heic)$/i.test(file.uri);
 }
 
-function ThumbnailStrip({ files, onRemove }: { files: PickedUpload[]; onRemove: (index: number) => void }) {
+function ThumbnailStrip({
+  files,
+  onRemove,
+  onPreview,
+  previewLabel,
+}: {
+  files: PickedUpload[];
+  onRemove: (index: number) => void;
+  onPreview: () => void;
+  previewLabel: string;
+}) {
   return (
     <ScrollView
       horizontal
@@ -542,6 +626,15 @@ function ThumbnailStrip({ files, onRemove }: { files: PickedUpload[]; onRemove: 
       contentContainerStyle={scannerStyles.thumbsContent}
       style={scannerStyles.thumbs}
     >
+      <Pressable
+        onPress={onPreview}
+        accessibilityRole="button"
+        accessibilityLabel={previewLabel}
+        style={({ pressed }) => [scannerStyles.previewTile, pressed && { opacity: 0.7 }]}
+      >
+        <Icon name="eye" size={22} color={scannerDark.blue} />
+        <Text style={scannerStyles.previewTileLabel}>{files.length}</Text>
+      </Pressable>
       {files.map((file, index) => {
         const isImage = isImageUpload(file);
         return (
@@ -680,60 +773,141 @@ function ImportSheet({
   );
 }
 
-function PdfSheet({
+function PdfPagePicker({
   visible,
+  pageCount,
+  available,
+  thumbnails,
+  converting,
   copy,
   isPro,
   maxPages,
-  count,
   onCancel,
   onConfirm,
   onUpgrade,
 }: {
   visible: boolean;
+  pageCount: number;
+  available: number;
+  thumbnails: Record<number, PickedUpload>;
+  converting: boolean;
   copy: ScannerCopy;
   isPro: boolean;
   maxPages: number;
-  count: number;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (indices: number[]) => void;
   onUpgrade: () => void;
 }) {
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  // Pre-select first `available` pages whenever picker opens.
+  useEffect(() => {
+    if (visible && pageCount > 0) {
+      const next = new Set<number>();
+      for (let i = 0; i < Math.min(pageCount, available); i++) next.add(i);
+      setSelected(next);
+    } else if (!visible) {
+      setSelected(new Set());
+    }
+  }, [visible, pageCount, available]);
+
+  function toggle(index: number) {
+    if (converting) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else if (next.size < available) {
+        next.add(index);
+      }
+      return next;
+    });
+  }
+
+  const selectedIndices = Array.from(selected).sort((a, b) => a - b);
+  const canConfirm = selectedIndices.length > 0 && !converting;
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
-      <View style={sheetStyles.overlay}>
+      <View style={pickerStyles.overlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
-        <View style={sheetStyles.sheet}>
-          <View style={sheetStyles.handle} />
-          <View style={sheetStyles.pdfTop}>
-            <View style={sheetStyles.pdfIcon}>
-              <Icon name="doc" size={22} color={scannerDark.blue} />
-            </View>
-            <View style={sheetStyles.pdfTextBlock}>
-              <Text style={sheetStyles.pdfEyebrow}>{copy.pdfCount(count)}</Text>
-              <Text style={sheetStyles.pdfTitle}>{copy.pdfSelected}</Text>
-            </View>
+        <View style={pickerStyles.sheet}>
+          <View style={pickerStyles.handle} />
+          <View style={pickerStyles.titleRow}>
+            <Text style={pickerStyles.title}>{copy.pdfPickerTitle}</Text>
+            <Text style={pickerStyles.titleHint}>{copy.pdfPickerTotal(pageCount)}</Text>
           </View>
 
           {!isPro ? (
-            <View style={sheetStyles.warningBlock}>
-              <Text style={sheetStyles.warningText}>{copy.freePdfWarning(maxPages)}</Text>
+            <View style={pickerStyles.warning}>
+              <Text style={pickerStyles.warningText}>{copy.freePdfWarning(maxPages)}</Text>
             </View>
           ) : null}
 
-          <View style={sheetStyles.ctaStack}>
-            <Pressable onPress={onConfirm} style={sheetStyles.primaryButton}>
-              <Text style={sheetStyles.primaryButtonText}>{isPro ? copy.processPdfAll : copy.processPdfFree(maxPages)}</Text>
+          <ScrollView
+            style={pickerStyles.grid}
+            contentContainerStyle={pickerStyles.gridContent}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            overScrollMode="never"
+          >
+            <View style={pickerStyles.gridRow}>
+              {Array.from({ length: pageCount }).map((_, index) => {
+                const isSelected = selected.has(index);
+                const canToggle = isSelected || selected.size < available;
+                const thumb = thumbnails[index];
+                return (
+                  <Pressable
+                    key={`page-${index}`}
+                    onPress={() => toggle(index)}
+                    style={[
+                      pickerStyles.pageCard,
+                      isSelected && pickerStyles.pageCardSelected,
+                      !canToggle && pickerStyles.pageCardDim,
+                    ]}
+                  >
+                    {thumb ? (
+                      <Image source={{ uri: thumb.uri }} style={pickerStyles.pageCardImage} resizeMode="cover" />
+                    ) : (
+                      <View style={pickerStyles.pageCardPlaceholder}>
+                        <Icon name="doc-text" size={28} color={scannerDark.ink3} />
+                      </View>
+                    )}
+                    <View style={pickerStyles.pageNumberBadge}>
+                      <Text style={pickerStyles.pageNumberBadgeText}>{index + 1}</Text>
+                    </View>
+                    {isSelected ? (
+                      <View style={pickerStyles.checkOverlay}>
+                        <Icon name="check" size={13} color={scannerDark.ink} />
+                      </View>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
+
+          <View style={pickerStyles.footer}>
+            <Pressable
+              disabled={!canConfirm}
+              onPress={() => onConfirm(selectedIndices)}
+              style={[pickerStyles.addButton, !canConfirm && pickerStyles.addButtonDisabled]}
+            >
+              <Text style={pickerStyles.addButtonText}>
+                {converting ? copy.pdfConverting : copy.pdfPickerAdd(selectedIndices.length)}
+              </Text>
             </Pressable>
-            {!isPro ? (
-              <Pressable onPress={onUpgrade} style={sheetStyles.upgradeButton}>
-                <Icon name="star" size={14} color={scannerDark.purple} />
-                <Text style={sheetStyles.upgradeButtonText}>{copy.upgradePdf}</Text>
+            {!isPro && !converting ? (
+              <Pressable onPress={onUpgrade} style={pickerStyles.upgradeButton}>
+                <Icon name="star" size={12} color={scannerDark.purple} />
+                <Text style={pickerStyles.upgradeButtonText}>{copy.upgradePdf}</Text>
               </Pressable>
             ) : null}
-            <Pressable onPress={onCancel} style={sheetStyles.cancelButtonCompact}>
-              <Text style={sheetStyles.cancelText}>{copy.cancel}</Text>
-            </Pressable>
+            {!converting ? (
+              <Pressable onPress={onCancel} style={pickerStyles.cancelButton}>
+                <Text style={pickerStyles.cancelText}>{copy.cancel}</Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       </View>
@@ -753,6 +927,84 @@ function SheetRow({ icon, title, detail, onPress }: { icon: IconName; title: str
       </View>
       <Icon name="chevron-right" size={18} color={scannerDark.ink3} />
     </Pressable>
+  );
+}
+
+function PreviewModal({
+  visible,
+  files,
+  copy,
+  onClose,
+}: {
+  visible: boolean;
+  files: PickedUpload[];
+  copy: ScannerCopy;
+  onClose: () => void;
+}) {
+  const { width } = Dimensions.get("window");
+  const [pageIndex, setPageIndex] = useState(0);
+  const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    if (visible) setPageIndex(0);
+  }, [visible]);
+
+  useEffect(() => {
+    if (pageIndex >= files.length && files.length > 0) {
+      setPageIndex(files.length - 1);
+    }
+  }, [files.length, pageIndex]);
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={previewStyles.root}>
+        <View style={[previewStyles.topBar, { paddingTop: insets.top + 12 }]}>
+          <Text style={previewStyles.counter}>
+            {files.length ? copy.previewPageOf(pageIndex + 1, files.length) : ""}
+          </Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={t("common.close")} onPress={onClose} style={previewStyles.iconButton}>
+            <Icon name="x" size={20} color={scannerDark.ink2} />
+          </Pressable>
+        </View>
+
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={(e) => {
+            const next = Math.round(e.nativeEvent.contentOffset.x / width);
+            if (next !== pageIndex) setPageIndex(next);
+          }}
+          style={previewStyles.pager}
+        >
+          {files.map((file, index) => (
+            <View key={`${file.uri}-${index}`} style={[previewStyles.page, { width }]}>
+              {isImageUpload(file) ? (
+                <Image source={{ uri: file.uri }} style={previewStyles.pageImage} resizeMode="contain" />
+              ) : (
+                <View style={previewStyles.pagePdf}>
+                  <Icon name="doc" size={64} color={scannerDark.blue} />
+                  <Text style={previewStyles.pagePdfName} numberOfLines={2}>{file.name}</Text>
+                </View>
+              )}
+            </View>
+          ))}
+        </ScrollView>
+
+        {files.length > 1 ? (
+          <View style={[previewStyles.dots, { paddingBottom: Math.max(insets.bottom, 14) + 6 }]}>
+            {files.map((_, index) => (
+              <View
+                key={index}
+                style={[previewStyles.dot, index === pageIndex && previewStyles.dotActive]}
+              />
+            ))}
+          </View>
+        ) : (
+          <View style={{ height: Math.max(insets.bottom, 14) + 16 }} />
+        )}
+      </View>
+    </Modal>
   );
 }
 
@@ -790,15 +1042,6 @@ function PermissionDeniedScreen({
   );
 }
 
-/**
- * Unified subtitle format across all states: "Free · 1 из 3".
- * Empty   → "Free · 0 из 3"  (zero count, neutral)
- * 1 page  → "Free · 1 из 3"
- * 3/3     → "Free · лимит достигнут"  amber/red tinted
- *
- * Consistent prefix (Free / Pro) on every state so users always see
- * their plan label without it shifting around.
- */
 function subtitleForState(copy: ScannerCopy, count: number, maxPages: number, isPro: boolean, limitReached: boolean) {
   const planLabel = isPro ? "Pro" : "Free";
 
@@ -847,16 +1090,20 @@ function getScannerCopy(locale: string) {
       importFromFiles: "Import z aplikace Soubory",
       photosFromGallery: "Fotky z galerie",
       selectPhotos: (max: number) => `Vyber až ${max} fotek`,
-      pdfSelected: "PDF je připravené",
-      pdfCount: (count: number) => `${Math.max(count, 1)} soubor`,
+      pdfPickerTitle: "Vybrat stránky PDF",
+      pdfPickerTotal: (total: number) => `${total} stran celkem`,
+      pdfPickerAdd: (count: number) => `Přidat ${count} ${count === 1 ? "stranu" : "strany"} →`,
+      pdfRendering: "Načítám stránky…",
+      pdfConverting: "Zpracovávám…",
+      pdfRenderError: "Nepodařilo se načíst stránky PDF",
       freePdfWarning: (max: number) => `Free plán podporuje max ${max} strany na jeden sken`,
-      processPdfFree: (max: number) => `Pokračovat s limitem ${max} stran →`,
-      processPdfAll: "Zpracovat PDF →",
       upgradePdf: "Pro zpracuje až 10 stran",
       cameraAccessNeeded: "Je potřeba přístup ke kameře",
       cameraAccessBody: "Jasně potřebuje kameru ke skenování dokumentů. Přístup můžeš povolit v Nastavení.",
       openSettings: "Otevřít Nastavení",
       pickGalleryInstead: "Vybrat z galerie",
+      preview: "Náhled",
+      previewPageOf: (page: number, total: number) => `Strana ${page} z ${total}`,
     },
     ru: {
       newScan: "Новый скан",
@@ -884,16 +1131,20 @@ function getScannerCopy(locale: string) {
       importFromFiles: "Импорт из Files",
       photosFromGallery: "Фото из галереи",
       selectPhotos: (max: number) => `Выберите до ${max} фото`,
-      pdfSelected: "PDF готов",
-      pdfCount: (count: number) => `${Math.max(count, 1)} файл`,
+      pdfPickerTitle: "Выберите страницы PDF",
+      pdfPickerTotal: (total: number) => `${total} стр. всего`,
+      pdfPickerAdd: (count: number) => `Добавить ${count} стр. →`,
+      pdfRendering: "Открываю PDF…",
+      pdfConverting: "Конвертирую…",
+      pdfRenderError: "Не удалось загрузить страницы PDF",
       freePdfWarning: (max: number) => `Free поддерживает максимум ${max} страницы за один скан`,
-      processPdfFree: (max: number) => `Продолжить с лимитом ${max} стр. →`,
-      processPdfAll: "Обработать PDF →",
       upgradePdf: "Pro обработает до 10 страниц",
       cameraAccessNeeded: "Нужен доступ к камере",
       cameraAccessBody: "Jasně нужен доступ к камере для сканирования документов. Его можно включить в настройках.",
       openSettings: "Открыть настройки",
       pickGalleryInstead: "Выбрать из галереи",
+      preview: "Предпросмотр",
+      previewPageOf: (page: number, total: number) => `Стр. ${page} из ${total}`,
     },
     uk: {
       newScan: "Новий скан",
@@ -921,16 +1172,20 @@ function getScannerCopy(locale: string) {
       importFromFiles: "Імпорт із Files",
       photosFromGallery: "Фото з галереї",
       selectPhotos: (max: number) => `Виберіть до ${max} фото`,
-      pdfSelected: "PDF готовий",
-      pdfCount: (count: number) => `${Math.max(count, 1)} файл`,
+      pdfPickerTitle: "Виберіть сторінки PDF",
+      pdfPickerTotal: (total: number) => `${total} стор. всього`,
+      pdfPickerAdd: (count: number) => `Додати ${count} стор. →`,
+      pdfRendering: "Відкриваю PDF…",
+      pdfConverting: "Конвертую…",
+      pdfRenderError: "Не вдалося завантажити сторінки PDF",
       freePdfWarning: (max: number) => `Free підтримує максимум ${max} сторінки за один скан`,
-      processPdfFree: (max: number) => `Продовжити з лімітом ${max} стор. →`,
-      processPdfAll: "Обробити PDF →",
       upgradePdf: "Pro обробить до 10 сторінок",
       cameraAccessNeeded: "Потрібен доступ до камери",
       cameraAccessBody: "Jasně потрібен доступ до камери для сканування документів. Його можна ввімкнути в налаштуваннях.",
       openSettings: "Відкрити налаштування",
       pickGalleryInstead: "Вибрати з галереї",
+      preview: "Перегляд",
+      previewPageOf: (page: number, total: number) => `Стор. ${page} з ${total}`,
     },
     en: {
       newScan: "New scan",
@@ -958,16 +1213,20 @@ function getScannerCopy(locale: string) {
       importFromFiles: "Import from Files app",
       photosFromGallery: "Photos from gallery",
       selectPhotos: (max: number) => `Select up to ${max} photos`,
-      pdfSelected: "PDF is ready",
-      pdfCount: (count: number) => `${Math.max(count, 1)} file`,
+      pdfPickerTitle: "Select PDF pages",
+      pdfPickerTotal: (total: number) => `${total} pages total`,
+      pdfPickerAdd: (count: number) => `Add ${count} ${count === 1 ? "page" : "pages"} →`,
+      pdfRendering: "Opening PDF…",
+      pdfConverting: "Converting…",
+      pdfRenderError: "Could not load PDF pages",
       freePdfWarning: (max: number) => `Free plan supports max ${max} pages per scan`,
-      processPdfFree: (max: number) => `Continue with ${max}-page limit →`,
-      processPdfAll: "Process PDF →",
       upgradePdf: "Pro processes up to 10 pages",
       cameraAccessNeeded: "Camera access needed",
       cameraAccessBody: "Jasně needs camera access to scan documents. You can enable it in Settings.",
       openSettings: "Open Settings",
       pickGalleryInstead: "Pick from gallery instead",
+      preview: "Preview",
+      previewPageOf: (page: number, total: number) => `Page ${page} of ${total}`,
     },
   };
 
@@ -1008,9 +1267,6 @@ const scannerStyles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
   },
-  // Corner markers: top corners pushed 24pt from camera-top to give breathing
-  // room below the AppBar. Bottom corners pushed 24pt to clear the thumbnail
-  // strip overlay when present.
   corner: { position: "absolute", width: 14, height: 14, opacity: 0.45, borderColor: scannerDark.blue },
   cornerTL: { top: 24, left: 24, borderTopWidth: 1.5, borderLeftWidth: 1.5, borderTopLeftRadius: 4 },
   cornerTR: { top: 24, right: 24, borderTopWidth: 1.5, borderRightWidth: 1.5, borderTopRightRadius: 4 },
@@ -1018,47 +1274,18 @@ const scannerStyles = StyleSheet.create({
   cornerBR: { bottom: 24, right: 24, borderBottomWidth: 1.5, borderRightWidth: 1.5, borderBottomRightRadius: 4 },
   emptyState: { alignItems: "center", gap: 14 },
   emptyHint: { color: scannerDark.ink3, fontSize: 14, lineHeight: 19, textAlign: "center" },
-  previewWrap: {
-    width: "70%",
-    maxWidth: 280,
-    aspectRatio: 0.72,
-    borderRadius: 10,
-    overflow: "hidden",
+  previewTile: {
+    width: 60,
+    height: 80,
+    borderRadius: 8,
     backgroundColor: scannerDark.surface3,
     borderWidth: 1,
     borderColor: scannerDark.blueLine,
-  },
-  previewImage: { width: "100%", height: "100%" },
-  previewBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    minWidth: 32,
-    height: 24,
-    paddingHorizontal: 9,
-    borderRadius: 12,
-    backgroundColor: scannerDark.blueDeep,
     alignItems: "center",
     justifyContent: "center",
+    gap: 4,
   },
-  previewBadgeText: { color: scannerDark.ink, fontSize: 12, fontWeight: "700" },
-  previewPdf: {
-    width: "70%",
-    maxWidth: 280,
-    minHeight: 180,
-    borderRadius: 10,
-    backgroundColor: scannerDark.surface2,
-    borderWidth: 1,
-    borderColor: scannerDark.blueLine,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-    gap: 10,
-  },
-  previewPdfName: { color: scannerDark.ink, fontSize: 14, fontWeight: "500", maxWidth: "100%", textAlign: "center" },
-  previewPdfCount: { color: scannerDark.ink3, fontSize: 12 },
-  // Floats above the thumbnail strip (which lives at bottom:0). 110pt up
-  // clears 80pt thumb + 16pt strip padding + breathing room.
+  previewTileLabel: { color: scannerDark.ink2, fontSize: 11, lineHeight: 14, fontWeight: "700" },
   statusPill: {
     position: "absolute",
     bottom: 116,
@@ -1071,10 +1298,10 @@ const scannerStyles = StyleSheet.create({
     gap: 6,
   },
   statusPillGreen: { backgroundColor: scannerDark.surface2 },
+  statusPillBlue: { backgroundColor: scannerDark.surface2 },
   statusPillText: { fontSize: 13, lineHeight: 16, fontWeight: "600" },
   statusPillTextGreen: { color: scannerDark.green },
-  // Thumbnail strip floats over the camera viewport at the bottom edge,
-  // tight to the bottom action bar with a small breathing gap.
+  statusPillTextBlue: { color: scannerDark.blue },
   thumbs: {
     position: "absolute",
     left: 0,
@@ -1161,8 +1388,6 @@ const scannerStyles = StyleSheet.create({
     gap: 6,
     pointerEvents: "box-none",
   },
-  // Idle: white ring + white inner dot, no gray fill. Camera-app shutter
-  // convention. Pressed state slightly shrinks the inner dot.
   shutter: {
     width: 60,
     height: 60,
@@ -1202,20 +1427,138 @@ const sheetStyles = StyleSheet.create({
   rowDetail: { color: scannerDark.ink3, fontSize: 11, lineHeight: 14, marginTop: 1 },
   divider: { height: 1, backgroundColor: scannerDark.hairline, opacity: 0.6 },
   cancelButton: { height: 48, alignItems: "center", justifyContent: "center", marginHorizontal: 22, marginTop: 8, borderRadius: 12 },
-  cancelButtonCompact: { height: 44, alignItems: "center", justifyContent: "center", borderRadius: 10 },
   cancelText: { color: scannerDark.ink2, fontSize: 15, lineHeight: 20, fontWeight: "400" },
-  pdfTop: { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 20, paddingTop: 18 },
-  pdfIcon: { width: 44, height: 44, borderRadius: 10, backgroundColor: scannerDark.surface3, alignItems: "center", justifyContent: "center" },
-  pdfTextBlock: { flex: 1, minWidth: 0 },
-  pdfEyebrow: { color: scannerDark.ink4, fontSize: 10, lineHeight: 13, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase" },
-  pdfTitle: { color: scannerDark.ink, fontSize: 15, lineHeight: 20, fontWeight: "500", marginTop: 2 },
-  warningBlock: { marginHorizontal: 20, marginTop: 14, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, backgroundColor: scannerDark.amberSoft, borderWidth: 1, borderColor: scannerDark.amberLine },
+});
+
+const pickerStyles = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(10,9,7,0.60)" },
+  sheet: {
+    backgroundColor: scannerDark.surface2,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 28,
+    maxHeight: "85%",
+  },
+  handle: { width: 36, height: 4, borderRadius: 999, backgroundColor: scannerDark.ink3, alignSelf: "center", marginTop: 10 },
+  titleRow: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 4, flexDirection: "row", alignItems: "baseline", gap: 8 },
+  title: { color: scannerDark.ink, fontSize: 16, fontWeight: "600" },
+  titleHint: { color: scannerDark.blue, fontSize: 12, lineHeight: 16 },
+  warning: {
+    marginHorizontal: 20,
+    marginTop: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: scannerDark.amberSoft,
+    borderWidth: 1,
+    borderColor: scannerDark.amberLine,
+  },
   warningText: { color: scannerDark.amber, fontSize: 12, lineHeight: 18 },
-  ctaStack: { paddingHorizontal: 20, paddingTop: 14, gap: 10 },
-  primaryButton: { height: 52, borderRadius: 12, backgroundColor: scannerDark.blueDeep, alignItems: "center", justifyContent: "center" },
-  primaryButtonText: { color: scannerDark.ink, fontSize: 15, lineHeight: 18, fontWeight: "500" },
-  upgradeButton: { height: 50, borderRadius: 12, borderWidth: 1, borderColor: scannerDark.purpleLine, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6 },
+  grid: { flexGrow: 0, marginTop: 12 },
+  gridContent: { paddingHorizontal: 16, paddingBottom: 8 },
+  gridRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  pageCard: {
+    width: "47%",
+    aspectRatio: 0.72,
+    borderRadius: 10,
+    position: "relative",
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: scannerDark.hairline,
+    backgroundColor: scannerDark.surface3,
+  },
+  pageCardSelected: {
+    borderColor: scannerDark.blue,
+  },
+  pageCardDim: { opacity: 0.4 },
+  pageCardImage: { width: "100%", height: "100%" },
+  pageCardPlaceholder: { flex: 1, alignItems: "center", justifyContent: "center" },
+  pageNumberBadge: {
+    position: "absolute",
+    bottom: 6,
+    left: 6,
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 6,
+    borderRadius: 11,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pageNumberBadgeText: { color: scannerDark.ink, fontSize: 12, fontWeight: "700" },
+  checkOverlay: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: scannerDark.blueDeep,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  footer: { paddingHorizontal: 20, paddingTop: 12, gap: 10 },
+  addButton: { height: 52, borderRadius: 12, backgroundColor: scannerDark.blueDeep, alignItems: "center", justifyContent: "center" },
+  addButtonDisabled: { opacity: 0.4 },
+  addButtonText: { color: scannerDark.ink, fontSize: 15, lineHeight: 18, fontWeight: "500" },
+  upgradeButton: {
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: scannerDark.purpleLine,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
   upgradeButtonText: { color: scannerDark.purple, fontSize: 14, lineHeight: 18, fontWeight: "500" },
+  cancelButton: { height: 44, alignItems: "center", justifyContent: "center", borderRadius: 10 },
+  cancelText: { color: scannerDark.ink2, fontSize: 15, lineHeight: 20, fontWeight: "400" },
+});
+
+const previewStyles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: scannerDark.bgDeep },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: scannerDark.surface2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  counter: { color: scannerDark.ink2, fontSize: 14, lineHeight: 18, fontWeight: "600", flex: 1 },
+  pager: { flex: 1 },
+  page: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
+  pageImage: { width: "100%", height: "100%", borderRadius: 10 },
+  pagePdf: {
+    width: "100%",
+    aspectRatio: 0.72,
+    borderRadius: 12,
+    backgroundColor: scannerDark.surface2,
+    borderWidth: 1,
+    borderColor: scannerDark.blueLine,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    gap: 14,
+  },
+  pagePdfName: { color: scannerDark.ink, fontSize: 15, fontWeight: "500", textAlign: "center" },
+  dots: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 14,
+    gap: 7,
+  },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: scannerDark.ink5 },
+  dotActive: { width: 18, backgroundColor: scannerDark.blue },
 });
 
 const permissionStyles = StyleSheet.create({

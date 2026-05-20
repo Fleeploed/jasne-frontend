@@ -2,6 +2,8 @@ import { decode } from "base64-arraybuffer";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
+import PdfThumbnail from "react-native-pdf-thumbnail";
+import { PDFDocument } from "pdf-lib";
 import { TurboModuleRegistry } from "react-native";
 
 import { apiFetch } from "@/lib/api";
@@ -264,6 +266,24 @@ function mapStorageUploadError(message: string) {
   }
 
   return `${t("scanApi.uploadFailed")} ${message}`;
+}
+
+export async function getPdfPageCount(uri: string): Promise<number> {
+  const filePath = uri.startsWith("file://") ? uri : `file://${uri}`;
+  const base64 = await FileSystem.readAsStringAsync(filePath, { encoding: FileSystem.EncodingType.Base64 });
+  const doc = await PDFDocument.load(base64, { updateMetadata: false });
+  return doc.getPageCount();
+}
+
+export async function renderPdfPage(uri: string, pageIndex: number): Promise<PickedUpload> {
+  // iOS uses URL(string:) which requires the file:// scheme.
+  const filePath = uri.startsWith("file://") ? uri : `file://${uri}`;
+  const result = await PdfThumbnail.generate(filePath, pageIndex, 75);
+  return {
+    uri: result.uri,
+    name: `pdf-page-${Date.now()}-${pageIndex + 1}.jpg`,
+    mimeType: "image/jpeg",
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

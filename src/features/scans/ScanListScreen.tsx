@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Keyboard, LayoutAnimation, Platform, Pressable, RefreshControl, StyleSheet, Text, TextInput, UIManager, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { Icon } from "@/components/Icon";
+import { ActionSheet, type ActionSheetAction } from "@/components/ActionSheet";
 import { ErrorText, Screen, fonts, useColors, type ColorPalette } from "@/components/ui";
 import { listDeadlines } from "@/features/deadlines/deadlinesApi";
 import { getLimits, listScans } from "@/features/scans/scansApi";
+import { getPinnedScanIds, togglePinnedScan } from "@/features/scans/pinnedScansStore";
 import { formatLocalizedDate, t } from "@/lib/i18n";
 import type { DeadlineResponse, LimitsResponse, ScanListItem } from "@/lib/types";
 
@@ -42,7 +44,8 @@ export function ScanListScreen() {
   const [error, setError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [doneExpanded, setDoneExpanded] = useState(false);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const [sheetScan, setSheetScan] = useState<ScanListItem | null>(null);
   const searchInputRef = useRef<TextInput>(null);
 
   const aliveRef = useRef(true);
@@ -56,11 +59,17 @@ export function ScanListScreen() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [nextScans, nextLimits, nextDeadlines] = await Promise.all([listScans(), getLimits(), listDeadlines(true)]);
+      const [nextScans, nextLimits, nextDeadlines, nextPinned] = await Promise.all([
+        listScans(),
+        getLimits(),
+        listDeadlines(true),
+        getPinnedScanIds(),
+      ]);
       if (!aliveRef.current) return;
       setScans(nextScans);
       setLimits(nextLimits);
       setDeadlines(nextDeadlines);
+      setPinnedIds(new Set(nextPinned));
     } catch (loadError) {
       if (!aliveRef.current) return;
       setError(loadError instanceof Error ? loadError.message : t("documents.loadError"));
@@ -72,6 +81,12 @@ export function ScanListScreen() {
     }
   }, []);
 
+  const togglePin = useCallback(async (scanId: string) => {
+    const next = await togglePinnedScan(scanId);
+    if (!aliveRef.current) return;
+    setPinnedIds(new Set(next));
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       void load();
@@ -80,8 +95,8 @@ export function ScanListScreen() {
 
   const filteredScans = useMemo(() => filterScans(scans, deadlines, search), [scans, deadlines, search]);
   const sections = useMemo(
-    () => splitScans(filteredScans, deadlines, doneExpanded),
-    [deadlines, doneExpanded, filteredScans]
+    () => splitScans(filteredScans, deadlines, pinnedIds),
+    [deadlines, filteredScans, pinnedIds]
   );
 
   if (loading) {
@@ -146,19 +161,25 @@ export function ScanListScreen() {
         }
         renderItem={({ item }) => {
           if (item.type === "section") return <Text style={styles.sectionHeader}>{item.title}</Text>;
-          if (item.type === "doneToggle") {
-            return (
-              <DoneSectionToggle
-                count={item.count}
-                expanded={item.expanded}
-                onPress={() => setDoneExpanded((prev) => !prev)}
-                colors={colors}
-                styles={styles}
-              />
-            );
-          }
-          return <DocumentRow item={item.scan} deadline={item.deadline} muted={item.muted} query={search} colors={colors} styles={styles} categoryStyleList={categoryStyleList} />;
+          return (
+            <DocumentRow
+              item={item.scan}
+              deadline={item.deadline}
+              pinned={item.pinned}
+              query={search}
+              colors={colors}
+              styles={styles}
+              categoryStyleList={categoryStyleList}
+              onLongPress={() => setSheetScan(item.scan)}
+            />
+          );
         }}
+      />
+      <ActionSheet
+        visible={Boolean(sheetScan)}
+        title={sheetScan ? getTitle(sheetScan) : undefined}
+        actions={buildScanActions(sheetScan, pinnedIds, togglePin)}
+        onClose={() => setSheetScan(null)}
       />
       <Pressable
         onPress={openNewScan}
@@ -173,37 +194,21 @@ export function ScanListScreen() {
   );
 }
 
-function DoneSectionToggle({
-  count,
-  expanded,
-  onPress,
-  colors,
-  styles,
-}: {
-  count: number;
-  expanded: boolean;
-  onPress: () => void;
-  colors: ColorPalette;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.doneToggle, pressed && { opacity: 0.65 }]}
-      accessibilityRole="button"
-      accessibilityLabel={t(expanded ? "documents.doneCollapseAria" : "documents.doneExpandAria", { count })}
-    >
-      <Text style={styles.doneToggleText}>
-        {t("documents.done")} · {count}
-      </Text>
-      <Icon
-        name="chevron-down"
-        size={16}
-        color={colors.muted2}
-        style={expanded ? { transform: [{ rotate: "180deg" }] } : undefined}
-      />
-    </Pressable>
-  );
+function buildScanActions(
+  scan: ScanListItem | null,
+  pinnedIds: Set<string>,
+  togglePin: (id: string) => Promise<void>,
+): ActionSheetAction[] {
+  if (!scan) return [];
+  const isPinned = pinnedIds.has(scan.id);
+  return [
+    {
+      key: "pin",
+      label: t(isPinned ? "documents.unpin" : "documents.pin"),
+      icon: "pin",
+      onPress: () => void togglePin(scan.id),
+    },
+  ];
 }
 
 function SearchEmpty({ query, colors, styles }: {
@@ -381,28 +386,30 @@ function ScanCTACard({ limits, scanDisabled, onScan, styles, colors }: {
   );
 }
 
-function DocumentRow({ item, deadline, muted, query, colors, styles, categoryStyleList }: {
+function DocumentRow({ item, deadline, pinned, query, colors, styles, categoryStyleList, onLongPress }: {
   item: ScanListItem;
   deadline?: DeadlineResponse;
-  muted?: boolean;
+  pinned?: boolean;
   query?: string;
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
   categoryStyleList: ReturnType<typeof getCategoryStyles>;
+  onLongPress?: () => void;
 }) {
   const visual = getDocVisual(item, colors, categoryStyleList);
-  const badge = muted || !deadline ? null : getDeadlineBadge(deadline.due_date);
+  const badge = deadline ? getDeadlineBadge(deadline.due_date) : null;
   const badgeColors = deadline ? getDeadlineBadgeColors(deadline.due_date, colors) : visual;
-  const secondaryBadge = muted ? t("documents.done") : t("scan.pageCount", { count: item.page_count });
+  const secondaryBadge = t("scan.pageCount", { count: item.page_count });
 
   return (
     <Pressable
       style={({ pressed }) => [
         styles.row,
-        muted && styles.rowMuted,
         pressed && { opacity: 0.92, transform: [{ scale: 0.99 }] }
       ]}
       onPress={() => router.push(`/scan/${item.id}`)}
+      onLongPress={onLongPress}
+      delayLongPress={350}
     >
       <View style={styles.rowTop}>
         <View style={[styles.thumb, { backgroundColor: visual.bg }]}>
@@ -411,9 +418,12 @@ function DocumentRow({ item, deadline, muted, query, colors, styles, categorySty
         <View style={styles.rowHeadText}>
           <View style={styles.rowMetaLine}>
             <Text style={styles.rowEyebrow} numberOfLines={1}>{getDocMeta(item)}</Text>
-            <Text style={styles.rowTime}>{formatDate(getActivityDate(item))}</Text>
+            <View style={styles.rowTimeBlock}>
+              {pinned ? <Icon name="pin" size={12} color={colors.primary} /> : null}
+              <Text style={styles.rowTime}>{formatDate(getActivityDate(item))}</Text>
+            </View>
           </View>
-          <Text style={[styles.rowTitle, muted && styles.rowTitleMuted]} numberOfLines={1}>
+          <Text style={styles.rowTitle} numberOfLines={1}>
             {highlightMatch(getTitle(item), query, styles.highlight)}
           </Text>
           {item.sender ? (
@@ -496,11 +506,10 @@ function filterScans(scans: ScanListItem[], deadlines: DeadlineResponse[], query
 }
 
 type SectionRow = { key: string; type: "section"; title: string };
-type DoneToggleRow = { key: string; type: "doneToggle"; count: number; expanded: boolean };
-type ScanRow = { key: string; type: "scan"; scan: ScanListItem; deadline?: DeadlineResponse; muted?: boolean };
-type ListRow = SectionRow | DoneToggleRow | ScanRow;
+type ScanRow = { key: string; type: "scan"; scan: ScanListItem; deadline?: DeadlineResponse; pinned?: boolean };
+type ListRow = SectionRow | ScanRow;
 
-function splitScans(scans: ScanListItem[], deadlines: DeadlineResponse[], doneExpanded: boolean) {
+function splitScans(scans: ScanListItem[], deadlines: DeadlineResponse[], pinnedIds: Set<string>) {
   const byScanId = new Map<string, DeadlineResponse>();
   [...deadlines]
     .filter((deadline) => Boolean(deadline.scan_id))
@@ -511,21 +520,26 @@ function splitScans(scans: ScanListItem[], deadlines: DeadlineResponse[], doneEx
 
   const sorted = [...scans].sort((a, b) => getActivityDate(b).localeCompare(getActivityDate(a)));
 
-  const scansWithDeadlines = sorted.filter((scan) => byScanId.has(scan.id));
-  const active = scansWithDeadlines.length ? scansWithDeadlines : sorted;
-  const done = scansWithDeadlines.length ? sorted.filter((scan) => !byScanId.has(scan.id)) : [];
+  const pinned = sorted.filter((scan) => pinnedIds.has(scan.id));
+  const rest = sorted.filter((scan) => !pinnedIds.has(scan.id));
+  const withDeadlines = rest.filter((scan) => byScanId.has(scan.id));
+  const withoutDeadlines = rest.filter((scan) => !byScanId.has(scan.id));
+
   const rows: ListRow[] = [];
 
-  if (active.length) {
-    rows.push({ key: "section-active", type: "section", title: t("documents.active") });
-    active.forEach((scan) => rows.push({ key: scan.id, type: "scan", scan, deadline: byScanId.get(scan.id) }));
+  if (pinned.length) {
+    rows.push({ key: "section-pinned", type: "section", title: t("documents.pinned") });
+    pinned.forEach((scan) =>
+      rows.push({ key: `pin-${scan.id}`, type: "scan", scan, deadline: byScanId.get(scan.id), pinned: true }),
+    );
   }
-  if (done.length) {
-    // Compact collapsible header: "Vyřízeno (N) ▾". Items only render when expanded.
-    rows.push({ key: "section-done-toggle", type: "doneToggle", count: done.length, expanded: doneExpanded });
-    if (doneExpanded) {
-      done.forEach((scan) => rows.push({ key: scan.id, type: "scan", scan, muted: true }));
-    }
+  if (withDeadlines.length) {
+    rows.push({ key: "section-with-deadlines", type: "section", title: t("documents.withDeadlines") });
+    withDeadlines.forEach((scan) => rows.push({ key: scan.id, type: "scan", scan, deadline: byScanId.get(scan.id) }));
+  }
+  if (withoutDeadlines.length) {
+    rows.push({ key: "section-without-deadlines", type: "section", title: t("documents.withoutDeadlines") });
+    withoutDeadlines.forEach((scan) => rows.push({ key: scan.id, type: "scan", scan }));
   }
 
   return { rows };
@@ -620,11 +634,11 @@ function createStyles(colors: ColorPalette) {
     },
     logo: {
       color: colors.primary,
-      fontSize: 30,
-      lineHeight: 39,
+      fontSize: 36,
+      lineHeight: 40,
       fontFamily: "Geist_600SemiBold",
       fontWeight: "600",
-      letterSpacing: -1.2
+      letterSpacing: -1
     },
     headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
     searchIcon: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
@@ -690,22 +704,6 @@ function createStyles(colors: ColorPalette) {
       backgroundColor: colors.amberLight,
       color: colors.amberDark,
       fontWeight: "700",
-    },
-    doneToggle: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      paddingVertical: 8,
-      paddingHorizontal: 2,
-      marginTop: 4,
-    },
-    doneToggleText: {
-      color: colors.muted2,
-      fontFamily: fonts.bodySemiBold,
-      fontSize: 11,
-      fontWeight: "600",
-      letterSpacing: 1.54,
-      textTransform: "uppercase",
     },
     ctaCard: {
       marginHorizontal: 16,
@@ -853,7 +851,6 @@ function createStyles(colors: ColorPalette) {
       shadowRadius: 12,
       elevation: 1
     },
-    rowMuted: { opacity: 0.65 },
     rowTop: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
     thumb: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
     rowHeadText: { flex: 1, minWidth: 0 },
@@ -877,7 +874,6 @@ function createStyles(colors: ColorPalette) {
       letterSpacing: -0.17,
       marginTop: 2
     },
-    rowTitleMuted: { color: colors.muted2 },
     rowSender: {
       color: colors.muted2,
       fontFamily: fonts.body,
@@ -887,6 +883,7 @@ function createStyles(colors: ColorPalette) {
     },
     rowPreview: { color: colors.muted, fontSize: 14.5, lineHeight: 21.025 },
     rowPills: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+    rowTimeBlock: { flexDirection: "row", alignItems: "center", gap: 4 },
     rowTime: { color: colors.muted3, fontSize: 12, lineHeight: 14.5 },
     badge: {
       minHeight: 24,
