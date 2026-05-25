@@ -3,6 +3,7 @@ import { Dimensions, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, T
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon, type IconName } from "@/components/Icon";
+import { fonts, typeStyles, useThemePreference } from "@/components/ui";
 
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { ChatThreadScreen } from "@/features/chat/ChatThreadScreen";
@@ -19,10 +20,13 @@ import {
   uploadToStorage
 } from "@/features/scans/scansApi";
 import {
-  getPendingScan,
-  pushPendingProgress,
-  resetPendingScan,
-  updatePendingScan,
+  createPendingScan,
+  generatePendingScanId,
+  getPendingScanById,
+  pushPendingProgressById,
+  removePendingScanById,
+  updatePendingPreviewById,
+  updatePendingScanById,
 } from "@/features/scans/pendingScanStore";
 import { getLocale, t } from "@/lib/i18n";
 import type { UserPlan } from "@/lib/types";
@@ -30,6 +34,9 @@ import type { UserPlan } from "@/lib/types";
 type ScannerCopy = ReturnType<typeof getScannerCopy>;
 
 const scannerDark = {
+  // Camera viewport ALWAYS stays black — convention for camera UI, regardless of theme.
+  stage: "#000",
+  // Chrome (app bar, bottom bar, sheets, picker, preview):
   bg: "#0F0D0B",
   bgDeep: "#0A0907",
   surface: "#181512",
@@ -48,6 +55,10 @@ const scannerDark = {
   ink4: "#6F675D",
   ink5: "#4A443D",
   paper: "#F1EAD9",
+  // On-stage text/icons sit over the black viewport — kept light in both themes.
+  stageInk: "#F4EFE6",
+  stageInk2: "#D9D2C5",
+  stageInk3: "#A39A8C",
   greenSoft: "rgba(127,190,154,0.12)",
   greenLine: "rgba(127,190,154,0.28)",
   redSoft: "rgba(224,127,115,0.13)",
@@ -60,6 +71,61 @@ const scannerDark = {
   blueLine: "rgba(111,160,230,0.28)",
 };
 
+// Light theme keeps the camera viewport black (camera-app convention),
+// but swaps the surrounding chrome to warm paper tones.
+const scannerLight: typeof scannerDark = {
+  stage: "#000",
+  bg: "#F7F1E4",
+  bgDeep: "#FBF6EC",
+  surface: "#FFFFFF",
+  surface2: "#F1EAD9",
+  surface3: "#E8DFCB",
+  hairline: "#E0D6BE",
+  blue: "#3E6FB8",
+  blueDeep: "#3E6FB8",
+  amber: "#B07E2C",
+  red: "#C8493C",
+  green: "#4E8C68",
+  purple: "#7458B8",
+  ink: "#2B2620",
+  ink2: "#5A5147",
+  ink3: "#8B8175",
+  ink4: "#A39A8C",
+  ink5: "#C9C0B0",
+  paper: "#F1EAD9",
+  stageInk: "#F4EFE6",
+  stageInk2: "#D9D2C5",
+  stageInk3: "#A39A8C",
+  greenSoft: "rgba(78,140,104,0.10)",
+  greenLine: "rgba(78,140,104,0.30)",
+  redSoft: "rgba(200,73,60,0.10)",
+  redLine: "rgba(200,73,60,0.30)",
+  amberSoft: "rgba(176,126,44,0.10)",
+  amberLine: "rgba(176,126,44,0.30)",
+  purpleSoft: "rgba(116,88,184,0.10)",
+  purpleLine: "rgba(116,88,184,0.30)",
+  blueSoft: "rgba(62,111,184,0.10)",
+  blueLine: "rgba(62,111,184,0.30)",
+};
+
+type ScannerPalette = typeof scannerDark;
+
+function useScannerTheme() {
+  const { scheme } = useThemePreference();
+  return useMemo(() => {
+    const scanner = scheme === "light" ? scannerLight : scannerDark;
+    return {
+      scheme,
+      scanner,
+      scannerStyles: createScannerStyles(scanner),
+      sheetStyles: createSheetStyles(scanner),
+      pickerStyles: createPickerStyles(scanner),
+      previewStyles: createPreviewStyles(scanner),
+      permissionStyles: createPermissionStyles(scanner),
+    };
+  }, [scheme]);
+}
+
 const stepLabels: Record<string, ReturnType<typeof t>> = {
   preparing_inputs: t("scan.step.preparing_inputs"),
   ocr: t("scan.step.ocr"),
@@ -70,9 +136,10 @@ const stepLabels: Record<string, ReturnType<typeof t>> = {
 };
 
 export function NewScanScreen() {
-  const params = useLocalSearchParams<{ fresh?: string }>();
+  const params = useLocalSearchParams<{ fresh?: string; pending?: string }>();
   const insets = useSafeAreaInsets();
   const copy = useMemo(() => getScannerCopy(getLocale()), []);
+  const { scannerStyles } = useScannerTheme();
 
   const [files, setFiles] = useState<PickedUpload[]>([]);
   const [pageLimit, setPageLimit] = useState<number | null>(null);
@@ -91,7 +158,12 @@ export function NewScanScreen() {
   const [pdfConverting, setPdfConverting] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
-  const [showPendingChat, setShowPendingChat] = useState(() => getPendingScan().active);
+  // Show chat only when explicitly entered via a pending card (?pending=<localId>).
+  // The FAB always enters the scanner with a fresh state.
+  const [activePendingId, setActivePendingId] = useState<string | null>(() =>
+    params.pending && getPendingScanById(params.pending) ? params.pending : null,
+  );
+  const showPendingChat = activePendingId !== null;
   const [previewOpen, setPreviewOpen] = useState(false);
   // Transient "page added" feedback — pill auto-hides 2s after each capture.
   const [pillFlash, setPillFlash] = useState<{ label: string; key: number } | null>(null);
@@ -103,9 +175,8 @@ export function NewScanScreen() {
   }, [pillFlash]);
 
   useEffect(() => {
-    const pending = getPendingScan();
-    if (pending.active) return;
-
+    // Always reset the scanner UI on `fresh` entry. Don't clobber any in-flight
+    // pending scans in the store — that data drives the pending cards on the list.
     setFiles([]);
     setBusy(false);
     setError(null);
@@ -114,9 +185,8 @@ export function NewScanScreen() {
     setPdfRendering(false);
     setPdfConverting(false);
     setPermissionDenied(false);
-    setShowPendingChat(false);
-    resetPendingScan();
-  }, [params.fresh]);
+    setActivePendingId(params.pending && getPendingScanById(params.pending) ? params.pending : null);
+  }, [params.fresh, params.pending]);
 
   useEffect(() => {
     let alive = true;
@@ -286,71 +356,61 @@ export function NewScanScreen() {
         return;
       }
 
-      resetPendingScan();
-      updatePendingScan({
-        active: true,
-        attachments: files.map((file) => ({
-          uri: file.uri,
-          name: file.name,
-          mimeType: file.mimeType,
-        })),
-      });
-      setShowPendingChat(true);
+      const localId = generatePendingScanId();
+      createPendingScan(
+        localId,
+        files.map((file) => ({ uri: file.uri, name: file.name, mimeType: file.mimeType })),
+      );
+      setActivePendingId(localId);
 
-      pushPendingProgress(t("scan.uploading"));
-      const paths = await uploadToStorage(files);
-      if (paths.length !== files.length) {
-        throw new Error(t("scan.uploadCountMismatch"));
+      pushPendingProgressById(localId, t("scan.uploading"));
+      try {
+        const paths = await uploadToStorage(files);
+        if (paths.length !== files.length) {
+          throw new Error(t("scan.uploadCountMismatch"));
+        }
+        await streamScan(paths, (event) => handleScanEvent(localId, event));
+      } catch (scanError) {
+        const message = scanError instanceof Error ? scanError.message : t("scan.failed");
+        // Don't setError here — component may have unmounted while streaming.
+        updatePendingScanById(localId, { error: message, active: false });
       }
-
-      await streamScan(paths, (event) => handleScanEvent(event));
     } catch (scanError) {
       const message = scanError instanceof Error ? scanError.message : t("scan.failed");
       setError(message);
-      updatePendingScan({ error: message, active: false });
     } finally {
       setBusy(false);
     }
   }
 
-  function handleScanEvent(event: ScanProgressEvent) {
+  function handleScanEvent(localId: string, event: ScanProgressEvent) {
     if (event.type === "status") {
       const label = event.step ? stepLabels[event.step] ?? event.message ?? event.step : event.message;
-      if (label) {
-        pushPendingProgress(label);
-      }
+      if (label) pushPendingProgressById(localId, label);
       return;
     }
 
     if (event.type === "field") {
       if (event.field === "summary") {
-        updatePendingScan({ preview: { ...getPendingPreview(), summary: String(event.value ?? "") } });
+        updatePendingPreviewById(localId, { summary: String(event.value ?? "") });
       }
       if (event.field === "document_type_localized" || event.field === "document_type") {
-        updatePendingScan({ preview: { ...getPendingPreview(), documentType: String(event.value ?? "") } });
+        updatePendingPreviewById(localId, { documentType: String(event.value ?? "") });
       }
       if (event.field === "actions_required" && Array.isArray(event.value)) {
-        updatePendingScan({
-          preview: {
-            ...getPendingPreview(),
-            actions: event.value.filter((value): value is string => typeof value === "string"),
-          },
+        updatePendingPreviewById(localId, {
+          actions: event.value.filter((value): value is string => typeof value === "string"),
         });
       }
       return;
     }
 
     if (event.type === "error") {
-      setError(event.detail);
-      updatePendingScan({ error: event.detail, active: false });
+      updatePendingScanById(localId, { error: event.detail, active: false });
       return;
     }
 
-    updatePendingScan({ scanId: event.scan.id, active: false });
-  }
-
-  function getPendingPreview() {
-    return getPendingScan().preview;
+    updatePendingScanById(localId, { scanId: event.scan.id, active: false });
   }
 
   async function getAvailableSlots() {
@@ -416,11 +476,12 @@ export function NewScanScreen() {
           setPermissionDenied(false);
           void addImage();
         }}
+        topInset={insets.top}
       />
     );
   }
 
-  if (showPendingChat) return <ChatThreadScreen />;
+  if (showPendingChat && activePendingId) return <ChatThreadScreen pendingLocalId={activePendingId} />;
 
   return (
     <View style={scannerStyles.root}>
@@ -532,18 +593,19 @@ function ScannerAppBar({
   onClose: () => void;
   topInset: number;
 }) {
+  const { scanner, scannerStyles } = useScannerTheme();
   const subtitle = subtitleForState(copy, count, maxPages, isPro, limitReached);
 
   return (
     <View style={[scannerStyles.appBar, { height: topInset + 56, paddingTop: topInset }]}>
       <Pressable accessibilityRole="button" accessibilityLabel={t("common.close")} onPress={onClose} style={scannerStyles.appBarButton}>
-        <Icon name="x" size={20} color={scannerDark.ink2} />
+        <Icon name="x" size={20} color={scanner.ink2} />
       </Pressable>
 
       <View style={scannerStyles.appBarTitleBlock}>
         <Text style={scannerStyles.appBarTitle}>{copy.newScan}</Text>
         <View style={scannerStyles.subtitleRow}>
-          {isPro ? <Icon name="star" size={11} color={scannerDark.purple} /> : null}
+          {isPro ? <Icon name="star" size={11} color={scanner.purple} /> : null}
           <Text style={[scannerStyles.appBarSubtitle, subtitle.tone === "red" && scannerStyles.redText, subtitle.tone === "amber" && scannerStyles.amberText]}>
             {subtitle.label}
           </Text>
@@ -551,7 +613,7 @@ function ScannerAppBar({
       </View>
 
       <Pressable accessibilityRole="button" accessibilityLabel={copy.flash} style={scannerStyles.appBarButton}>
-        <Icon name="zap" size={18} color={scannerDark.ink2} />
+        <Icon name="zap" size={18} color={scanner.ink2} />
       </Pressable>
     </View>
   );
@@ -571,6 +633,7 @@ function ScannerCamera({
   pdfRendering?: boolean;
   children?: React.ReactNode;
 }) {
+  const { scanner, scannerStyles } = useScannerTheme();
   return (
     <View style={scannerStyles.camera}>
       <View style={[scannerStyles.corner, scannerStyles.cornerTL]} />
@@ -579,7 +642,7 @@ function ScannerCamera({
       <View style={[scannerStyles.corner, scannerStyles.cornerBR]} />
 
       <View style={scannerStyles.emptyState}>
-        <Icon name="doc-text" size={48} color={scannerDark.ink3} />
+        <Icon name="doc-text" size={48} color={scanner.stageInk3} />
         <Text style={scannerStyles.emptyHint}>{copy.pointCamera}</Text>
       </View>
 
@@ -593,7 +656,7 @@ function ScannerCamera({
         </View>
       ) : flashPill?.visible ? (
         <View style={[scannerStyles.statusPill, scannerStyles.statusPillGreen]}>
-          <Icon name="check" size={14} color={scannerDark.green} />
+          <Icon name="check" size={14} color={scanner.green} />
           <Text style={[scannerStyles.statusPillText, scannerStyles.statusPillTextGreen]}>
             {flashPill.label}
           </Text>
@@ -619,6 +682,7 @@ function ThumbnailStrip({
   onPreview: () => void;
   previewLabel: string;
 }) {
+  const { scanner, scannerStyles } = useScannerTheme();
   return (
     <ScrollView
       horizontal
@@ -632,7 +696,7 @@ function ThumbnailStrip({
         accessibilityLabel={previewLabel}
         style={({ pressed }) => [scannerStyles.previewTile, pressed && { opacity: 0.7 }]}
       >
-        <Icon name="eye" size={22} color={scannerDark.blue} />
+        <Icon name="eye" size={22} color={scanner.blue} />
         <Text style={scannerStyles.previewTileLabel}>{files.length}</Text>
       </Pressable>
       {files.map((file, index) => {
@@ -643,7 +707,7 @@ function ThumbnailStrip({
               <Image source={{ uri: file.uri }} style={scannerStyles.thumbImage} resizeMode="cover" />
             ) : (
               <View style={scannerStyles.thumbPdf}>
-                <Icon name="doc" size={20} color={scannerDark.blue} />
+                <Icon name="doc" size={20} color={scanner.blue} />
               </View>
             )}
             <View style={scannerStyles.thumbIndexBadge}>
@@ -656,7 +720,7 @@ function ThumbnailStrip({
               accessibilityLabel={t("common.delete")}
               style={scannerStyles.thumbRemove}
             >
-              <Icon name="x" size={10} color={scannerDark.ink} />
+              <Icon name="x" size={10} color={scanner.stageInk} />
             </Pressable>
           </View>
         );
@@ -682,10 +746,11 @@ function BottomBar({
   onDone: () => void;
   bottomInset: number;
 }) {
+  const { scanner, scannerStyles } = useScannerTheme();
   return (
     <View style={[scannerStyles.bottomBar, { paddingBottom: Math.max(bottomInset, 18) + 10 }]}>
       <Pressable accessibilityRole="button" onPress={onImport} style={scannerStyles.sideAction}>
-        <Icon name="pages" size={24} color={scannerDark.ink2} />
+        <Icon name="pages" size={24} color={scanner.ink2} />
         <Text style={scannerStyles.sideActionText}>{copy.import}</Text>
       </Pressable>
 
@@ -720,6 +785,7 @@ function ProcessBar({
   onUpgrade: () => void;
   bottomInset: number;
 }) {
+  const { scanner, scannerStyles } = useScannerTheme();
   return (
     <View style={[scannerStyles.processBar, { paddingBottom: Math.max(bottomInset, 18) + 10 }]}>
       <Pressable accessibilityRole="button" onPress={onProcess} style={scannerStyles.processButton}>
@@ -729,7 +795,7 @@ function ProcessBar({
         <Text style={scannerStyles.processCaption}>{copy.maximumPages}</Text>
       ) : (
         <Pressable onPress={onUpgrade} style={scannerStyles.upgradeRibbon}>
-          <Icon name="star" size={12} color={scannerDark.purple} />
+          <Icon name="star" size={12} color={scanner.purple} />
           <Text style={scannerStyles.upgradeText}>{copy.upgradeToPro}</Text>
         </Pressable>
       )}
@@ -752,6 +818,7 @@ function ImportSheet({
   onPickPdf: () => void;
   onPickPhotos: () => void;
 }) {
+  const { sheetStyles } = useScannerTheme();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={sheetStyles.overlay}>
@@ -798,6 +865,7 @@ function PdfPagePicker({
   onConfirm: (indices: number[]) => void;
   onUpgrade: () => void;
 }) {
+  const { scanner, pickerStyles } = useScannerTheme();
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
   // Pre-select first `available` pages whenever picker opens.
@@ -870,7 +938,7 @@ function PdfPagePicker({
                       <Image source={{ uri: thumb.uri }} style={pickerStyles.pageCardImage} resizeMode="cover" />
                     ) : (
                       <View style={pickerStyles.pageCardPlaceholder}>
-                        <Icon name="doc-text" size={28} color={scannerDark.ink3} />
+                        <Icon name="doc-text" size={28} color={scanner.ink3} />
                       </View>
                     )}
                     <View style={pickerStyles.pageNumberBadge}>
@@ -878,7 +946,7 @@ function PdfPagePicker({
                     </View>
                     {isSelected ? (
                       <View style={pickerStyles.checkOverlay}>
-                        <Icon name="check" size={13} color={scannerDark.ink} />
+                        <Icon name="check" size={13} color={scanner.stageInk} />
                       </View>
                     ) : null}
                   </Pressable>
@@ -899,7 +967,7 @@ function PdfPagePicker({
             </Pressable>
             {!isPro && !converting ? (
               <Pressable onPress={onUpgrade} style={pickerStyles.upgradeButton}>
-                <Icon name="star" size={12} color={scannerDark.purple} />
+                <Icon name="star" size={12} color={scanner.purple} />
                 <Text style={pickerStyles.upgradeButtonText}>{copy.upgradePdf}</Text>
               </Pressable>
             ) : null}
@@ -916,16 +984,17 @@ function PdfPagePicker({
 }
 
 function SheetRow({ icon, title, detail, onPress }: { icon: IconName; title: string; detail: string; onPress: () => void }) {
+  const { scanner, sheetStyles } = useScannerTheme();
   return (
     <Pressable onPress={onPress} style={sheetStyles.row}>
       <View style={sheetStyles.rowIcon}>
-        <Icon name={icon} size={20} color={scannerDark.blue} />
+        <Icon name={icon} size={20} color={scanner.blue} />
       </View>
       <View style={sheetStyles.rowText}>
         <Text style={sheetStyles.rowTitle}>{title}</Text>
         <Text style={sheetStyles.rowDetail}>{detail}</Text>
       </View>
-      <Icon name="chevron-right" size={18} color={scannerDark.ink3} />
+      <Icon name="chevron-right" size={18} color={scanner.ink3} />
     </Pressable>
   );
 }
@@ -941,6 +1010,7 @@ function PreviewModal({
   copy: ScannerCopy;
   onClose: () => void;
 }) {
+  const { scanner, previewStyles } = useScannerTheme();
   const { width } = Dimensions.get("window");
   const [pageIndex, setPageIndex] = useState(0);
   const insets = useSafeAreaInsets();
@@ -963,7 +1033,7 @@ function PreviewModal({
             {files.length ? copy.previewPageOf(pageIndex + 1, files.length) : ""}
           </Text>
           <Pressable accessibilityRole="button" accessibilityLabel={t("common.close")} onPress={onClose} style={previewStyles.iconButton}>
-            <Icon name="x" size={20} color={scannerDark.ink2} />
+            <Icon name="x" size={20} color={scanner.ink2} />
           </Pressable>
         </View>
 
@@ -983,7 +1053,7 @@ function PreviewModal({
                 <Image source={{ uri: file.uri }} style={previewStyles.pageImage} resizeMode="contain" />
               ) : (
                 <View style={previewStyles.pagePdf}>
-                  <Icon name="doc" size={64} color={scannerDark.blue} />
+                  <Icon name="doc" size={64} color={scanner.blue} />
                   <Text style={previewStyles.pagePdfName} numberOfLines={2}>{file.name}</Text>
                 </View>
               )}
@@ -1014,19 +1084,27 @@ function PermissionDeniedScreen({
   onClose,
   onOpenSettings,
   onPickGallery,
+  topInset,
 }: {
   copy: ScannerCopy;
   error: string | null;
   onClose: () => void;
   onOpenSettings: () => void;
   onPickGallery: () => void;
+  topInset: number;
 }) {
+  const { scanner, permissionStyles } = useScannerTheme();
   return (
     <View style={permissionStyles.root}>
-      <Pressable onPress={onClose} style={permissionStyles.closeButton}>
-        <Icon name="x" size={20} color={scannerDark.ink2} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t("common.close")}
+        onPress={onClose}
+        style={[permissionStyles.closeButton, { top: topInset + 8 }]}
+      >
+        <Icon name="x" size={20} color={scanner.ink2} />
       </Pressable>
-      <Icon name="camera" size={58} color={scannerDark.ink4} style={{ marginBottom: 20 }} />
+      <Icon name="camera" size={58} color={scanner.ink4} style={{ marginBottom: 20 }} />
       <Text style={permissionStyles.title}>{copy.cameraAccessNeeded}</Text>
       <Text style={permissionStyles.body}>{copy.cameraAccessBody}</Text>
       {error ? <Text style={permissionStyles.error}>{error}</Text> : null}
@@ -1233,9 +1311,9 @@ function getScannerCopy(locale: string) {
   return copies[language];
 }
 
-const scannerStyles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: scannerDark.bg },
-  appBackground: { ...StyleSheet.absoluteFillObject, backgroundColor: scannerDark.bg },
+const createScannerStyles = (scanner: ScannerPalette) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: scanner.bg },
+  appBackground: { ...StyleSheet.absoluteFillObject, backgroundColor: scanner.bg },
   appBar: {
     height: 56,
     flexDirection: "row",
@@ -1248,16 +1326,16 @@ const scannerStyles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: scannerDark.surface2,
+    backgroundColor: scanner.surface2,
     alignItems: "center",
     justifyContent: "center",
   },
   appBarTitleBlock: { alignItems: "center", justifyContent: "center" },
-  appBarTitle: { color: scannerDark.ink, fontSize: 16, lineHeight: 18, fontWeight: "500" },
+  appBarTitle: { color: scanner.ink, fontFamily: fonts.bodyMedium, ...typeStyles.callout, fontWeight: "500" },
   subtitleRow: { marginTop: 4, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4 },
-  appBarSubtitle: { color: scannerDark.ink3, fontSize: 12, lineHeight: 14 },
-  redText: { color: scannerDark.red },
-  amberText: { color: scannerDark.amber },
+  appBarSubtitle: { color: scanner.ink3, fontFamily: fonts.body, ...typeStyles.caption1 },
+  redText: { color: scanner.red },
+  amberText: { color: scanner.amber },
   camera: {
     flex: 1,
     minHeight: 0,
@@ -1267,25 +1345,27 @@ const scannerStyles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
   },
-  corner: { position: "absolute", width: 14, height: 14, opacity: 0.45, borderColor: scannerDark.blue },
+  // Corner markers sit on the always-black camera viewport — always light.
+  corner: { position: "absolute", width: 14, height: 14, opacity: 0.55, borderColor: scanner.stageInk },
   cornerTL: { top: 24, left: 24, borderTopWidth: 1.5, borderLeftWidth: 1.5, borderTopLeftRadius: 4 },
   cornerTR: { top: 24, right: 24, borderTopWidth: 1.5, borderRightWidth: 1.5, borderTopRightRadius: 4 },
   cornerBL: { bottom: 24, left: 24, borderBottomWidth: 1.5, borderLeftWidth: 1.5, borderBottomLeftRadius: 4 },
   cornerBR: { bottom: 24, right: 24, borderBottomWidth: 1.5, borderRightWidth: 1.5, borderBottomRightRadius: 4 },
   emptyState: { alignItems: "center", gap: 14 },
-  emptyHint: { color: scannerDark.ink3, fontSize: 14, lineHeight: 19, textAlign: "center" },
+  // Sits over the always-black camera viewport, so colour stays light in both themes.
+  emptyHint: { color: scanner.stageInk3, fontFamily: fonts.body, ...typeStyles.rowMeta, textAlign: "center" },
   previewTile: {
     width: 60,
     height: 80,
     borderRadius: 8,
-    backgroundColor: scannerDark.surface3,
+    backgroundColor: scanner.surface3,
     borderWidth: 1,
-    borderColor: scannerDark.blueLine,
+    borderColor: scanner.blueLine,
     alignItems: "center",
     justifyContent: "center",
     gap: 4,
   },
-  previewTileLabel: { color: scannerDark.ink2, fontSize: 11, lineHeight: 14, fontWeight: "700" },
+  previewTileLabel: { color: scanner.ink2, fontFamily: fonts.bodyBold, ...typeStyles.caption2, fontWeight: "700" },
   statusPill: {
     position: "absolute",
     bottom: 116,
@@ -1297,11 +1377,11 @@ const scannerStyles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
   },
-  statusPillGreen: { backgroundColor: scannerDark.surface2 },
-  statusPillBlue: { backgroundColor: scannerDark.surface2 },
-  statusPillText: { fontSize: 13, lineHeight: 16, fontWeight: "600" },
-  statusPillTextGreen: { color: scannerDark.green },
-  statusPillTextBlue: { color: scannerDark.blue },
+  statusPillGreen: { backgroundColor: scanner.surface2 },
+  statusPillBlue: { backgroundColor: scanner.surface2 },
+  statusPillText: { fontFamily: fonts.bodySemiBold, ...typeStyles.rowMeta, fontWeight: "600" },
+  statusPillTextGreen: { color: scanner.green },
+  statusPillTextBlue: { color: scanner.blue },
   thumbs: {
     position: "absolute",
     left: 0,
@@ -1314,9 +1394,9 @@ const scannerStyles = StyleSheet.create({
     width: 60,
     height: 80,
     borderRadius: 8,
-    backgroundColor: scannerDark.surface3,
+    backgroundColor: scanner.surface3,
     borderWidth: 1,
-    borderColor: scannerDark.blueLine,
+    borderColor: scanner.blueLine,
     overflow: "hidden",
     position: "relative",
   },
@@ -1334,7 +1414,8 @@ const scannerStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  thumbIndexText: { color: scannerDark.ink, fontSize: 11, fontWeight: "700" },
+  // Index number sits on a dark rgba badge — always light text.
+  thumbIndexText: { color: scanner.stageInk, fontFamily: fonts.bodyBold, ...typeStyles.caption2, fontWeight: "700" },
   thumbRemove: {
     position: "absolute",
     top: 3,
@@ -1346,11 +1427,11 @@ const scannerStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  inlineError: { backgroundColor: scannerDark.redSoft, borderTopWidth: 1, borderTopColor: scannerDark.redLine, paddingHorizontal: 16, paddingVertical: 9 },
-  inlineErrorText: { color: scannerDark.red, fontSize: 12, lineHeight: 17, textAlign: "center" },
+  inlineError: { backgroundColor: scanner.redSoft, borderTopWidth: 1, borderTopColor: scanner.redLine, paddingHorizontal: 16, paddingVertical: 9 },
+  inlineErrorText: { color: scanner.red, fontFamily: fonts.body, ...typeStyles.caption1, textAlign: "center" },
   bottomBar: {
     flexShrink: 0,
-    backgroundColor: scannerDark.bg,
+    backgroundColor: scanner.bg,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -1368,7 +1449,7 @@ const scannerStyles = StyleSheet.create({
     paddingHorizontal: 6,
     justifyContent: "center",
   },
-  sideActionText: { color: scannerDark.ink2, fontSize: 11, lineHeight: 14, fontWeight: "500" },
+  sideActionText: { color: scanner.ink2, fontFamily: fonts.bodyMedium, ...typeStyles.caption2, fontWeight: "500" },
   shutterSlot: { width: 60 },
   doneAction: {
     minWidth: 64,
@@ -1377,8 +1458,8 @@ const scannerStyles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 6,
   },
-  doneText: { color: scannerDark.blue, fontSize: 15, lineHeight: 19, fontWeight: "500" },
-  doneTextDisabled: { color: scannerDark.ink5 },
+  doneText: { color: scanner.blue, fontFamily: fonts.bodyMedium, ...typeStyles.rowSecondary, fontWeight: "500" },
+  doneTextDisabled: { color: scanner.ink5 },
   shutterWrap: {
     position: "absolute",
     left: 0,
@@ -1393,7 +1474,7 @@ const scannerStyles = StyleSheet.create({
     height: 60,
     borderRadius: 30,
     borderWidth: 3,
-    borderColor: scannerDark.ink,
+    borderColor: scanner.ink,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "transparent",
@@ -1402,58 +1483,59 @@ const scannerStyles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 23,
-    backgroundColor: scannerDark.ink,
+    backgroundColor: scanner.ink,
   },
   shutterPressed: { opacity: 0.7 },
-  nearLimitLabel: { color: scannerDark.ink3, fontSize: 10, lineHeight: 12 },
-  processBar: { flexShrink: 0, backgroundColor: scannerDark.bg, paddingTop: 14, paddingHorizontal: 16, gap: 10 },
-  processButton: { height: 54, borderRadius: 12, backgroundColor: scannerDark.blueDeep, alignItems: "center", justifyContent: "center" },
-  processButtonText: { color: scannerDark.ink, fontSize: 15, lineHeight: 18, fontWeight: "500" },
-  processCaption: { color: scannerDark.ink4, fontSize: 10, textAlign: "center" },
+  nearLimitLabel: { color: scanner.ink3, fontFamily: fonts.body, ...typeStyles.caption2 },
+  processBar: { flexShrink: 0, backgroundColor: scanner.bg, paddingTop: 14, paddingHorizontal: 16, gap: 10 },
+  processButton: { height: 54, borderRadius: 12, backgroundColor: scanner.blueDeep, alignItems: "center", justifyContent: "center" },
+  // Text on the always-blue button stays light in both themes.
+  processButtonText: { color: scanner.stageInk, fontFamily: fonts.bodyMedium, ...typeStyles.rowSecondary, fontWeight: "500" },
+  processCaption: { color: scanner.ink4, fontFamily: fonts.body, ...typeStyles.caption2, textAlign: "center" },
   upgradeRibbon: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5 },
-  upgradeText: { color: scannerDark.purple, fontSize: 11, lineHeight: 14 },
+  upgradeText: { color: scanner.purple, fontFamily: fonts.body, ...typeStyles.caption2 },
 });
 
-const sheetStyles = StyleSheet.create({
+const createSheetStyles = (scanner: ScannerPalette) => StyleSheet.create({
   overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(10,9,7,0.50)" },
-  sheet: { backgroundColor: scannerDark.surface2, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 28 },
-  handle: { width: 36, height: 4, borderRadius: 999, backgroundColor: scannerDark.ink3, alignSelf: "center", marginTop: 10 },
-  sectionLabel: { paddingHorizontal: 22, paddingTop: 16, paddingBottom: 8, color: scannerDark.ink4, fontSize: 10, lineHeight: 13, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase" },
+  sheet: { backgroundColor: scanner.surface2, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 28 },
+  handle: { width: 36, height: 4, borderRadius: 999, backgroundColor: scanner.ink3, alignSelf: "center", marginTop: 10 },
+  sectionLabel: { paddingHorizontal: 22, paddingTop: 16, paddingBottom: 8, color: scanner.ink4, fontFamily: fonts.bodyExtraBold, ...typeStyles.sectionHeader, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase" },
   rows: { paddingHorizontal: 16 },
   row: { minHeight: 56, flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 6 },
-  rowIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: scannerDark.surface3, alignItems: "center", justifyContent: "center" },
+  rowIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: scanner.surface3, alignItems: "center", justifyContent: "center" },
   rowText: { flex: 1, minWidth: 0 },
-  rowTitle: { color: scannerDark.ink, fontSize: 14, lineHeight: 18, fontWeight: "500" },
-  rowDetail: { color: scannerDark.ink3, fontSize: 11, lineHeight: 14, marginTop: 1 },
-  divider: { height: 1, backgroundColor: scannerDark.hairline, opacity: 0.6 },
+  rowTitle: { color: scanner.ink, fontFamily: fonts.bodyMedium, ...typeStyles.rowMeta, fontWeight: "500" },
+  rowDetail: { color: scanner.ink3, fontFamily: fonts.body, ...typeStyles.caption2, marginTop: 1 },
+  divider: { height: 1, backgroundColor: scanner.hairline, opacity: 0.6 },
   cancelButton: { height: 48, alignItems: "center", justifyContent: "center", marginHorizontal: 22, marginTop: 8, borderRadius: 12 },
-  cancelText: { color: scannerDark.ink2, fontSize: 15, lineHeight: 20, fontWeight: "400" },
+  cancelText: { color: scanner.ink2, fontFamily: fonts.body, ...typeStyles.rowSecondary, fontWeight: "400" },
 });
 
-const pickerStyles = StyleSheet.create({
+const createPickerStyles = (scanner: ScannerPalette) => StyleSheet.create({
   overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(10,9,7,0.60)" },
   sheet: {
-    backgroundColor: scannerDark.surface2,
+    backgroundColor: scanner.surface2,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingBottom: 28,
     maxHeight: "85%",
   },
-  handle: { width: 36, height: 4, borderRadius: 999, backgroundColor: scannerDark.ink3, alignSelf: "center", marginTop: 10 },
+  handle: { width: 36, height: 4, borderRadius: 999, backgroundColor: scanner.ink3, alignSelf: "center", marginTop: 10 },
   titleRow: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 4, flexDirection: "row", alignItems: "baseline", gap: 8 },
-  title: { color: scannerDark.ink, fontSize: 16, fontWeight: "600" },
-  titleHint: { color: scannerDark.blue, fontSize: 12, lineHeight: 16 },
+  title: { color: scanner.ink, fontFamily: fonts.bodySemiBold, ...typeStyles.callout, fontWeight: "600" },
+  titleHint: { color: scanner.blue, fontFamily: fonts.body, ...typeStyles.caption1 },
   warning: {
     marginHorizontal: 20,
     marginTop: 10,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: scannerDark.amberSoft,
+    backgroundColor: scanner.amberSoft,
     borderWidth: 1,
-    borderColor: scannerDark.amberLine,
+    borderColor: scanner.amberLine,
   },
-  warningText: { color: scannerDark.amber, fontSize: 12, lineHeight: 18 },
+  warningText: { color: scanner.amber, fontFamily: fonts.body, ...typeStyles.caption1 },
   grid: { flexGrow: 0, marginTop: 12 },
   gridContent: { paddingHorizontal: 16, paddingBottom: 8 },
   gridRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
@@ -1464,11 +1546,11 @@ const pickerStyles = StyleSheet.create({
     position: "relative",
     overflow: "hidden",
     borderWidth: 2,
-    borderColor: scannerDark.hairline,
-    backgroundColor: scannerDark.surface3,
+    borderColor: scanner.hairline,
+    backgroundColor: scanner.surface3,
   },
   pageCardSelected: {
-    borderColor: scannerDark.blue,
+    borderColor: scanner.blue,
   },
   pageCardDim: { opacity: 0.4 },
   pageCardImage: { width: "100%", height: "100%" },
@@ -1485,7 +1567,7 @@ const pickerStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  pageNumberBadgeText: { color: scannerDark.ink, fontSize: 12, fontWeight: "700" },
+  pageNumberBadgeText: { color: scanner.stageInk, fontFamily: fonts.bodyBold, ...typeStyles.caption1, fontWeight: "700" },
   checkOverlay: {
     position: "absolute",
     top: 6,
@@ -1493,31 +1575,31 @@ const pickerStyles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: scannerDark.blueDeep,
+    backgroundColor: scanner.blueDeep,
     alignItems: "center",
     justifyContent: "center",
   },
   footer: { paddingHorizontal: 20, paddingTop: 12, gap: 10 },
-  addButton: { height: 52, borderRadius: 12, backgroundColor: scannerDark.blueDeep, alignItems: "center", justifyContent: "center" },
+  addButton: { height: 52, borderRadius: 12, backgroundColor: scanner.blueDeep, alignItems: "center", justifyContent: "center" },
   addButtonDisabled: { opacity: 0.4 },
-  addButtonText: { color: scannerDark.ink, fontSize: 15, lineHeight: 18, fontWeight: "500" },
+  addButtonText: { color: scanner.stageInk, fontFamily: fonts.bodyMedium, ...typeStyles.rowSecondary, fontWeight: "500" },
   upgradeButton: {
     height: 48,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: scannerDark.purpleLine,
+    borderColor: scanner.purpleLine,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
     gap: 6,
   },
-  upgradeButtonText: { color: scannerDark.purple, fontSize: 14, lineHeight: 18, fontWeight: "500" },
+  upgradeButtonText: { color: scanner.purple, fontFamily: fonts.bodyMedium, ...typeStyles.rowMeta, fontWeight: "500" },
   cancelButton: { height: 44, alignItems: "center", justifyContent: "center", borderRadius: 10 },
-  cancelText: { color: scannerDark.ink2, fontSize: 15, lineHeight: 20, fontWeight: "400" },
+  cancelText: { color: scanner.ink2, fontFamily: fonts.body, ...typeStyles.rowSecondary, fontWeight: "400" },
 });
 
-const previewStyles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: scannerDark.bgDeep },
+const createPreviewStyles = (scanner: ScannerPalette) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: scanner.bgDeep },
   topBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -1529,11 +1611,11 @@ const previewStyles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: scannerDark.surface2,
+    backgroundColor: scanner.surface2,
     alignItems: "center",
     justifyContent: "center",
   },
-  counter: { color: scannerDark.ink2, fontSize: 14, lineHeight: 18, fontWeight: "600", flex: 1 },
+  counter: { color: scanner.ink2, fontFamily: fonts.bodySemiBold, ...typeStyles.rowMeta, fontWeight: "600", flex: 1 },
   pager: { flex: 1 },
   page: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
   pageImage: { width: "100%", height: "100%", borderRadius: 10 },
@@ -1541,15 +1623,15 @@ const previewStyles = StyleSheet.create({
     width: "100%",
     aspectRatio: 0.72,
     borderRadius: 12,
-    backgroundColor: scannerDark.surface2,
+    backgroundColor: scanner.surface2,
     borderWidth: 1,
-    borderColor: scannerDark.blueLine,
+    borderColor: scanner.blueLine,
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
     gap: 14,
   },
-  pagePdfName: { color: scannerDark.ink, fontSize: 15, fontWeight: "500", textAlign: "center" },
+  pagePdfName: { color: scanner.ink, fontFamily: fonts.bodyMedium, ...typeStyles.rowSecondary, fontWeight: "500", textAlign: "center" },
   dots: {
     flexDirection: "row",
     alignItems: "center",
@@ -1557,19 +1639,19 @@ const previewStyles = StyleSheet.create({
     paddingTop: 14,
     gap: 7,
   },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: scannerDark.ink5 },
-  dotActive: { width: 18, backgroundColor: scannerDark.blue },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: scanner.ink5 },
+  dotActive: { width: 18, backgroundColor: scanner.blue },
 });
 
-const permissionStyles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: scannerDark.bg, alignItems: "center", justifyContent: "center", paddingHorizontal: 28 },
-  closeButton: { position: "absolute", top: 16, left: 20, width: 32, height: 32, borderRadius: 16, backgroundColor: scannerDark.surface2, alignItems: "center", justifyContent: "center" },
-  title: { color: scannerDark.ink, fontSize: 17, lineHeight: 22, fontWeight: "600", textAlign: "center" },
-  body: { color: scannerDark.ink3, fontSize: 14, lineHeight: 22, textAlign: "center", marginTop: 10, marginBottom: 22 },
-  error: { color: scannerDark.red, fontSize: 12, lineHeight: 17, textAlign: "center", marginBottom: 18 },
+const createPermissionStyles = (scanner: ScannerPalette) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: scanner.bg, alignItems: "center", justifyContent: "center", paddingHorizontal: 28 },
+  closeButton: { position: "absolute", right: 20, width: 36, height: 36, borderRadius: 18, backgroundColor: scanner.surface2, alignItems: "center", justifyContent: "center" },
+  title: { color: scanner.ink, fontFamily: fonts.bodySemiBold, ...typeStyles.rowTitle, fontWeight: "600", textAlign: "center" },
+  body: { color: scanner.ink3, fontFamily: fonts.body, ...typeStyles.rowMeta, textAlign: "center", marginTop: 10, marginBottom: 22 },
+  error: { color: scanner.red, fontFamily: fonts.body, ...typeStyles.caption1, textAlign: "center", marginBottom: 18 },
   actions: { width: "100%", gap: 10 },
-  primaryButton: { height: 52, borderRadius: 12, backgroundColor: scannerDark.blueDeep, alignItems: "center", justifyContent: "center" },
-  primaryButtonText: { color: scannerDark.ink, fontSize: 15, lineHeight: 18, fontWeight: "500" },
+  primaryButton: { height: 52, borderRadius: 12, backgroundColor: scanner.blueDeep, alignItems: "center", justifyContent: "center" },
+  primaryButtonText: { color: scanner.stageInk, fontFamily: fonts.bodyMedium, ...typeStyles.rowSecondary, fontWeight: "500" },
   secondaryButton: { height: 48, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  secondaryButtonText: { color: scannerDark.ink2, fontSize: 14, lineHeight: 18, fontWeight: "500" },
+  secondaryButtonText: { color: scanner.ink2, fontFamily: fonts.bodyMedium, ...typeStyles.rowMeta, fontWeight: "500" },
 });

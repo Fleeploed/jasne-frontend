@@ -16,12 +16,15 @@ import { AppIcon } from "@/components/AppIcon";
 
 export const lightColors = {
   bg: "#F9F7F4",
+  bgDeep: "#F1ECE5",
   surface: "#FDFBF8",
   surface2: "#F2EFEA",
+  surface3: "#ECE6DD",
   cream: "#FCF5E6",
   blueSoft: "#F0F3F9",
   blueMid: "#E3E9F2",
   border: "#E8E3DB",
+  borderSoft: "#EFEAE3",
 
   text: "#1E1B17",
   muted: "#3C3631",
@@ -64,12 +67,15 @@ export const lightColors = {
 
 export const darkColors = {
   bg: "#0F0D0B",
+  bgDeep: "#090806",
   surface: "#181512",
   surface2: "#211D19",
+  surface3: "#29241F",
   cream: "#2D2000",
   blueSoft: "rgba(111,160,230,0.13)",
   blueMid: "rgba(111,160,230,0.28)",
   border: "#2C2722",
+  borderSoft: "#27221E",
 
   text: "#F4EFE6",
   muted: "#D9D2C5",
@@ -124,6 +130,34 @@ export const fonts = {
   bodyBold: "Inter_700Bold",
   bodyExtraBold: "Inter_800ExtraBold",
 };
+
+export const typeScale = {
+  largeTitle: { fontSize: 34, lineHeight: 41 },
+  title1: { fontSize: 28, lineHeight: 34 },
+  title2: { fontSize: 22, lineHeight: 28 },
+  title3: { fontSize: 20, lineHeight: 25 },
+  headline: { fontSize: 17, lineHeight: 22 },
+  body: { fontSize: 17, lineHeight: 22 },
+  callout: { fontSize: 16, lineHeight: 21 },
+  subhead: { fontSize: 15, lineHeight: 20 },
+  footnote: { fontSize: 13, lineHeight: 18 },
+  caption1: { fontSize: 12, lineHeight: 16 },
+  caption2: { fontSize: 11, lineHeight: 14 },
+  sectionHeader: { fontSize: 13, lineHeight: 16 },
+} as const;
+
+export const typeStyles = {
+  ...typeScale,
+  rowTitle: typeScale.headline,
+  rowSecondary: typeScale.subhead,
+  rowMeta: typeScale.footnote,
+  button: typeScale.headline,
+  input: typeScale.body,
+  screenTitle: typeScale.title1,
+  largeScreenTitle: typeScale.largeTitle,
+  compactTitle: typeScale.title2,
+  sectionHeader: typeScale.sectionHeader,
+} as const;
 
 export type ThemePreference = "system" | "light" | "dark";
 type ResolvedTheme = "light" | "dark";
@@ -218,21 +252,25 @@ export function AppBar({
   left,
   right,
   subtitle,
-  titleSize = 22,
+  titleSize,
+  compact = false,
 }: {
   title: string;
   left?: ReactNode;
   right?: ReactNode;
   subtitle?: string;
   titleSize?: number;
+  compact?: boolean;
 }) {
   const colors = useColors();
+  const titleType = compact ? typeStyles.headline : typeStyles.compactTitle;
+  const resolvedTitleSize = titleSize ?? titleType.fontSize;
   const styles = useMemo(() => StyleSheet.create({
     appbar: {
-      minHeight: 63,
+      minHeight: compact ? 52 : 63,
       paddingHorizontal: 20,
-      paddingTop: 12,
-      paddingBottom: 14,
+      paddingTop: compact ? 8 : 12,
+      paddingBottom: compact ? 10 : 14,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
       backgroundColor: colors.bg
@@ -244,8 +282,8 @@ export function AppBar({
       justifyContent: "space-between"
     },
     appbarSide: {
-      minWidth: 36,
-      minHeight: 36,
+      minWidth: compact ? 34 : 36,
+      minHeight: compact ? 34 : 36,
       alignItems: "center",
       justifyContent: "center"
     },
@@ -256,15 +294,18 @@ export function AppBar({
     },
     appbarTitle: {
       color: colors.text,
-      fontSize: titleSize,
+      fontFamily: fonts.bodySemiBold,
+      fontSize: resolvedTitleSize,
       fontWeight: "500",
-      textAlign: "center"
+      textAlign: "center",
+      lineHeight: resolvedTitleSize === titleType.fontSize ? titleType.lineHeight : resolvedTitleSize + 4
     },
     appbarSubtitle: {
       color: colors.muted,
-      fontSize: 13
+      fontFamily: fonts.body,
+      ...(compact ? typeStyles.caption1 : typeStyles.rowMeta)
     }
-  }), [colors, titleSize]);
+  }), [colors, compact, resolvedTitleSize, titleType]);
 
   return (
     <View style={styles.appbar}>
@@ -297,7 +338,7 @@ export function IconButton({ label, onPress }: { label: string; onPress: () => v
         }
       ]}
     >
-      <Text style={{ color: colors.text, fontSize: 14, fontWeight: "700" }}>{label}</Text>
+      <Text style={{ color: colors.text, fontFamily: fonts.bodyBold, ...typeStyles.footnote, fontWeight: "700" }}>{label}</Text>
     </Pressable>
   );
 }
@@ -351,9 +392,9 @@ export function Button({
       borderWidth: 1.5,
       borderColor: colors.danger
     },
-    primaryText: { color: colors.textOnAccent, fontFamily: fonts.bodySemiBold, fontSize: 17, fontWeight: "600" },
-    secondaryText: { color: colors.primary, fontFamily: fonts.bodySemiBold, fontSize: 17, fontWeight: "600" },
-    dangerText: { color: colors.danger, fontFamily: fonts.bodySemiBold, fontSize: 17, fontWeight: "600" },
+    primaryText: { color: colors.textOnAccent, fontFamily: fonts.bodySemiBold, ...typeStyles.button, fontWeight: "600" },
+    secondaryText: { color: colors.primary, fontFamily: fonts.bodySemiBold, ...typeStyles.button, fontWeight: "600" },
+    dangerText: { color: colors.danger, fontFamily: fonts.bodySemiBold, ...typeStyles.button, fontWeight: "600" },
     disabled: { opacity: 0.55 },
     pressed: { opacity: 0.85 }
   }), [colors]);
@@ -422,7 +463,7 @@ export function Field({
           color: editable ? colors.text : colors.muted3,
           paddingHorizontal: 16,
           fontFamily: fonts.body,
-          fontSize: 16
+          ...typeStyles.input
         },
         multiline && { minHeight: 96, paddingTop: 12, textAlignVertical: "top" as const }
       ]}
@@ -434,8 +475,8 @@ export function EmptyState({ title, detail }: { title: string; detail?: string }
   const colors = useColors();
   return (
     <View style={{ padding: 24, alignItems: "center", gap: 8 }}>
-      <Text style={{ color: colors.text, fontSize: 18, fontWeight: "700", textAlign: "center" }}>{title}</Text>
-      {detail ? <Text style={{ color: colors.muted, fontSize: 14, textAlign: "center", lineHeight: 20 }}>{detail}</Text> : null}
+      <Text style={{ color: colors.text, fontFamily: fonts.bodyBold, ...typeStyles.headline, fontWeight: "700", textAlign: "center" }}>{title}</Text>
+      {detail ? <Text style={{ color: colors.muted, fontFamily: fonts.body, ...typeStyles.rowSecondary, textAlign: "center" }}>{detail}</Text> : null}
     </View>
   );
 }
@@ -443,5 +484,5 @@ export function EmptyState({ title, detail }: { title: string; detail?: string }
 export function ErrorText({ message }: { message?: string | null }) {
   const colors = useColors();
   if (!message) return null;
-  return <Text style={{ color: colors.danger, fontSize: 14, lineHeight: 20, paddingHorizontal: 20 }}>{message}</Text>;
+  return <Text style={{ color: colors.danger, fontFamily: fonts.body, ...typeStyles.rowSecondary, paddingHorizontal: 20 }}>{message}</Text>;
 }

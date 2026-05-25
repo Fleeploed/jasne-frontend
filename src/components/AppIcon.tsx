@@ -28,6 +28,7 @@ export type AppIconName =
   | "sparkles"
   | "star"
   | "user"
+  | "trash"
   | "x"
   | "zap";
 
@@ -182,6 +183,13 @@ function IconPaths({ name, color, strokeWidth }: { name: AppIconName; color: str
         <>
           <Circle {...stroke} cx="12" cy="8" r="4" />
           <Path {...stroke} d="M4.5 21a7.5 7.5 0 0 1 15 0" />
+        </>
+      );
+    case "trash":
+      return (
+        <>
+          <Path {...stroke} d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
+          <Path {...stroke} d="M10 11v6M14 11v6" />
         </>
       );
     case "x":

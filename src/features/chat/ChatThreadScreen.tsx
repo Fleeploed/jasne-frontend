@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Easing, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View, type DimensionValue, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { ActivityIndicator, Animated, Easing, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View, type DimensionValue, type NativeScrollEvent, type NativeSyntheticEvent, type StyleProp, type TextStyle } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { LinearGradient } from "expo-linear-gradient";
 
-import { AppBar, BackButton, ErrorText, Screen, fonts, useColors, type ColorPalette } from "@/components/ui";
+import { AppBar, BackButton, ErrorText, Screen, fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { Icon } from "@/components/Icon";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { listMessages, streamChat } from "@/features/chat/chatApi";
@@ -14,10 +14,12 @@ import { createManualDeadline } from "@/features/deadlines/deadlinesApi";
 import { getLimits, getScan, getScanImageUrls } from "@/features/scans/scansApi";
 import {
   type PendingAttachment,
-  getPendingScan,
+  type PendingScanRecord,
+  getPendingScanById,
+  removePendingScanById,
   subscribePendingScan,
 } from "@/features/scans/pendingScanStore";
-import { formatLocalizedDate, t } from "@/lib/i18n";
+import { formatCategoryLabel, formatLocalizedDate, t } from "@/lib/i18n";
 import { supabase } from "@/lib/supabase";
 import type { AnalysisDeadline, LimitsResponse, ScanMessage, ScanResponse } from "@/lib/types";
 
@@ -43,11 +45,15 @@ type UiMessage = ScanMessage | {
   attachments: PendingAttachment[];
 };
 
-export function ChatThreadScreen() {
-  const params = useLocalSearchParams<{ id?: string }>();
+export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string } = {}) {
+  const params = useLocalSearchParams<{ id?: string; pending?: string }>();
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  // Pending local-id sources, in priority order: explicit prop, URL ?pending=,
+  // then null (regular scan-by-id mode).
+  const pendingId = pendingLocalId ?? (params.pending && params.pending !== "1" ? params.pending : null);
+  const pendingSnapshot: PendingScanRecord | null = pendingId ? getPendingScanById(pendingId) : null;
 
   const [keyboardOpen, setKeyboardOpen] = useState(false);
 
@@ -66,18 +72,18 @@ export function ChatThreadScreen() {
   const [limits, setLimits] = useState<LimitsResponse | null>(null);
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [question, setQuestion] = useState("");
-  // Pending mode is used when ChatThreadScreen is mounted before a backend scan id exists.
-  // NewScanScreen renders this component directly while /scans/stream is still running.
-  const initialPending = !params.id || params.id === "pending";
+  // Pending mode is used when ChatThreadScreen is mounted with a localId
+  // (either prop from NewScanScreen or ?pending=<localId> from the pending card).
+  const initialPending = Boolean(pendingId);
   const [loading, setLoading] = useState(!initialPending);
   const [showPaywall, setShowPaywall] = useState(false);
   const [viewerImages, setViewerImages] = useState<string[]>([]);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [streaming, setStreaming] = useState(false);
-  const [error, setError] = useState<string | null>(initialPending ? formatPendingScanError(getPendingScan().error) : null);
-  const [pendingActive, setPendingActive] = useState(getPendingScan().active);
-  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>(getPendingScan().attachments);
-  const [pendingProgress, setPendingProgress] = useState<string[]>(getPendingScan().progress);
+  const [error, setError] = useState<string | null>(initialPending ? formatPendingScanError(pendingSnapshot?.error ?? null) : null);
+  const [pendingActive, setPendingActive] = useState(pendingSnapshot?.active ?? false);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>(pendingSnapshot?.attachments ?? []);
+  const [pendingProgress, setPendingProgress] = useState<string[]>(pendingSnapshot?.progress ?? []);
   const isPending = initialPending && !scan;
   const scanId = isPending ? "pending" : params.id;
   const listRef = useRef<FlatList<UiMessage>>(null);
@@ -140,15 +146,16 @@ export function ChatThreadScreen() {
     };
   }, [initialPending, params.id]);
 
-  // Subscribe to pending scan store when mounted from NewScanScreen.
-  // When scanId arrives, load scan data IN PLACE (no navigation) to avoid
-  // the white "loading" flash, then update the URL silently.
+  // Subscribe to this specific pending scan record. When its scanId arrives,
+  // load scan data IN PLACE (no navigation flash), update URL silently, and
+  // remove the entry from the pending store so the card disappears from the list.
   useEffect(() => {
-    if (!initialPending) return;
+    if (!initialPending || !pendingId) return;
     let alive = true;
     const unsub = subscribePendingScan(async () => {
       if (!alive) return;
-      const state = getPendingScan();
+      const state = getPendingScanById(pendingId);
+      if (!state) return;
       setPendingActive(state.active);
       setPendingAttachments([...state.attachments]);
       setPendingProgress([...state.progress]);
@@ -167,7 +174,7 @@ export function ChatThreadScreen() {
           setScan(nextScan);
           setMessages(nextMessages);
           setLimits(nextLimits);
-          // Silently update URL so back / refresh / deep-link work
+          removePendingScanById(pendingId);
           router.replace(`/scan/${realId}`);
         } catch (loadError) {
           if (!alive) return;
@@ -179,7 +186,7 @@ export function ChatThreadScreen() {
       alive = false;
       unsub();
     };
-  }, [initialPending]);
+  }, [initialPending, pendingId]);
 
   const displayMessages = useMemo(() => {
     const hasResultCard = messages.some((message) => message.message_type === "result_card");
@@ -306,7 +313,7 @@ export function ChatThreadScreen() {
 
   return (
     <Screen>
-      <AppBar title={scan?.result?.document_type_cz ?? scan?.doc_type ?? t("chat.title")} titleSize={20} left={<BackButton onPress={() => router.back()} />} />
+      <AppBar title={scan?.result?.document_type_cz ?? scan?.doc_type ?? t("chat.title")} titleSize={typeStyles.title3.fontSize} left={<BackButton onPress={() => router.back()} />} />
       <KeyboardAvoidingView
         style={styles.wrap}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -413,21 +420,21 @@ function ResultCard({ scan, colors, styles }: { scan: ScanResponse; colors: Colo
           <Text style={styles.resultIconText}>DOC</Text>
         </View>
         <View style={styles.resultHeaderText}>
-          <Text style={styles.docKind}>{result.document_type_cz ?? scan.category ?? t("common.document")}</Text>
-          {result.sender ? <Text style={styles.docFrom}>{result.sender}</Text> : null}
+          <Text selectable style={styles.docKind}>{result.document_type_cz ?? formatCategoryLabel(scan.category)}</Text>
+          {result.sender ? <Text selectable style={styles.docFrom}>{result.sender}</Text> : null}
         </View>
         {result.deadlines[0] ? <Text style={[styles.urgencyPill, urgencyPillColors(result.deadlines[0].date, colors)]}>{deadlineDistance(result.deadlines[0].date)}</Text> : null}
 
       </View>
-      <Text style={styles.resultTitle}>{result.document_type_cz ?? result.document_type_localized ?? formatDocTitle(result.document_type ?? scan.doc_type)}</Text>
-      <Text style={styles.resultSummary}>{result.summary}</Text>
+      <Text selectable style={styles.resultTitle}>{result.document_type_cz ?? result.document_type_localized ?? formatDocTitle(result.document_type ?? scan.doc_type)}</Text>
+      <Text selectable style={styles.resultSummary}>{result.summary}</Text>
       {result.actions_required.length ? <Text style={styles.sectionTitle}>{t("chat.actions")}</Text> : null}
       {result.actions_required.map((action, index) => (
         <View key={`${action}-${index}`} style={styles.actionRow}>
           <View style={styles.actionIndex}>
             <Text style={styles.actionIndexText}>{index + 1}</Text>
           </View>
-          <Text style={styles.resultLine}>{action}</Text>
+          <Text selectable style={styles.resultLine}>{action}</Text>
         </View>
       ))}
       {result.deadlines.length ? <Text style={styles.sectionTitle}>{t("chat.deadlines")}</Text> : null}
@@ -522,11 +529,11 @@ function DeadlineReminderRow({
       style={styles.deadlineCard}
     >
       <Text style={styles.deadlineCardLabel}>{t(`deadlineType.${deadline.type}` as Parameters<typeof t>[0]).toUpperCase()}</Text>
-      <Text style={styles.deadlineCardDate}>{dateLabel}</Text>
+      <Text selectable style={styles.deadlineCardDate}>{dateLabel}</Text>
       {showAddress && whereToGo ? (
         <View style={styles.deadlineCardAddress}>
           <Text style={styles.deadlineCardPin}>⊙</Text>
-          <Text style={styles.deadlineCardAddressText}>{whereToGo}</Text>
+          <Text selectable style={styles.deadlineCardAddressText}>{whereToGo}</Text>
         </View>
       ) : null}
       <Pressable
@@ -582,7 +589,7 @@ function ResultInfoBlock({ tone, title, value, styles }: {
   return (
     <View style={[styles.infoBlock, toneStyle]}>
       <Text style={[styles.infoBlockTitle, titleStyle]}>{title}</Text>
-      <Text style={styles.infoBlockText}>{value}</Text>
+      <Text selectable style={styles.infoBlockText}>{value}</Text>
     </View>
   );
 }
@@ -657,11 +664,177 @@ function MessageBubble({ message, scan, colors, styles, onOpenViewer }: {
   }
   return (
     <View style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}>
-      <Text style={[styles.bubbleText, isUser && styles.userText]}>
-        {message.content || t("chat.thinking")}
-      </Text>
+      {isUser ? (
+        <SelectableBubbleText
+          value={message.content || t("chat.thinking")}
+          style={[styles.bubbleText, styles.userText]}
+        />
+      ) : (
+        <MarkdownText content={message.content || t("chat.thinking")} styles={styles} />
+      )}
     </View>
   );
+}
+
+function SelectableBubbleText({ value, style }: {
+  value: string;
+  style: StyleProp<TextStyle>;
+}) {
+  return (
+    <TextInput
+      value={value}
+      editable={false}
+      multiline
+      scrollEnabled={false}
+      contextMenuHidden={false}
+      style={[stylesForSelectableTextInput.base, style]}
+    />
+  );
+}
+
+function MarkdownText({ content, styles }: {
+  content: string;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return <SelectableBubbleText value={markdownToPlainText(content)} style={styles.bubbleText} />;
+}
+
+const stylesForSelectableTextInput = StyleSheet.create({
+  base: {
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    margin: 0,
+    padding: 0,
+    textAlignVertical: "top",
+  },
+});
+
+type MarkdownPart = {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  code?: boolean;
+  href?: string;
+};
+
+function normalizeMarkdownListLine(line: string) {
+  const bulletMatch = /^(\s*)[-*]\s+(.+)$/.exec(line);
+  if (bulletMatch) return `${bulletMatch[1]}• ${bulletMatch[2]}`;
+  return line;
+}
+
+function parseInlineMarkdown(input: string): MarkdownPart[] {
+  const parts: MarkdownPart[] = [];
+  let index = 0;
+
+  function pushText(text: string, extra: Omit<MarkdownPart, "text"> = {}) {
+    if (!text) return;
+    parts.push({ text, ...extra });
+  }
+
+  while (index < input.length) {
+    const nextCode = input.indexOf("`", index);
+    const nextBold = input.indexOf("**", index);
+    const nextLink = input.indexOf("[", index);
+    const nextItalicStar = findNextSingleMarker(input, "*", index);
+    const nextItalicUnderscore = findNextSingleMarker(input, "_", index);
+    const candidates = [nextCode, nextBold, nextLink, nextItalicStar, nextItalicUnderscore].filter((value) => value >= 0);
+    const next = candidates.length ? Math.min(...candidates) : -1;
+
+    if (next < 0) {
+      pushText(input.slice(index));
+      break;
+    }
+
+    if (next > index) {
+      pushText(input.slice(index, next));
+      index = next;
+    }
+
+    if (input.startsWith("`", index)) {
+      const end = input.indexOf("`", index + 1);
+      if (end < 0) {
+        pushText(input.slice(index));
+        break;
+      }
+      pushText(input.slice(index + 1, end), { code: true });
+      index = end + 1;
+      continue;
+    }
+
+    if (input.startsWith("**", index)) {
+      const end = input.indexOf("**", index + 2);
+      if (end < 0) {
+        pushText(input.slice(index));
+        break;
+      }
+      pushText(input.slice(index + 2, end), { bold: true });
+      index = end + 2;
+      continue;
+    }
+
+    if (input.startsWith("[", index)) {
+      const textEnd = input.indexOf("]", index + 1);
+      const urlStart = textEnd >= 0 ? input.indexOf("(", textEnd + 1) : -1;
+      const urlEnd = urlStart === textEnd + 1 ? input.indexOf(")", urlStart + 1) : -1;
+      const href = urlEnd >= 0 ? normalizeMarkdownUrl(input.slice(urlStart + 1, urlEnd)) : null;
+      if (href) {
+        pushText(input.slice(index + 1, textEnd), { href });
+        index = urlEnd + 1;
+        continue;
+      }
+    }
+
+    const marker = input[index];
+    if (marker === "*" || marker === "_") {
+      const end = findClosingSingleMarker(input, marker, index + 1);
+      if (end >= 0) {
+        pushText(input.slice(index + 1, end), { italic: true });
+        index = end + 1;
+        continue;
+      }
+    }
+
+    pushText(input[index]);
+    index += 1;
+  }
+
+  return parts.length ? parts : [{ text: input }];
+}
+
+function findNextSingleMarker(input: string, marker: "*" | "_", fromIndex: number) {
+  let current = input.indexOf(marker, fromIndex);
+  while (current >= 0) {
+    const previousIsSame = current > 0 && input[current - 1] === marker;
+    const nextIsSame = input[current + 1] === marker;
+    if (!previousIsSame && !nextIsSame) return current;
+    current = input.indexOf(marker, current + 1);
+  }
+  return -1;
+}
+
+function findClosingSingleMarker(input: string, marker: "*" | "_", fromIndex: number) {
+  let current = input.indexOf(marker, fromIndex);
+  while (current >= 0) {
+    const previousIsSame = current > 0 && input[current - 1] === marker;
+    const nextIsSame = input[current + 1] === marker;
+    if (!previousIsSame && !nextIsSame) return current;
+    current = input.indexOf(marker, current + 1);
+  }
+  return -1;
+}
+
+function normalizeMarkdownUrl(rawUrl: string) {
+  const trimmed = rawUrl.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return null;
+  return trimmed;
+}
+
+function markdownToPlainText(content: string) {
+  return content
+    .split(/\r?\n/)
+    .map((line) => parseInlineMarkdown(normalizeMarkdownListLine(line)).map((part) => part.text).join(""))
+    .join("\n");
 }
 
 function DocumentAttachmentBubble({ scanId, content, colors, styles, onOpenViewer }: {
@@ -1294,8 +1467,7 @@ function createStyles(colors: ColorPalette) {
     pendingProgressTitle: {
       color: colors.primary,
       fontFamily: fonts.bodyExtraBold,
-      fontSize: 11,
-      lineHeight: 15,
+      ...typeStyles.caption2,
       letterSpacing: 2,
       textTransform: "uppercase"
     },
@@ -1318,8 +1490,7 @@ function createStyles(colors: ColorPalette) {
     pendingStepCheck: {
       color: colors.greenDark,
       fontFamily: fonts.bodyExtraBold,
-      fontSize: 13,
-      lineHeight: 16
+      ...typeStyles.rowMeta,
     },
     pendingStepDot: {
       width: 6,
@@ -1332,8 +1503,7 @@ function createStyles(colors: ColorPalette) {
       minWidth: 0,
       color: colors.muted3,
       fontFamily: fonts.bodyMedium,
-      fontSize: 13,
-      lineHeight: 18
+      ...typeStyles.rowMeta,
     },
     pendingStepTextDone: { color: colors.muted2 },
     pendingStepTextActive: {
@@ -1343,8 +1513,7 @@ function createStyles(colors: ColorPalette) {
     pendingProgressHint: {
       color: colors.muted2,
       fontFamily: fonts.body,
-      fontSize: 12,
-      lineHeight: 17,
+      ...typeStyles.caption1,
       paddingTop: 2
     },
     pendingErrorBubble: {
@@ -1360,8 +1529,7 @@ function createStyles(colors: ColorPalette) {
     pendingErrorText: {
       color: colors.dangerDeep,
       fontFamily: fonts.bodySemiBold,
-      fontSize: 13,
-      lineHeight: 18
+      ...typeStyles.rowMeta,
     },
     messages: {
       flexGrow: 1,
@@ -1400,33 +1568,34 @@ function createStyles(colors: ColorPalette) {
       alignItems: "center",
       justifyContent: "center"
     },
-    resultIconText: { color: colors.primary, fontFamily: fonts.bodyExtraBold, fontSize: 11, fontWeight: "900" },
+    resultIconText: { color: colors.primary, fontFamily: fonts.bodyExtraBold, ...typeStyles.caption2, fontWeight: "900" },
     resultHeaderText: { flex: 1, gap: 4 },
     docKind: {
       alignSelf: "flex-start",
       color: colors.primary,
       fontFamily: fonts.bodyExtraBold,
-      fontSize: 12,
+      ...typeStyles.caption1,
       fontWeight: "700",
       letterSpacing: 1.2,
       textTransform: "uppercase"
     },
-    docFrom: { color: colors.muted2, fontFamily: fonts.body, fontSize: 12.5, lineHeight: 17 },
+    docFrom: { color: colors.muted2, fontFamily: fonts.body, ...typeStyles.rowMeta },
     urgencyPill: {
       alignSelf: "flex-start",
       borderRadius: 999,
       overflow: "hidden",
       paddingHorizontal: 8,
       paddingVertical: 3,
-      fontSize: 11,
+      fontFamily: fonts.bodyExtraBold,
+      ...typeStyles.caption2,
       fontWeight: "800"
     },
-    resultTitle: { color: colors.text, fontFamily: fonts.displayBold, fontSize: 22, fontWeight: "700", lineHeight: 27 },
-    resultSummary: { color: colors.muted2, fontFamily: fonts.body, fontSize: 14.5, lineHeight: 22 },
+    resultTitle: { color: colors.text, fontFamily: fonts.displayBold, ...typeStyles.compactTitle, fontWeight: "700" },
+    resultSummary: { color: colors.muted2, fontFamily: fonts.body, ...typeStyles.rowSecondary },
     sectionTitle: {
       color: colors.muted2,
       fontFamily: fonts.bodyExtraBold,
-      fontSize: 11,
+      ...typeStyles.caption2,
       fontWeight: "600",
       textTransform: "uppercase",
       letterSpacing: 1.6,
@@ -1442,8 +1611,8 @@ function createStyles(colors: ColorPalette) {
       justifyContent: "center",
       marginTop: 1
     },
-    actionIndexText: { color: colors.primary, fontSize: 12, fontWeight: "700" },
-    resultLine: { flex: 1, color: colors.text, fontFamily: fonts.body, fontSize: 14.5, lineHeight: 22 },
+    actionIndexText: { color: colors.primary, fontFamily: fonts.bodyBold, ...typeStyles.caption1, fontWeight: "700" },
+    resultLine: { flex: 1, color: colors.text, fontFamily: fonts.body, ...typeStyles.rowSecondary },
     deadlineCard: {
       borderRadius: 14,
       borderWidth: 1,
@@ -1453,7 +1622,7 @@ function createStyles(colors: ColorPalette) {
     deadlineCardLabel: {
       color: colors.primary,
       fontFamily: fonts.bodyExtraBold,
-      fontSize: 11,
+      ...typeStyles.caption2,
       fontWeight: "700",
       letterSpacing: 1.54,
       textTransform: "uppercase",
@@ -1481,7 +1650,7 @@ function createStyles(colors: ColorPalette) {
       flex: 1,
       color: colors.muted,
       fontFamily: fonts.body,
-      fontSize: 13,
+      ...typeStyles.rowMeta,
     },
     deadlineCardBtn: {
       marginTop: 12,
@@ -1497,14 +1666,14 @@ function createStyles(colors: ColorPalette) {
     deadlineCardBtnText: {
       color: colors.textOnAccent,
       fontFamily: fonts.bodySemiBold,
-      fontSize: 13.5,
+      ...typeStyles.rowMeta,
       fontWeight: "600",
     },
     deadlineCardBtnTextSaved: { color: colors.greenDark },
     placeLine: {
       color: colors.text,
-      fontSize: 12,
-      lineHeight: 18,
+      fontFamily: fonts.body,
+      ...typeStyles.caption1,
       backgroundColor: colors.blueSoft,
       borderRadius: 8,
       padding: 9
@@ -1512,19 +1681,19 @@ function createStyles(colors: ColorPalette) {
     penalty: {
       backgroundColor: colors.dangerLight,
       color: colors.dangerDeep,
+      fontFamily: fonts.body,
       borderRadius: 14,
       paddingHorizontal: 16,
       paddingVertical: 14,
-      fontSize: 14,
-      lineHeight: 20
+      ...typeStyles.rowMeta,
     },
     verifyNote: {
       backgroundColor: colors.blueSoft,
       color: colors.primary,
+      fontFamily: fonts.body,
       borderRadius: 10,
       padding: 10,
-      fontSize: 12,
-      lineHeight: 17
+      ...typeStyles.caption1,
     },
     infoBlock: {
       borderRadius: 16,
@@ -1540,8 +1709,7 @@ function createStyles(colors: ColorPalette) {
     infoBlockGreen: { backgroundColor: colors.greenLight, borderColor: colors.greenDark },
     infoBlockTitle: {
       fontFamily: fonts.bodyExtraBold,
-      fontSize: 11,
-      lineHeight: 15,
+      ...typeStyles.caption2,
       letterSpacing: 1.8,
       textTransform: "uppercase"
     },
@@ -1553,8 +1721,7 @@ function createStyles(colors: ColorPalette) {
     infoBlockText: {
       color: colors.text,
       fontFamily: fonts.body,
-      fontSize: 14,
-      lineHeight: 20
+      ...typeStyles.rowMeta,
     },
     bubble: { maxWidth: "84%", paddingHorizontal: 12, paddingVertical: 10 },
     userBubble: {
@@ -1575,6 +1742,22 @@ function createStyles(colors: ColorPalette) {
     },
     bubbleText: { color: colors.text, fontFamily: fonts.body, fontSize: 13.5, lineHeight: 19 },
     userText: { color: colors.textOnAccent },
+    markdownBold: { fontFamily: fonts.bodyBold },
+    markdownItalic: { fontStyle: "italic" },
+    markdownCode: {
+      color: colors.text,
+      fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
+      fontSize: 12.5,
+      lineHeight: 18,
+      backgroundColor: colors.surface2,
+      borderRadius: 4,
+      paddingHorizontal: 3
+    },
+    markdownLink: {
+      color: colors.primary,
+      fontFamily: fonts.bodySemiBold,
+      textDecorationLine: "underline"
+    },
     imageBubble: {
       alignSelf: "flex-end",
       width: 176,
@@ -1603,7 +1786,8 @@ function createStyles(colors: ColorPalette) {
     },
     imageCountText: {
       color: colors.textOnAccent,
-      fontSize: 13,
+      fontFamily: fonts.bodyExtraBold,
+      ...typeStyles.rowMeta,
       fontWeight: "800"
     },
     attachmentBubble: {
@@ -1618,19 +1802,22 @@ function createStyles(colors: ColorPalette) {
     },
     attachmentKind: {
       color: colors.textOnAccent,
-      fontSize: 12,
+      fontFamily: fonts.bodyExtraBold,
+      ...typeStyles.caption1,
       fontWeight: "900",
       letterSpacing: 0.4
     },
     attachmentName: {
       color: colors.textOnAccent,
-      fontSize: 14,
+      fontFamily: fonts.bodyBold,
+      ...typeStyles.rowMeta,
       fontWeight: "700"
     },
     attachmentMeta: {
       color: colors.textOnAccent,
       opacity: 0.78,
-      fontSize: 12,
+      fontFamily: fonts.bodyBold,
+      ...typeStyles.caption1,
       fontWeight: "700"
     },
     footer: {
@@ -1667,8 +1854,7 @@ function createStyles(colors: ColorPalette) {
     composerCounter: {
       color: colors.muted3,
       fontFamily: fonts.body,
-      fontSize: 11,
-      lineHeight: 13,
+      ...typeStyles.caption2,
       minWidth: 24,
       textAlign: "right"
     },
@@ -1678,8 +1864,7 @@ function createStyles(colors: ColorPalette) {
     lockedComposerLabel: {
       color: colors.muted3,
       fontFamily: fonts.bodySemiBold,
-      fontSize: 12.5,
-      lineHeight: 17,
+      ...typeStyles.rowMeta,
       paddingHorizontal: 2
     },
     lockedInputPill: {
@@ -1740,8 +1925,7 @@ function createStyles(colors: ColorPalette) {
     proBadgeText: {
       color: colors.pro,
       fontFamily: fonts.bodyExtraBold,
-      fontSize: 14,
-      lineHeight: 18,
+      ...typeStyles.rowMeta,
       letterSpacing: 0.2
     }
   });

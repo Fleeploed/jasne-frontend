@@ -1,10 +1,12 @@
 import { useMemo } from "react";
 import { Tabs } from "expo-router";
+import { getFocusedRouteNameFromRoute } from "@react-navigation/native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+import { Ionicons } from "@expo/vector-icons";
 
 import { AppIcon } from "@/components/AppIcon";
-import { useColors, type ColorPalette } from "@/components/ui";
+import { fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { t } from "@/lib/i18n";
 import { useLocale } from "@/lib/LocaleContext";
 
@@ -19,9 +21,10 @@ export default function AppLayout() {
     <Tabs
       tabBar={(props) => <MockupTabBar {...props} />}
       screenOptions={{
+        sceneStyle: { backgroundColor: colors.bg },
         headerShown: false,
         headerStyle: { backgroundColor: colors.bg },
-        headerTitleStyle: { color: colors.text, fontWeight: "800" },
+        headerTitleStyle: { color: colors.text, fontFamily: fonts.bodyExtraBold, ...typeStyles.headline, fontWeight: "800" },
         headerShadowVisible: false
       }}
     >
@@ -42,6 +45,14 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
+        name="help"
+        options={{
+          title: t("help.tabLabel"),
+          tabBarLabel: t("help.tabLabel"),
+          tabBarIcon: ({ color }) => <TabGlyph name="help" color={color} />
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: t("tabs.profile"),
@@ -49,26 +60,27 @@ export default function AppLayout() {
           tabBarIcon: ({ color }) => <TabGlyph name="profile" color={color} />
         }}
       />
-      <Tabs.Screen name="scan/new" options={{ href: null, title: t("routes.newScan") }} />
-      <Tabs.Screen name="scan/[id]" options={{ href: null, title: t("routes.thread") }} />
     </Tabs>
   );
 }
 
-type TabIcon = "docs" | "deadlines" | "profile";
+type TabIcon = "docs" | "deadlines" | "help" | "profile";
 const tabIconByRoute: Record<string, TabIcon> = {
   index: "docs",
   deadlines: "deadlines",
+  help: "help",
   profile: "profile",
 };
 function getTabLabel(route: string): string {
   if (route === "index") return t("tabs.documents");
   if (route === "deadlines") return t("tabs.deadlines");
+  if (route === "help") return t("help.tabLabel");
   if (route === "profile") return t("tabs.profile");
   return route;
 }
 
-function TabGlyph({ name, color }: { name: "docs" | "deadlines" | "profile"; color: string }) {
+function TabGlyph({ name, color }: { name: TabIcon; color: string }) {
+  if (name === "help") return <Ionicons name="help-circle-outline" size={25} color={color} />;
   const iconName = name === "docs" ? "doc-text" : name === "deadlines" ? "calendar" : "user";
   return <AppIcon name={iconName} size={23} color={color} strokeWidth={1.8} />;
 }
@@ -81,6 +93,10 @@ function MockupTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
   const currentRoute = state.routes[state.index];
   if (!currentRoute || !tabIconByRoute[currentRoute.name]) {
+    return null;
+  }
+  const nestedRoute = getFocusedRouteNameFromRoute(currentRoute);
+  if (currentRoute.name === "help" && nestedRoute && nestedRoute !== "index") {
     return null;
   }
 
@@ -130,7 +146,7 @@ function createTabStyles(colors: ColorPalette) {
       paddingBottom: 30
     },
     tab: { flex: 1, alignItems: "center", gap: 3, paddingVertical: 5 },
-    tabLabel: { color: colors.muted2, fontSize: 10, fontWeight: "500" },
+    tabLabel: { color: colors.muted2, fontFamily: fonts.bodyMedium, ...typeStyles.caption2, fontWeight: "500" },
     tabLabelActive: { color: colors.primary, fontWeight: "700" },
     pressed: { opacity: 0.7 }
   });

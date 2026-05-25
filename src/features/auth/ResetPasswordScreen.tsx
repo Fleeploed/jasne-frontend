@@ -3,7 +3,8 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AuthGradient } from "@/components/AuthGradient";
-import { Button, fonts, useColors, type ColorPalette } from "@/components/ui";
+import { BrandWordmark } from "@/components/BrandMark";
+import { Button, fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { t } from "@/lib/i18n";
 import { supabase } from "@/lib/supabase";
@@ -55,7 +56,7 @@ export function ResetPasswordScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
-            <Text style={styles.logo}>jasně</Text>
+            <BrandWordmark height={44} style={styles.logo} />
             <Text style={styles.title}>{t("auth.resetTitle")}</Text>
             <Text style={styles.subtitle}>{t("auth.resetSubtitle")}</Text>
           </View>
@@ -175,35 +176,26 @@ function createStyles(colors: ColorPalette) {
       gap: 14,
     },
     header: { gap: 12, marginBottom: 2 },
-    logo: {
-      color: colors.primary,
-      fontFamily: fonts.display,
-      fontSize: 44,
-      lineHeight: 48,
-      fontWeight: "600",
-    },
+    logo: {},
     title: {
       color: colors.text,
       fontFamily: fonts.display,
-      fontSize: 22,
-      lineHeight: 29,
+      ...typeStyles.compactTitle,
       fontWeight: "600",
       letterSpacing: -0.2,
     },
     subtitle: {
       color: colors.muted,
       fontFamily: fonts.bodySemiBold,
-      fontSize: 15,
-      lineHeight: 22,
+      ...typeStyles.rowSecondary,
       fontWeight: "600",
     },
     form: { gap: 10 },
     inputBlock: { gap: 7 },
     label: {
       color: colors.muted,
-      fontSize: 13,
-      lineHeight: 17,
       fontFamily: fonts.bodyBold,
+      ...typeStyles.sectionHeader,
       fontWeight: "800",
       textTransform: "uppercase",
     },
@@ -227,7 +219,7 @@ function createStyles(colors: ColorPalette) {
       color: colors.text,
       paddingHorizontal: 16,
       fontFamily: fonts.body,
-      fontSize: 17,
+      ...typeStyles.input,
       fontWeight: "400",
     },
     inputWithIcon: { paddingLeft: 48 },
@@ -241,16 +233,14 @@ function createStyles(colors: ColorPalette) {
     },
     cancelText: {
       color: colors.muted2,
-      fontSize: 16,
-      lineHeight: 22,
       fontFamily: fonts.bodySemiBold,
+      ...typeStyles.callout,
       fontWeight: "600",
     },
     error: {
       color: colors.danger,
-      fontSize: 14,
-      lineHeight: 20,
       fontFamily: fonts.bodySemiBold,
+      ...typeStyles.rowMeta,
       fontWeight: "600",
     },
     pressed: { opacity: 0.72 },

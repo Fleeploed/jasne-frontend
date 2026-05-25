@@ -1,9 +1,9 @@
-import { useMemo } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef } from "react";
+import { Animated, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Icon, type IconName } from "@/components/Icon";
-import { fonts, useColors, type ColorPalette } from "@/components/ui";
+import { fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { t } from "@/lib/i18n";
 
 export type ActionSheetAction = {
@@ -31,22 +31,44 @@ export function ActionSheet({
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!visible) {
+      progress.setValue(0);
+      return;
+    }
+    progress.setValue(0);
+    Animated.spring(progress, {
+      toValue: 1,
+      useNativeDriver: true,
+      damping: 22,
+      stiffness: 260,
+      mass: 0.8,
+    }).start();
+  }, [progress, visible]);
+
+  const sheetTranslateY = progress.interpolate({ inputRange: [0, 1], outputRange: [18, 0] });
+  const sheetOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
 
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="none"
       onRequestClose={onClose}
       statusBarTranslucent
     >
       {/* Backdrop — tap outside to dismiss */}
-      <Pressable style={styles.backdrop} onPress={onClose} />
+      <Animated.View style={[styles.backdrop, { opacity: progress }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      </Animated.View>
 
-      <View
+      <Animated.View
         style={[
           styles.container,
           { paddingBottom: Math.max(insets.bottom, 12) + 8 },
+          { opacity: sheetOpacity, transform: [{ translateY: sheetTranslateY }] },
         ]}
         // Stop tap propagation so backdrop doesn't fire when tapping sheet
         onStartShouldSetResponder={() => true}
@@ -119,7 +141,7 @@ export function ActionSheet({
         >
           <Text style={styles.cancelText}>{t("common.cancel")}</Text>
         </Pressable>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -157,15 +179,13 @@ function createStyles(colors: ColorPalette) {
     title: {
       color: colors.text,
       fontFamily: fonts.bodySemiBold,
-      fontSize: 15,
-      lineHeight: 20,
+      ...typeStyles.rowSecondary,
       textAlign: "center",
     },
     subtitle: {
       color: colors.muted2,
       fontFamily: fonts.body,
-      fontSize: 13,
-      lineHeight: 17,
+      ...typeStyles.rowMeta,
       textAlign: "center",
     },
     actionRow: {
@@ -187,8 +207,7 @@ function createStyles(colors: ColorPalette) {
     actionLabel: {
       flex: 1,
       fontFamily: fonts.bodyMedium,
-      fontSize: 16,
-      lineHeight: 20,
+      ...typeStyles.callout,
     },
     cancel: {
       backgroundColor: colors.surface,
@@ -202,8 +221,7 @@ function createStyles(colors: ColorPalette) {
     cancelText: {
       color: colors.primary,
       fontFamily: fonts.bodySemiBold,
-      fontSize: 17,
-      lineHeight: 22,
+      ...typeStyles.button,
     },
     pressed: { opacity: 0.65 },
   });
