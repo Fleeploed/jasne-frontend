@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Keyboard, LayoutAnimation, Platform, Pressable, RefreshControl, StyleSheet, Text, TextInput, UIManager, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, FlatList, Image, Keyboard, LayoutAnimation, Platform, Pressable, RefreshControl, StyleSheet, Text, TextInput, UIManager, useWindowDimensions, Vibration, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
-import { Icon } from "@/components/Icon";
-import { ActionSheet, type ActionSheetAction } from "@/components/ActionSheet";
-import { ErrorText, Screen, fonts, useColors, type ColorPalette } from "@/components/ui";
-import { listDeadlines } from "@/features/deadlines/deadlinesApi";
-import { getLimits, listScans } from "@/features/scans/scansApi";
+import { BrandWordmark } from "@/components/BrandMark";
+import { Icon, type IconName } from "@/components/Icon";
+import { ErrorText, Screen, fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
+import { DEADLINES_PAGE_SIZE, listDeadlines } from "@/features/deadlines/deadlinesApi";
+import { SCANS_PAGE_SIZE, deleteScan, getLimits, listScans } from "@/features/scans/scansApi";
 import { getPinnedScanIds, togglePinnedScan } from "@/features/scans/pinnedScansStore";
-import { formatLocalizedDate, t } from "@/lib/i18n";
+import {
+  type PendingScanRecord,
+  getPendingScanList,
+  subscribePendingScan,
+} from "@/features/scans/pendingScanStore";
+import { formatCategoryLabel, formatLocalizedDate, t } from "@/lib/i18n";
 import type { DeadlineResponse, LimitsResponse, ScanListItem } from "@/lib/types";
 
 // Enable LayoutAnimation on Android (iOS has it by default).
@@ -22,12 +27,22 @@ type RowVisual = {
   badgeFg?: string;
 };
 
+type MeasuredRect = { x: number; y: number; width: number; height: number };
+const DOCUMENT_CONTEXT_MENU_WIDTH = 272;
+const DOCUMENT_ROW_RADIUS = 20;
+
 function getCategoryStyles(colors: ColorPalette) {
   return [
-    { match: ["dan", "tax", "finan"], bg: colors.cream, fg: colors.amber, badgeBg: colors.amberLight, badgeFg: colors.amberDark },
-    { match: ["ciz", "visa", "pobyt", "immigration", "mv čr", "oamp"], bg: colors.blueSoft, fg: colors.primary, badgeBg: colors.blueSoft, badgeFg: colors.primary },
-    { match: ["soud", "court"], bg: colors.dangerLight, fg: colors.dangerDark, badgeBg: colors.dangerLight, badgeFg: colors.dangerDark },
-    { match: ["ucet", "fakt", "invoice", "vzp", "poji"], bg: colors.greenLight, fg: colors.greenDark, badgeBg: colors.greenLight, badgeFg: colors.greenDark }
+    { category: "cizinecka", match: ["ciz", "visa", "pobyt", "immigration", "mv čr", "oamp"], bg: colors.blueSoft, fg: colors.primary, badgeBg: colors.blueSoft, badgeFg: colors.primary },
+    { category: "danove", match: ["dan", "tax", "finan"], bg: colors.cream, fg: colors.amber, badgeBg: colors.amberLight, badgeFg: colors.amberDark },
+    { category: "ucty", match: ["ucet", "účet", "fakt", "invoice", "platb"], bg: colors.greenLight, fg: colors.greenDark, badgeBg: colors.greenLight, badgeFg: colors.greenDark },
+    { category: "socialni", match: ["social", "dávk", "podpor"], bg: "rgba(168,147,224,0.14)", fg: colors.pro, badgeBg: colors.proLight, badgeFg: colors.pro },
+    { category: "zdravotni", match: ["zdrav", "pojist", "vzp", "doctor"], bg: "rgba(240,141,160,0.15)", fg: "#F08DA0", badgeBg: "rgba(240,141,160,0.15)", badgeFg: "#F08DA0" },
+    { category: "smlouvy", match: ["smlouv", "contract", "nájem"], bg: "rgba(45,188,178,0.14)", fg: "#2DBCB2", badgeBg: "rgba(45,188,178,0.14)", badgeFg: "#2DBCB2" },
+    { category: "soudni", match: ["soud", "court"], bg: colors.dangerLight, fg: colors.dangerDark, badgeBg: colors.dangerLight, badgeFg: colors.dangerDark },
+    { category: "urad_prace", match: ["urad_prace", "úřad práce", "prace", "zaměstn"], bg: "rgba(239,137,69,0.15)", fg: "#EF8945", badgeBg: "rgba(239,137,69,0.15)", badgeFg: "#EF8945" },
+    { category: "skolstvi", match: ["skol", "škol", "school", "student"], bg: "rgba(154,163,255,0.16)", fg: "#9AA3FF", badgeBg: "rgba(154,163,255,0.16)", badgeFg: "#9AA3FF" },
+    { category: "ostatni", match: ["ostat", "other"], bg: colors.surface3, fg: colors.muted2, badgeBg: colors.surface3, badgeFg: colors.muted2 }
   ];
 }
 
@@ -41,12 +56,29 @@ export function ScanListScreen() {
   const [limits, setLimits] = useState<LimitsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMoreScans, setLoadingMoreScans] = useState(false);
+  const [hasMoreScans, setHasMoreScans] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
-  const [sheetScan, setSheetScan] = useState<ScanListItem | null>(null);
+  const [documentMenu, setDocumentMenu] = useState<{
+    scan: ScanListItem;
+    deadline?: DeadlineResponse;
+    pinned?: boolean;
+    query?: string;
+    rect: MeasuredRect;
+  } | null>(null);
+  const [pendingScans, setPendingScans] = useState<PendingScanRecord[]>(() => getPendingScanList());
   const searchInputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribePendingScan(() => setPendingScans(getPendingScanList()));
+    setPendingScans(getPendingScanList());
+    return unsubscribe;
+  }, []);
+
+  const handledScanIdsRef = useRef<Set<string>>(new Set());
 
   const aliveRef = useRef(true);
   useEffect(() => {
@@ -60,13 +92,14 @@ export function ScanListScreen() {
     setError(null);
     try {
       const [nextScans, nextLimits, nextDeadlines, nextPinned] = await Promise.all([
-        listScans(),
+        listScans({ limit: SCANS_PAGE_SIZE, offset: 0 }),
         getLimits(),
-        listDeadlines(true),
+        listDeadlines(true, { limit: DEADLINES_PAGE_SIZE, offset: 0, status: "active" }),
         getPinnedScanIds(),
       ]);
       if (!aliveRef.current) return;
       setScans(nextScans);
+      setHasMoreScans(nextScans.length === SCANS_PAGE_SIZE);
       setLimits(nextLimits);
       setDeadlines(nextDeadlines);
       setPinnedIds(new Set(nextPinned));
@@ -81,17 +114,73 @@ export function ScanListScreen() {
     }
   }, []);
 
+  const loadMoreScans = useCallback(async () => {
+    if (loading || refreshing || loadingMoreScans || !hasMoreScans) return;
+    setLoadingMoreScans(true);
+    setError(null);
+    try {
+      const nextScans = await listScans({ limit: SCANS_PAGE_SIZE, offset: scans.length });
+      if (!aliveRef.current) return;
+      setScans((current) => mergeScansById(current, nextScans));
+      setHasMoreScans(nextScans.length === SCANS_PAGE_SIZE);
+    } catch (loadError) {
+      if (!aliveRef.current) return;
+      setError(loadError instanceof Error ? loadError.message : t("documents.loadError"));
+    } finally {
+      if (aliveRef.current) setLoadingMoreScans(false);
+    }
+  }, [hasMoreScans, loading, loadingMoreScans, refreshing, scans.length]);
+
   const togglePin = useCallback(async (scanId: string) => {
     const next = await togglePinnedScan(scanId);
     if (!aliveRef.current) return;
     setPinnedIds(new Set(next));
   }, []);
 
+  const performDelete = useCallback(async (scan: ScanListItem) => {
+    const previous = scans;
+    setScans((current) => current.filter((s) => s.id !== scan.id));
+    setDeadlines((current) => current.filter((d) => d.scan_id !== scan.id));
+    try {
+      await deleteScan(scan.id);
+      // TODO: once push notifications are wired, cancel locally scheduled
+      // reminders for this scan's deadlines here. Backend cascades the rows;
+      // only client-side scheduled notifications remain.
+    } catch (error) {
+      if (!aliveRef.current) return;
+      setScans(previous);
+      const detail = error instanceof Error ? error.message : String(error);
+      console.warn("deleteScan failed", error);
+      Alert.alert(t("documents.deleteErrorToast"), detail);
+    }
+  }, [scans]);
+
+  const confirmDelete = useCallback((scan: ScanListItem) => {
+    Alert.alert(
+      t("documents.deleteConfirmTitle"),
+      t("documents.deleteConfirmBody"),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        { text: t("documents.deleteConfirmCta"), style: "destructive", onPress: () => void performDelete(scan) },
+      ],
+      { cancelable: true },
+    );
+  }, [performDelete]);
+
   useFocusEffect(
     useCallback(() => {
       void load();
     }, [load])
   );
+
+  // When any pending scan settles (scanId arrives), refresh the list so the
+  // pending card transitions into a regular scan row.
+  useEffect(() => {
+    const settled = pendingScans.filter((p) => p.scanId && !handledScanIdsRef.current.has(p.scanId));
+    if (settled.length === 0) return;
+    settled.forEach((p) => p.scanId && handledScanIdsRef.current.add(p.scanId));
+    void load();
+  }, [load, pendingScans]);
 
   const filteredScans = useMemo(() => filterScans(scans, deadlines, search), [scans, deadlines, search]);
   const sections = useMemo(
@@ -110,7 +199,13 @@ export function ScanListScreen() {
   }
 
   const scanDisabled = Boolean(limits && limits.scans_remaining <= 0);
-  const isEmpty = sections.rows.length === 0;
+  const activePendingScans = pendingScans.filter((p) => p.active);
+  const hasPending = activePendingScans.length > 0;
+  // The empty state lives below the pending-stack header. While a scan is in
+  // flight the user *does* have a document — suppress the "you have nothing"
+  // placeholder so the two states aren't shown simultaneously.
+  const isEmpty = sections.rows.length === 0 && !hasPending;
+  const showEmptyPlaceholder = sections.rows.length === 0 && !hasPending;
   const openNewScan = () => {
     router.push({ pathname: "/scan/new", params: { fresh: String(Date.now()) } });
   };
@@ -145,11 +240,34 @@ export function ScanListScreen() {
         data={sections.rows}
         keyExtractor={(item) => item.key}
         contentContainerStyle={[styles.list, isEmpty && styles.listEmpty]}
+        onEndReached={loadMoreScans}
+        onEndReachedThreshold={0.35}
+        ListFooterComponent={loadingMoreScans ? <ListLoadingFooter color={colors.primary} styles={styles} /> : null}
         refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
+        ListHeaderComponent={
+          hasPending ? (
+            <View style={styles.pendingStack}>
+              {activePendingScans.map((p) => (
+                <PendingScanCard
+                  key={p.localId}
+                  pending={p}
+                  colors={colors}
+                  styles={styles}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/scan/new",
+                      params: { pending: p.localId, fresh: String(Date.now()) },
+                    })
+                  }
+                />
+              ))}
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           search.trim() ? (
             <SearchEmpty query={search.trim()} colors={colors} styles={styles} />
-          ) : (
+          ) : showEmptyPlaceholder ? (
             <DocumentsEmpty
               limits={limits}
               scanDisabled={scanDisabled}
@@ -157,7 +275,7 @@ export function ScanListScreen() {
               colors={colors}
               styles={styles}
             />
-          )
+          ) : null
         }
         renderItem={({ item }) => {
           if (item.type === "section") return <Text style={styles.sectionHeader}>{item.title}</Text>;
@@ -170,45 +288,272 @@ export function ScanListScreen() {
               colors={colors}
               styles={styles}
               categoryStyleList={categoryStyleList}
-              onLongPress={() => setSheetScan(item.scan)}
+              onLongPress={(rect) => {
+                Vibration.vibrate(12);
+                setDocumentMenu({
+                  scan: item.scan,
+                  deadline: item.deadline,
+                  pinned: item.pinned,
+                  query: search,
+                  rect,
+                });
+              }}
             />
           );
         }}
       />
-      <ActionSheet
-        visible={Boolean(sheetScan)}
-        title={sheetScan ? getTitle(sheetScan) : undefined}
-        actions={buildScanActions(sheetScan, pinnedIds, togglePin)}
-        onClose={() => setSheetScan(null)}
+      <DocumentContextMenu
+        anchor={documentMenu}
+        pinnedIds={pinnedIds}
+        colors={colors}
+        styles={styles}
+        categoryStyleList={categoryStyleList}
+        onClose={() => setDocumentMenu(null)}
+        onTogglePin={(scan) => {
+          setDocumentMenu(null);
+          void togglePin(scan.id);
+        }}
+        onDelete={(scan) => {
+          setDocumentMenu(null);
+          requestAnimationFrame(() => confirmDelete(scan));
+        }}
       />
-      <Pressable
-        onPress={openNewScan}
-        disabled={scanDisabled}
-        style={({ pressed }) => [styles.fab, scanDisabled && styles.fabDisabled, pressed && !scanDisabled && { opacity: 0.88, transform: [{ scale: 0.94 }] }]}
-        accessibilityRole="button"
-        accessibilityLabel={t("documents.emptyButton")}
-      >
-        <Icon name="camera" size={24} color={colors.textOnAccent} />
-      </Pressable>
+      {showEmptyPlaceholder && !search.trim() ? null : (
+        <Pressable
+          onPress={openNewScan}
+          disabled={scanDisabled}
+          style={({ pressed }) => [styles.fab, scanDisabled && styles.fabDisabled, pressed && !scanDisabled && { opacity: 0.88, transform: [{ scale: 0.94 }] }]}
+          accessibilityRole="button"
+          accessibilityLabel={t("documents.emptyButton")}
+        >
+          <Icon name="camera" size={24} color={colors.textOnAccent} />
+        </Pressable>
+      )}
     </Screen>
   );
 }
 
-function buildScanActions(
-  scan: ScanListItem | null,
-  pinnedIds: Set<string>,
-  togglePin: (id: string) => Promise<void>,
-): ActionSheetAction[] {
-  if (!scan) return [];
+function PendingScanCard({
+  pending,
+  colors,
+  styles,
+  onPress,
+}: {
+  pending: PendingScanRecord;
+  colors: ColorPalette;
+  styles: ReturnType<typeof createStyles>;
+  onPress: () => void;
+}) {
+  const firstImage = pending.attachments.find((a) => (a.mimeType ?? "").startsWith("image/")) ?? pending.attachments[0];
+  const latestStep = pending.progress[pending.progress.length - 1] ?? t("scan.uploading");
+  const title = pending.preview.documentType?.trim() || t("scan.processingTitle");
+
+  const showImage = firstImage && (firstImage.mimeType ?? "").startsWith("image/");
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.pendingCard, pressed && { opacity: 0.92, transform: [{ scale: 0.99 }] }]}
+      accessibilityRole="button"
+    >
+      <View style={styles.pendingTop}>
+        <View style={[styles.pendingThumb, { backgroundColor: colors.blueSoft }]}>
+          {showImage ? (
+            <Image source={{ uri: firstImage.uri }} style={styles.pendingThumbImage} resizeMode="cover" />
+          ) : (
+            <Icon name="doc-text" size={24} color={colors.primary} />
+          )}
+        </View>
+        <View style={styles.rowHeadText}>
+          <View style={styles.rowMetaLine}>
+            <Text style={styles.rowEyebrow} numberOfLines={1}>{t("scan.processingEyebrow")}</Text>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+          <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
+          <Text style={styles.pendingStep} numberOfLines={1}>{latestStep}</Text>
+        </View>
+      </View>
+      {pending.preview.summary ? (
+        <Text style={styles.rowPreview} numberOfLines={2}>{pending.preview.summary}</Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function ListLoadingFooter({ color, styles }: { color: string; styles: ReturnType<typeof createStyles> }) {
+  return (
+    <View style={styles.listFooter}>
+      <ActivityIndicator color={color} />
+    </View>
+  );
+}
+
+function DocumentContextMenu({
+  anchor,
+  pinnedIds,
+  colors,
+  styles,
+  categoryStyleList,
+  onClose,
+  onTogglePin,
+  onDelete,
+}: {
+  anchor: {
+    scan: ScanListItem;
+    deadline?: DeadlineResponse;
+    pinned?: boolean;
+    query?: string;
+    rect: MeasuredRect;
+  } | null;
+  pinnedIds: Set<string>;
+  colors: ColorPalette;
+  styles: ReturnType<typeof createStyles>;
+  categoryStyleList: ReturnType<typeof getCategoryStyles>;
+  onClose: () => void;
+  onTogglePin: (scan: ScanListItem) => void;
+  onDelete: (scan: ScanListItem) => void;
+}) {
+  const { width: screenW, height: screenH } = useWindowDimensions();
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!anchor) return;
+    progress.setValue(0);
+    Animated.spring(progress, {
+      toValue: 1,
+      useNativeDriver: true,
+      damping: 18,
+      stiffness: 260,
+      mass: 0.7,
+    }).start();
+  }, [anchor, progress]);
+
+  if (!anchor) return null;
+
+  const { scan, deadline, rect } = anchor;
   const isPinned = pinnedIds.has(scan.id);
-  return [
-    {
-      key: "pin",
-      label: t(isPinned ? "documents.unpin" : "documents.pin"),
-      icon: "pin",
-      onPress: () => void togglePin(scan.id),
-    },
-  ];
+  const menuHeight = 112;
+  const cardLift = 6;
+  const cardTop = rect.y;
+  const previewBottom = cardTop + rect.height - cardLift;
+  const topLimit = 40;
+  const bottomLimit = screenH - 180;
+  const menuGap = 8;
+  const menuBelowTop = previewBottom + menuGap;
+  const menuAboveTop = cardTop - cardLift - menuGap - menuHeight;
+  const hasRoomBelow = menuBelowTop + menuHeight <= bottomLimit;
+  const menuTop = hasRoomBelow
+    ? menuBelowTop
+    : Math.max(topLimit, Math.min(menuAboveTop, bottomLimit - menuHeight));
+  const menuLeft = Math.min(
+    Math.max(16, rect.x + rect.width - DOCUMENT_CONTEXT_MENU_WIDTH - 16),
+    screenW - DOCUMENT_CONTEXT_MENU_WIDTH - 16,
+  );
+
+  const dimOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+  const previewOpacity = progress.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0, 1, 1] });
+  const cardScale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.03] });
+  const cardTranslateY = progress.interpolate({ inputRange: [0, 1], outputRange: [0, -cardLift] });
+  const menuScale = progress.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] });
+
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      <Animated.View style={[styles.docMenuBackdrop, { opacity: dimOpacity }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      </Animated.View>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.docMenuPreview,
+          {
+            left: rect.x,
+            top: cardTop,
+            width: rect.width,
+            minHeight: rect.height,
+            opacity: previewOpacity,
+            transform: [{ translateY: cardTranslateY }, { scale: cardScale }],
+          },
+        ]}
+      >
+        <DocumentRowVisual
+          item={scan}
+          deadline={deadline}
+          pinned={isPinned}
+          query={anchor.query}
+          colors={colors}
+          styles={styles}
+          categoryStyleList={categoryStyleList}
+        />
+      </Animated.View>
+      <Animated.View
+        style={[
+          styles.docMenuContainer,
+          {
+            top: menuTop,
+            left: menuLeft,
+            width: DOCUMENT_CONTEXT_MENU_WIDTH,
+            opacity: progress,
+            transform: [{ scale: menuScale }],
+          },
+        ]}
+      >
+        <DocumentMenuRow
+          iconName="pin"
+          iconBg={colors.blueSoft}
+          iconColor={colors.primary}
+          label={t(isPinned ? "documents.unpin" : "documents.pin")}
+          labelColor={colors.text}
+          onPress={() => onTogglePin(scan)}
+          styles={styles}
+        />
+        <DocumentMenuRow
+          iconName="trash"
+          iconBg={colors.dangerLight}
+          iconColor={colors.danger}
+          label={t("documents.actionDelete")}
+          labelColor={colors.danger}
+          onPress={() => onDelete(scan)}
+          styles={styles}
+          divider={false}
+        />
+      </Animated.View>
+    </View>
+  );
+}
+
+function DocumentMenuRow({
+  iconName,
+  iconBg,
+  iconColor,
+  label,
+  labelColor,
+  onPress,
+  styles,
+  divider = true,
+}: {
+  iconName: IconName;
+  iconBg: string;
+  iconColor: string;
+  label: string;
+  labelColor: string;
+  onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
+  divider?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.docMenuRow,
+        divider && styles.docMenuRowDivider,
+        pressed && styles.docMenuRowPressed,
+      ]}
+    >
+      <View style={[styles.docMenuIconTile, { backgroundColor: iconBg }]}>
+        <Icon name={iconName} size={20} color={iconColor} />
+      </View>
+      <Text style={[styles.docMenuLabel, { color: labelColor }]}>{label}</Text>
+    </Pressable>
+  );
 }
 
 function SearchEmpty({ query, colors, styles }: {
@@ -330,7 +675,7 @@ function HomeHeader({
 
   return (
     <View style={styles.header}>
-      <Text style={styles.logo}>jasně</Text>
+      <BrandWordmark height={36} style={styles.logo} />
       <View style={styles.headerActions}>
         <Pressable
           onPress={onToggleSearch}
@@ -394,7 +739,46 @@ function DocumentRow({ item, deadline, pinned, query, colors, styles, categorySt
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
   categoryStyleList: ReturnType<typeof getCategoryStyles>;
-  onLongPress?: () => void;
+  onLongPress?: (rect: MeasuredRect) => void;
+}) {
+  const rowRef = useRef<View>(null);
+
+  const handleLongPress = useCallback(() => {
+    rowRef.current?.measureInWindow((x, y, width, height) => {
+      onLongPress?.({ x, y, width, height });
+    });
+  }, [onLongPress]);
+
+  return (
+    <View ref={rowRef} collapsable={false}>
+      <Pressable
+        style={({ pressed }) => pressed && { opacity: 0.92, transform: [{ scale: 0.99 }] }}
+        onPress={() => router.push(`/scan/${item.id}`)}
+        onLongPress={handleLongPress}
+        delayLongPress={350}
+      >
+        <DocumentRowVisual
+          item={item}
+          deadline={deadline}
+          pinned={pinned}
+          query={query}
+          colors={colors}
+          styles={styles}
+          categoryStyleList={categoryStyleList}
+        />
+      </Pressable>
+    </View>
+  );
+}
+
+function DocumentRowVisual({ item, deadline, pinned, query, colors, styles, categoryStyleList }: {
+  item: ScanListItem;
+  deadline?: DeadlineResponse;
+  pinned?: boolean;
+  query?: string;
+  colors: ColorPalette;
+  styles: ReturnType<typeof createStyles>;
+  categoryStyleList: ReturnType<typeof getCategoryStyles>;
 }) {
   const visual = getDocVisual(item, colors, categoryStyleList);
   const badge = deadline ? getDeadlineBadge(deadline.due_date) : null;
@@ -402,15 +786,7 @@ function DocumentRow({ item, deadline, pinned, query, colors, styles, categorySt
   const secondaryBadge = t("scan.pageCount", { count: item.page_count });
 
   return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.row,
-        pressed && { opacity: 0.92, transform: [{ scale: 0.99 }] }
-      ]}
-      onPress={() => router.push(`/scan/${item.id}`)}
-      onLongPress={onLongPress}
-      delayLongPress={350}
-    >
+    <View style={styles.row}>
       <View style={styles.rowTop}>
         <View style={[styles.thumb, { backgroundColor: visual.bg }]}>
           <Icon name="doc-text" size={20} color={visual.fg} />
@@ -418,10 +794,7 @@ function DocumentRow({ item, deadline, pinned, query, colors, styles, categorySt
         <View style={styles.rowHeadText}>
           <View style={styles.rowMetaLine}>
             <Text style={styles.rowEyebrow} numberOfLines={1}>{getDocMeta(item)}</Text>
-            <View style={styles.rowTimeBlock}>
-              {pinned ? <Icon name="pin" size={12} color={colors.primary} /> : null}
-              <Text style={styles.rowTime}>{formatDate(getActivityDate(item))}</Text>
-            </View>
+            <Text style={styles.rowTime}>{formatDate(getActivityDate(item))}</Text>
           </View>
           <Text style={styles.rowTitle} numberOfLines={1}>
             {highlightMatch(getTitle(item), query, styles.highlight)}
@@ -447,8 +820,13 @@ function DocumentRow({ item, deadline, pinned, query, colors, styles, categorySt
         <View style={[styles.badge, styles.secondaryBadge]}>
           <Text style={[styles.badgeText, styles.secondaryBadgeText]}>{secondaryBadge}</Text>
         </View>
+        {pinned ? (
+          <View style={styles.pinTrail}>
+            <Icon name="pin" size={14} color={colors.muted2} />
+          </View>
+        ) : null}
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -545,6 +923,17 @@ function splitScans(scans: ScanListItem[], deadlines: DeadlineResponse[], pinned
   return { rows };
 }
 
+function mergeScansById(current: ScanListItem[], next: ScanListItem[]) {
+  const seen = new Set(current.map((scan) => scan.id));
+  const merged = [...current];
+  next.forEach((scan) => {
+    if (seen.has(scan.id)) return;
+    seen.add(scan.id);
+    merged.push(scan);
+  });
+  return merged;
+}
+
 function getTitle(item: ScanListItem) {
   if (item.document_type_cz) return item.document_type_cz;
   const raw = item.doc_type ?? item.category ?? t("common.document");
@@ -552,8 +941,7 @@ function getTitle(item: ScanListItem) {
 }
 
 function getDocMeta(item: ScanListItem) {
-  const category = formatDocLabel(item.category ?? item.doc_type);
-  return `${t("common.document").toUpperCase()} · ${category}`;
+  return formatCategoryLabel(item.category ?? item.doc_type).toUpperCase();
 }
 
 function formatDocLabel(value?: string | null) {
@@ -562,8 +950,16 @@ function formatDocLabel(value?: string | null) {
 }
 
 function getDocVisual(item: ScanListItem, colors: ColorPalette, categoryStyleList: ReturnType<typeof getCategoryStyles>): RowVisual {
+  const category = normalizeCategoryKey(item.category);
+  const categoryStyle = categoryStyleList.find((style) => style.category === category);
+  if (categoryStyle) return categoryStyle;
+
   const haystack = `${item.doc_type ?? ""} ${item.category ?? ""} ${item.summary ?? ""}`.toLowerCase();
   return categoryStyleList.find((style) => style.match.some((token) => haystack.includes(token))) ?? { bg: colors.blueSoft, fg: colors.primary, badgeBg: colors.blueSoft, badgeFg: colors.primary };
+}
+
+function normalizeCategoryKey(value?: string | null) {
+  return value?.trim().toLowerCase().replace(/[-\s]+/g, "_") ?? null;
 }
 
 function getDeadlineBadge(value: string) {
@@ -632,14 +1028,7 @@ function createStyles(colors: ColorPalette) {
       justifyContent: "space-between",
       gap: 8,
     },
-    logo: {
-      color: colors.primary,
-      fontSize: 36,
-      lineHeight: 40,
-      fontFamily: "Geist_600SemiBold",
-      fontWeight: "600",
-      letterSpacing: -1
-    },
+    logo: {},
     headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
     searchIcon: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
     searchBar: {
@@ -658,7 +1047,7 @@ function createStyles(colors: ColorPalette) {
       flex: 1,
       color: colors.text,
       fontFamily: fonts.body,
-      fontSize: 15,
+      ...typeStyles.rowSecondary,
       paddingVertical: 0,
     },
     searchClear: {
@@ -675,7 +1064,7 @@ function createStyles(colors: ColorPalette) {
     searchCancelText: {
       color: colors.primary,
       fontFamily: fonts.bodyMedium,
-      fontSize: 15,
+      ...typeStyles.rowSecondary,
     },
     searchEmpty: {
       flex: 1,
@@ -688,15 +1077,14 @@ function createStyles(colors: ColorPalette) {
     searchEmptyTitle: {
       color: colors.text,
       fontFamily: fonts.bodySemiBold,
-      fontSize: 18,
+      ...typeStyles.rowTitle,
       textAlign: "center",
       marginTop: 4,
     },
     searchEmptyDetail: {
       color: colors.muted2,
       fontFamily: fonts.body,
-      fontSize: 14,
-      lineHeight: 20,
+      ...typeStyles.rowSecondary,
       textAlign: "center",
       maxWidth: 280,
     },
@@ -725,14 +1113,14 @@ function createStyles(colors: ColorPalette) {
     },
     ctaTitle: {
       color: colors.textOnAccent,
-      fontSize: 22,
+      fontFamily: fonts.display,
+      ...typeStyles.compactTitle,
       fontWeight: "700",
-      lineHeight: 28
     },
     ctaSubtitle: {
       color: "rgba(253,251,248,0.72)",
-      fontSize: 14,
-      lineHeight: 20
+      fontFamily: fonts.body,
+      ...typeStyles.rowSecondary,
     },
     ctaRow: { marginTop: 4, flexDirection: "row", alignItems: "center", gap: 16 },
     ctaButton: {
@@ -745,8 +1133,8 @@ function createStyles(colors: ColorPalette) {
       paddingVertical: 10
     },
     ctaButtonDisabled: { opacity: 0.5 },
-    ctaButtonText: { color: colors.text, fontSize: 15, fontWeight: "700" },
-    ctaUsage: { color: "rgba(253,251,248,0.60)", fontSize: 13 },
+    ctaButtonText: { color: colors.text, fontFamily: fonts.bodyBold, ...typeStyles.rowSecondary, fontWeight: "700" },
+    ctaUsage: { color: "rgba(253,251,248,0.60)", fontFamily: fonts.body, ...typeStyles.rowMeta },
     warning: {
       marginHorizontal: 16,
       marginTop: 10,
@@ -754,7 +1142,8 @@ function createStyles(colors: ColorPalette) {
       borderRadius: 12,
       backgroundColor: colors.warningBg,
       color: colors.warningText,
-      fontSize: 13,
+      fontFamily: fonts.bodySemiBold,
+      ...typeStyles.rowMeta,
       fontWeight: "600"
     },
     list: {
@@ -764,6 +1153,7 @@ function createStyles(colors: ColorPalette) {
       gap: 14,
       backgroundColor: colors.bg
     },
+    listFooter: { paddingVertical: 18, alignItems: "center" },
     listEmpty: { flexGrow: 1, paddingHorizontal: 0, paddingBottom: 0 },
     emptyWrap: {
       flex: 1,
@@ -787,16 +1177,16 @@ function createStyles(colors: ColorPalette) {
     emptyHeroFile: { alignItems: "center", justifyContent: "center" },
     emptyHeroTitle: {
       color: colors.text,
-      fontSize: 24,
-      lineHeight: 30,
+      fontFamily: fonts.display,
+      ...typeStyles.compactTitle,
       fontWeight: "700",
       textAlign: "center",
       maxWidth: 280,
     },
     emptyHeroDetail: {
       color: colors.muted,
-      fontSize: 16,
-      lineHeight: 22,
+      fontFamily: fonts.body,
+      ...typeStyles.rowSecondary,
       textAlign: "center",
       maxWidth: 320,
     },
@@ -817,20 +1207,21 @@ function createStyles(colors: ColorPalette) {
     },
     emptyCtaText: {
       color: colors.textOnAccent,
-      fontSize: 17,
-      lineHeight: 22,
+      fontFamily: fonts.bodyBold,
+      ...typeStyles.button,
       fontWeight: "700",
     },
     emptyPlanFooter: {
       marginTop: 18,
       color: colors.muted2,
-      fontSize: 14,
-      lineHeight: 19,
+      fontFamily: fonts.body,
+      ...typeStyles.rowMeta,
       textAlign: "center",
     },
     sectionHeader: {
       color: colors.muted2,
-      fontSize: 11,
+      fontFamily: fonts.bodyExtraBold,
+      ...typeStyles.sectionHeader,
       fontWeight: "600",
       letterSpacing: 1.54,
       textTransform: "uppercase",
@@ -851,40 +1242,123 @@ function createStyles(colors: ColorPalette) {
       shadowRadius: 12,
       elevation: 1
     },
-    rowTop: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-    thumb: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+    docMenuBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: "rgba(0,0,0,0.58)",
+    },
+    docMenuPreview: {
+      position: "absolute",
+      borderRadius: DOCUMENT_ROW_RADIUS,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 12 },
+      shadowOpacity: 0.34,
+      shadowRadius: 24,
+      elevation: 14,
+    },
+    docMenuContainer: {
+      position: "absolute",
+      backgroundColor: colors.surface2,
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      overflow: "hidden",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.28,
+      shadowRadius: 20,
+      elevation: 12,
+    },
+    docMenuRow: {
+      minHeight: 56,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    docMenuRowDivider: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    docMenuRowPressed: { backgroundColor: colors.surface3 },
+    docMenuIconTile: {
+      width: 34,
+      height: 34,
+      borderRadius: 10,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    docMenuLabel: {
+      flex: 1,
+      fontFamily: fonts.bodyMedium,
+      ...typeStyles.callout,
+      fontWeight: "500",
+    },
+    pendingStack: { gap: 10, marginBottom: 14 },
+    pendingCard: {
+      gap: 12,
+      padding: 16,
+      borderRadius: 20,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.primary,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.18,
+      shadowRadius: 16,
+      elevation: 3,
+    },
+    // Pending card uses a slightly larger thumb (56) so the live preview
+    // balances visually with the 3-line text block (eyebrow + title + step).
+    pendingTop: { flexDirection: "row", alignItems: "center", gap: 14 },
+    pendingThumb: {
+      width: 56,
+      height: 56,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+    pendingThumbImage: { width: "100%", height: "100%" },
+    pendingStep: {
+      color: colors.primary,
+      fontFamily: fonts.bodyMedium,
+      ...typeStyles.rowMeta,
+      marginTop: 2,
+    },
+    rowTop: { flexDirection: "row", alignItems: "center", gap: 12 },
+    thumb: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", overflow: "hidden" },
     rowHeadText: { flex: 1, minWidth: 0 },
     rowMetaLine: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 8 },
     rowEyebrow: {
       flex: 1,
       minWidth: 0,
       color: colors.muted3,
-      fontSize: 10,
-      lineHeight: 12,
+      fontFamily: fonts.bodyExtraBold,
+      ...typeStyles.caption2,
       fontWeight: "600",
       letterSpacing: 1.4,
       textTransform: "uppercase"
     },
     rowTitle: {
       color: colors.text,
-      fontFamily: "Geist_600SemiBold",
-      fontSize: 17,
-      lineHeight: 21.25,
+      fontFamily: fonts.display,
+      ...typeStyles.rowTitle,
       fontWeight: "600",
       letterSpacing: -0.17,
-      marginTop: 2
+      marginTop: 2,
     },
     rowSender: {
       color: colors.muted2,
       fontFamily: fonts.body,
-      fontSize: 13,
-      lineHeight: 17,
+      ...typeStyles.rowMeta,
       marginTop: 2
     },
-    rowPreview: { color: colors.muted, fontSize: 14.5, lineHeight: 21.025 },
+    rowPreview: { color: colors.muted, fontFamily: fonts.body, ...typeStyles.rowSecondary },
     rowPills: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
-    rowTimeBlock: { flexDirection: "row", alignItems: "center", gap: 4 },
-    rowTime: { color: colors.muted3, fontSize: 12, lineHeight: 14.5 },
+    // Pinned indicator floats to the bottom-right corner of the card.
+    pinTrail: { marginLeft: "auto", alignItems: "center", justifyContent: "center" },
+    rowTime: { color: colors.muted3, fontFamily: fonts.body, ...typeStyles.caption1 },
     badge: {
       minHeight: 24,
       paddingHorizontal: 10,
@@ -893,7 +1367,7 @@ function createStyles(colors: ColorPalette) {
       alignItems: "center",
       justifyContent: "center"
     },
-    badgeText: { fontSize: 12, fontWeight: "600" },
+    badgeText: { fontFamily: fonts.bodySemiBold, ...typeStyles.caption1, fontWeight: "600" },
     secondaryBadge: { backgroundColor: colors.blueSoft },
     secondaryBadgeText: { color: colors.primary },
     fab: {

@@ -4,6 +4,7 @@
     "slug": "jasne",
     "version": "0.1.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "scheme": "jasne",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -16,6 +17,10 @@
     },
     "android": {
       "package": "app.jasne.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#16458A"
+      },
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE"

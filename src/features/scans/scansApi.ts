@@ -27,8 +27,17 @@ export type ScanProgressEvent =
 const allowedMimeTypes = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
 const supportedExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf"];
 
-export async function listScans() {
-  return apiFetch<ScanListItem[]>("/scans?limit=50&offset=0");
+export const SCANS_PAGE_SIZE = 50;
+
+export type ListScansOptions = {
+  limit?: number;
+  offset?: number;
+};
+
+export async function listScans(options: ListScansOptions = {}) {
+  const limit = options.limit ?? SCANS_PAGE_SIZE;
+  const offset = options.offset ?? 0;
+  return apiFetch<ScanListItem[]>(`/scans?limit=${limit}&offset=${offset}`);
 }
 
 export async function getScan(scanId: string) {
@@ -39,6 +48,16 @@ export async function getScanImageUrls(scanId: string, options: { renderPdf?: bo
   const query = options.renderPdf ? "?render_pdf=true" : "";
   const response = await apiFetch<{ urls: string[] }>(`/scans/${scanId}/image-urls${query}`);
   return response.urls;
+}
+
+export async function deleteScan(scanId: string) {
+  await apiFetch<void>(`/scans/${scanId}`, { method: "DELETE" });
+}
+
+export type DeleteAllScansResponse = { deleted_scans: number; deleted_deadlines: number };
+
+export async function deleteAllScans() {
+  return apiFetch<DeleteAllScansResponse>("/scans", { method: "DELETE" });
 }
 
 export async function getLimits(scanId?: string) {

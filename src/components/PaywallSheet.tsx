@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { AppIcon, type AppIconName } from "@/components/AppIcon";
-import { fonts, useColors, type ColorPalette } from "@/components/ui";
+import { fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { t } from "@/lib/i18n";
 
 type Plan = "monthly" | "yearly";
@@ -294,9 +294,8 @@ function createStyles(colors: ColorPalette) {
     proPillStar: { color: colors.pro, fontSize: 15, lineHeight: 17, fontWeight: "900" },
     proPillText: {
       color: colors.pro,
-      fontSize: 14,
-      lineHeight: 17,
       fontFamily: fonts.bodyExtraBold,
+      ...typeStyles.rowMeta,
       fontWeight: "900",
       letterSpacing: 1.7,
     },
@@ -314,16 +313,14 @@ function createStyles(colors: ColorPalette) {
     title: {
       color: colors.text,
       fontFamily: fonts.display,
-      fontSize: 25,
-      lineHeight: 30,
+      ...typeStyles.compactTitle,
       fontWeight: "700",
       letterSpacing: -0.3,
     },
     subtitle: {
       color: colors.muted2,
       fontFamily: fonts.bodySemiBold,
-      fontSize: 15,
-      lineHeight: 23,
+      ...typeStyles.rowSecondary,
       fontWeight: "600",
       marginTop: -6,
     },
@@ -357,9 +354,8 @@ function createStyles(colors: ColorPalette) {
     },
     discountText: {
       color: colors.textOnAccent,
-      fontSize: 12,
-      lineHeight: 15,
       fontFamily: fonts.bodyExtraBold,
+      ...typeStyles.caption1,
       fontWeight: "900",
     },
     planHeader: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 22 },
@@ -374,24 +370,21 @@ function createStyles(colors: ColorPalette) {
     checkBadgeText: { color: colors.textOnAccent, fontSize: 12, lineHeight: 14, fontWeight: "900" },
     planLabel: {
       color: colors.muted2,
-      fontSize: 14,
-      lineHeight: 18,
       fontFamily: fonts.bodyBold,
+      ...typeStyles.rowMeta,
       fontWeight: "700",
     },
     planLabelSelected: { color: colors.pro },
     planPrice: {
       color: colors.text,
-      fontSize: 25,
-      lineHeight: 29,
       fontFamily: fonts.display,
+      ...typeStyles.compactTitle,
       fontWeight: "700",
     },
     planMeta: {
       color: colors.muted2,
-      fontSize: 13,
-      lineHeight: 17,
       fontFamily: fonts.bodyMedium,
+      ...typeStyles.rowMeta,
       fontWeight: "500",
     },
 
@@ -409,16 +402,14 @@ function createStyles(colors: ColorPalette) {
     featureTextBlock: { flex: 1, minWidth: 0 },
     featureTitle: {
       color: colors.text,
-      fontSize: 17,
-      lineHeight: 22,
       fontFamily: fonts.bodySemiBold,
+      ...typeStyles.rowTitle,
       fontWeight: "700",
     },
     featureDetail: {
       color: colors.muted2,
-      fontSize: 15,
-      lineHeight: 20,
       fontFamily: fonts.bodyMedium,
+      ...typeStyles.rowSecondary,
       fontWeight: "500",
       marginTop: 2,
     },
@@ -443,9 +434,8 @@ function createStyles(colors: ColorPalette) {
     ctaStar: { color: colors.textOnAccent, fontSize: 16, fontWeight: "900" },
     ctaText: {
       color: colors.textOnAccent,
-      fontSize: 17,
-      lineHeight: 22,
       fontFamily: fonts.bodyBold,
+      ...typeStyles.button,
       fontWeight: "700",
       flexShrink: 1,
       textAlign: "center",
@@ -453,9 +443,8 @@ function createStyles(colors: ColorPalette) {
 
     footer: {
       color: colors.muted2,
-      fontSize: 13,
-      lineHeight: 18,
       fontFamily: fonts.bodyMedium,
+      ...typeStyles.rowMeta,
       fontWeight: "500",
       textAlign: "center",
       paddingHorizontal: 8,
@@ -464,9 +453,8 @@ function createStyles(colors: ColorPalette) {
     restoreBtn: { alignItems: "center", paddingVertical: 5 },
     restoreText: {
       color: colors.primary,
-      fontSize: 16,
-      lineHeight: 22,
       fontFamily: fonts.bodyBold,
+      ...typeStyles.callout,
       fontWeight: "700",
     },
 

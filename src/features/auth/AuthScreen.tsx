@@ -6,9 +6,10 @@ import * as WebBrowser from "expo-web-browser";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppIcon } from "@/components/AppIcon";
+import { BrandWordmark } from "@/components/BrandMark";
 import { supabase } from "@/lib/supabase";
 import { AuthGradient } from "@/components/AuthGradient";
-import { Button, fonts, useColors, type ColorPalette } from "@/components/ui";
+import { Button, fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { t } from "@/lib/i18n";
 
 type AuthMode = "register" | "login" | "forgot";
@@ -153,7 +154,7 @@ export function AuthScreen({ initialMode = "register" }: { initialMode?: "regist
           ) : null}
 
           <View style={styles.header}>
-            <Text style={styles.logo}>jasně</Text>
+            <BrandWordmark height={44} style={styles.logo} />
             <Text style={styles.subtitle}>
               {mode === "register"
                 ? t("auth.registerSubtitle")
@@ -496,24 +497,16 @@ function createStyles(colors: ColorPalette) {
       marginBottom: 10
     },
     backIcon: { color: colors.muted, fontSize: 34, lineHeight: 36, fontFamily: fonts.body, fontWeight: "400" },
-    backText: { color: colors.muted, fontSize: 17, lineHeight: 22, fontFamily: fonts.bodyBold, fontWeight: "700" },
+    backText: { color: colors.muted, fontFamily: fonts.bodyBold, ...typeStyles.rowTitle, fontWeight: "700" },
     header: {
       gap: 12,
       marginBottom: 2
     },
-    logo: {
-      color: colors.primary,
-      fontFamily: fonts.display,
-      fontSize: 44,
-      lineHeight: 48,
-      fontWeight: "600",
-      letterSpacing: 0
-    },
+    logo: {},
     subtitle: {
       color: colors.text,
       fontFamily: fonts.display,
-      fontSize: 22,
-      lineHeight: 29,
+      ...typeStyles.compactTitle,
       fontWeight: "600",
       letterSpacing: -0.2
     },
@@ -540,8 +533,8 @@ function createStyles(colors: ColorPalette) {
     },
     socialButtonText: {
       color: colors.text,
-      fontSize: 16,
       fontFamily: fonts.bodyBold,
+      ...typeStyles.callout,
       fontWeight: "800"
     },
     socialSpacer: { width: 28 },
@@ -558,8 +551,8 @@ function createStyles(colors: ColorPalette) {
     },
     dividerText: {
       color: colors.muted,
-      fontSize: 12,
       fontFamily: fonts.bodyBold,
+      ...typeStyles.caption1,
       fontWeight: "700",
       letterSpacing: 0.4
     },
@@ -572,16 +565,15 @@ function createStyles(colors: ColorPalette) {
     },
     forgotInlineText: {
       color: colors.primary,
-      fontSize: 14,
       fontFamily: fonts.bodyBold,
+      ...typeStyles.rowMeta,
       fontWeight: "700"
     },
     inputBlock: { gap: 7 },
     label: {
       color: colors.muted,
-      fontSize: 13,
-      lineHeight: 17,
       fontFamily: fonts.bodyBold,
+      ...typeStyles.sectionHeader,
       fontWeight: "800",
       textTransform: "uppercase"
     },
@@ -605,35 +597,32 @@ function createStyles(colors: ColorPalette) {
       color: colors.text,
       paddingHorizontal: 16,
       fontFamily: fonts.body,
-      fontSize: 17,
+      ...typeStyles.input,
       fontWeight: "400"
     },
     inputWithIcon: { paddingLeft: 48 },
     inputError: { borderColor: colors.danger },
     fieldHint: {
       color: colors.muted2,
-      fontSize: 14,
-      lineHeight: 19,
       fontFamily: fonts.bodyMedium,
+      ...typeStyles.rowMeta,
       fontWeight: "500"
     },
     fieldError: {
       color: colors.danger,
-      fontSize: 13,
-      lineHeight: 18
+      fontFamily: fonts.body,
+      ...typeStyles.rowMeta,
     },
     formError: {
       color: colors.danger,
-      fontSize: 14,
-      lineHeight: 20,
       fontFamily: fonts.bodySemiBold,
+      ...typeStyles.rowMeta,
       fontWeight: "600"
     },
     formMessage: {
       color: colors.green,
-      fontSize: 14,
-      lineHeight: 20,
       fontFamily: fonts.bodyBold,
+      ...typeStyles.rowMeta,
       fontWeight: "700"
     },
     actions: { gap: 12 },
@@ -646,9 +635,8 @@ function createStyles(colors: ColorPalette) {
     },
     inlineSwitchMuted: {
       color: colors.muted2,
-      fontSize: 16,
-      lineHeight: 22,
       fontFamily: fonts.bodySemiBold,
+      ...typeStyles.callout,
       fontWeight: "600",
       textAlign: "center"
     },
@@ -684,9 +672,8 @@ function createStyles(colors: ColorPalette) {
     infoText: {
       flex: 1,
       color: colors.muted,
-      fontSize: 15,
-      lineHeight: 22,
       fontFamily: fonts.bodySemiBold,
+      ...typeStyles.rowSecondary,
       fontWeight: "600"
     },
     legal: {
@@ -697,14 +684,13 @@ function createStyles(colors: ColorPalette) {
     },
     legalText: {
       color: colors.muted,
-      fontSize: 13,
-      lineHeight: 19
+      fontFamily: fonts.body,
+      ...typeStyles.rowMeta,
     },
     legalLink: {
       color: colors.primary,
-      fontSize: 13,
-      lineHeight: 19,
       fontFamily: fonts.bodyExtraBold,
+      ...typeStyles.rowMeta,
       fontWeight: "800"
     },
     pressed: { opacity: 0.72 },

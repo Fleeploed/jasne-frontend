@@ -85,6 +85,7 @@ function RootNavigator() {
   return (
     <Stack
       screenOptions={{
+        contentStyle: { backgroundColor: colors.bg },
         headerShadowVisible: false,
         headerStyle: { backgroundColor: colors.bg },
         headerShown: false,
