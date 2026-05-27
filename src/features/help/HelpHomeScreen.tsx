@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
+import { useScrollToTop } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { Screen, fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
@@ -18,6 +19,8 @@ export function HelpHomeScreen() {
   const { locale } = useLocale();
   const language: HelpLanguage = helpLanguageForLocale(normalizeLocale(locale));
   const aliveRef = useRef(true);
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
   const [home, setHome] = useState<HelpHomeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -85,6 +88,7 @@ export function HelpHomeScreen() {
   return (
     <Screen>
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}

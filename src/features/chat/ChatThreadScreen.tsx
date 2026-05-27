@@ -10,7 +10,13 @@ import { AppBar, BackButton, ErrorText, Screen, fonts, typeStyles, useColors, ty
 import { Icon } from "@/components/Icon";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { listMessages, streamChat } from "@/features/chat/chatApi";
-import { createManualDeadline } from "@/features/deadlines/deadlinesApi";
+import {
+  type ChatCacheEntry,
+  getChatCache,
+  getChatCacheSync,
+  setChatCache,
+} from "@/features/chat/chatThreadCache";
+import { createManualDeadline, listAllDeadlines } from "@/features/deadlines/deadlinesApi";
 import { getLimits, getScan, getScanImageUrls } from "@/features/scans/scansApi";
 import {
   type PendingAttachment,
@@ -26,6 +32,52 @@ import type { AnalysisDeadline, LimitsResponse, ScanMessage, ScanResponse } from
 // In-memory cache of last scroll offset per scan id.
 // Survives navigation but resets on app restart — that's fine for chat UX.
 const chatScrollOffsets = new Map<string, number>();
+
+// Signed URLs expire in 1h; cache for 50 min to keep a safety margin.
+const ATTACHMENT_URL_TTL_MS = 50 * 60 * 1000;
+const attachmentUrlCache = new Map<string, { urls: string[]; cachedAt: number }>();
+
+// Scans whose analysis deadlines we already synced into the deadlines table
+// this session. Prevents recreating deadlines the user has intentionally deleted.
+const deadlineSyncDone = new Set<string>();
+
+async function syncAnalysisDeadlines(scan: ScanResponse) {
+  // Only run once per scan per session, and only when the analysis actually
+  // produced deadlines that the scans list grouping cares about.
+  if (deadlineSyncDone.has(scan.id)) return;
+  const analysisDeadlines = scan.result?.deadlines ?? [];
+  if (!analysisDeadlines.length) return;
+  deadlineSyncDone.add(scan.id);
+  try {
+    const existing = await listAllDeadlines(false);
+    if (existing.some((d) => d.scan_id === scan.id)) return;
+    for (const d of analysisDeadlines) {
+      try {
+        await createManualDeadline({
+          title: d.description,
+          description: null,
+          due_date: d.date,
+          deadline_type: d.type,
+          scan_id: scan.id,
+        });
+      } catch {
+        // Skip individual failures — other deadlines for the same scan still get created.
+      }
+    }
+  } catch {
+    deadlineSyncDone.delete(scan.id);
+  }
+}
+
+function getCachedAttachmentUrls(key: string): string[] | null {
+  const hit = attachmentUrlCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.cachedAt > ATTACHMENT_URL_TTL_MS) {
+    attachmentUrlCache.delete(key);
+    return null;
+  }
+  return hit.urls;
+}
 
 type UiMessage = ScanMessage | {
   id: string;
@@ -68,14 +120,18 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
     };
   }, []);
 
-  const [scan, setScan] = useState<ScanResponse | null>(null);
-  const [limits, setLimits] = useState<LimitsResponse | null>(null);
-  const [messages, setMessages] = useState<UiMessage[]>([]);
+  // Hydrate from in-memory cache so revisiting a chat shows messages instantly.
+  // A background refetch below keeps data fresh. If the entry is only on disk
+  // (cold start), the async useEffect below will fill it in.
+  const cachedEntry = !pendingId && params.id ? getChatCacheSync(params.id) : null;
+  const [scan, setScan] = useState<ScanResponse | null>(cachedEntry?.scan ?? null);
+  const [limits, setLimits] = useState<LimitsResponse | null>(cachedEntry?.limits ?? null);
+  const [messages, setMessages] = useState<UiMessage[]>(cachedEntry?.messages ?? []);
   const [question, setQuestion] = useState("");
   // Pending mode is used when ChatThreadScreen is mounted with a localId
   // (either prop from NewScanScreen or ?pending=<localId> from the pending card).
   const initialPending = Boolean(pendingId);
-  const [loading, setLoading] = useState(!initialPending);
+  const [loading, setLoading] = useState(!initialPending && !cachedEntry);
   const [showPaywall, setShowPaywall] = useState(false);
   const [viewerImages, setViewerImages] = useState<string[]>([]);
   const [viewerIndex, setViewerIndex] = useState(0);
@@ -122,6 +178,10 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
     }
   }, [scanId]);
 
+  // Tracks whether the server fetch has populated state, so a slower disk
+  // hydrate doesn't overwrite fresh data with stale.
+  const serverHydratedRef = useRef(Boolean(cachedEntry));
+
   useEffect(() => {
     if (initialPending || !params.id) return;
     let alive = true;
@@ -131,9 +191,12 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
       try {
         const [nextScan, nextMessages, nextLimits] = await Promise.all([getScan(targetId), listMessages(targetId), getLimits(targetId)]);
         if (!alive) return;
+        serverHydratedRef.current = true;
         setScan(nextScan);
         setMessages(nextMessages);
         setLimits(nextLimits);
+        setChatCache(targetId, { scan: nextScan, messages: nextMessages, limits: nextLimits });
+        void syncAnalysisDeadlines(nextScan);
       } catch (loadError) {
         if (!alive) return;
         setError(loadError instanceof Error ? loadError.message : t("chat.loadError"));
@@ -145,6 +208,26 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
       alive = false;
     };
   }, [initialPending, params.id]);
+
+  // Cold-start hydrate: if there was no in-memory cache, try disk in parallel
+  // with the server fetch. Whichever arrives first fills state; server always
+  // wins if it returned already.
+  useEffect(() => {
+    if (initialPending || !params.id || cachedEntry) return;
+    let alive = true;
+    const targetId = params.id;
+    (async () => {
+      const entry: ChatCacheEntry | null = await getChatCache(targetId);
+      if (!alive || !entry || serverHydratedRef.current) return;
+      setScan(entry.scan);
+      setMessages(entry.messages);
+      setLimits(entry.limits);
+      setLoading(false);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [initialPending, params.id, cachedEntry]);
 
   // Subscribe to this specific pending scan record. When its scanId arrives,
   // load scan data IN PLACE (no navigation flash), update URL silently, and
@@ -174,6 +257,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
           setScan(nextScan);
           setMessages(nextMessages);
           setLimits(nextLimits);
+          setChatCache(realId, { scan: nextScan, messages: nextMessages, limits: nextLimits });
           removePendingScanById(pendingId);
           router.replace(`/scan/${realId}`);
         } catch (loadError) {
@@ -846,8 +930,10 @@ function DocumentAttachmentBubble({ scanId, content, colors, styles, onOpenViewe
 }) {
   const paths = useMemo(() => parseStoragePaths(content), [content]);
   const pathsKey = paths.join("\n");
-  const [signedUrls, setSignedUrls] = useState<string[]>([]);
-  const [loading, setLoading] = useState(paths.length > 0);
+  const cacheKey = `${scanId}::${pathsKey}`;
+  const cachedUrls = getCachedAttachmentUrls(cacheKey);
+  const [signedUrls, setSignedUrls] = useState<string[]>(cachedUrls ?? []);
+  const [loading, setLoading] = useState(paths.length > 0 && !cachedUrls);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -860,7 +946,16 @@ function DocumentAttachmentBubble({ scanId, content, colors, styles, onOpenViewe
         return;
       }
 
-      setLoading(true);
+      const cached = getCachedAttachmentUrls(cacheKey);
+      if (cached) {
+        if (alive) {
+          setSignedUrls(cached);
+          setFailed(false);
+          setLoading(false);
+        }
+        return;
+      }
+
       setFailed(false);
       let urls: string[] = [];
 
@@ -876,6 +971,7 @@ function DocumentAttachmentBubble({ scanId, content, colors, styles, onOpenViewe
         setSignedUrls([]);
         setFailed(true);
       } else {
+        attachmentUrlCache.set(cacheKey, { urls, cachedAt: Date.now() });
         setSignedUrls(urls);
       }
       setLoading(false);
@@ -885,7 +981,7 @@ function DocumentAttachmentBubble({ scanId, content, colors, styles, onOpenViewe
     return () => {
       alive = false;
     };
-  }, [pathsKey, scanId]);
+  }, [pathsKey, scanId, cacheKey]);
 
   const firstPath = paths[0] ?? "";
   const firstUrl = signedUrls[0];
