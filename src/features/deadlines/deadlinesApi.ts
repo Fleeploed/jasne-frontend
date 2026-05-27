@@ -21,6 +21,18 @@ export async function listDeadlines(onlyActive = true, options: ListDeadlinesOpt
   return apiFetch<DeadlineResponse[]>(`/deadlines?${params.toString()}`);
 }
 
+export async function listAllDeadlines(onlyActive = true, status?: DeadlineStatus) {
+  const all: DeadlineResponse[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await listDeadlines(onlyActive, { limit: DEADLINES_PAGE_SIZE, offset, status });
+    all.push(...page);
+    if (page.length < DEADLINES_PAGE_SIZE) break;
+    offset += DEADLINES_PAGE_SIZE;
+  }
+  return all;
+}
+
 export async function completeDeadline(deadlineId: string) {
   return apiFetch<DeadlineResponse>(`/deadlines/${deadlineId}`, {
     method: "PATCH",

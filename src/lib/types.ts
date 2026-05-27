@@ -38,6 +38,8 @@ export type ScanListItem = {
   page_count: number;
   created_at: string;
   last_message_at?: string | null;
+  has_analysis_deadlines?: boolean;
+  next_analysis_deadline_at?: string | null;
 };
 
 export type ScanResponse = {

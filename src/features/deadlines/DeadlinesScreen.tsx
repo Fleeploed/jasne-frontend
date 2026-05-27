@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Animated, KeyboardAvoidingView, LayoutAnimation, Modal, PanResponder, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, UIManager, useWindowDimensions, Vibration, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
+import { useScrollToTop } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppIcon } from "@/components/AppIcon";
@@ -100,6 +101,8 @@ export function DeadlinesScreen() {
   );
 
   const aliveRef = useRef(true);
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
@@ -200,6 +203,7 @@ export function DeadlinesScreen() {
       </View>
       <ErrorText message={error} />
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={deadlines.length ? styles.list : styles.emptyList}
         refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
