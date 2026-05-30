@@ -12,6 +12,7 @@ import { t, normalizeLocale } from "@/lib/i18n";
 import { useLocale } from "@/lib/LocaleContext";
 
 const HELP_TEXT_SCALE = 1;
+const REFRESH_SPINNER_MAX_MS = 1200;
 
 export function HelpHomeScreen() {
   const colors = useColors();
@@ -20,6 +21,8 @@ export function HelpHomeScreen() {
   const language: HelpLanguage = helpLanguageForLocale(normalizeLocale(locale));
   const aliveRef = useRef(true);
   const scrollRef = useRef<ScrollView>(null);
+  const refreshInFlightRef = useRef(false);
+  const refreshRequestIdRef = useRef(0);
   useScrollToTop(scrollRef);
   const [home, setHome] = useState<HelpHomeResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,16 +55,32 @@ export function HelpHomeScreen() {
   // instead of `loading`. Errors during a refresh keep the existing content
   // on screen — better UX than blanking the page on a transient failure.
   const onRefresh = useCallback(async () => {
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
+    const requestId = refreshRequestIdRef.current + 1;
+    refreshRequestIdRef.current = requestId;
+    const spinnerTimeout = setTimeout(() => {
+      if (aliveRef.current && refreshRequestIdRef.current === requestId) {
+        setRefreshing(false);
+      }
+    }, REFRESH_SPINNER_MAX_MS);
+
     setRefreshing(true);
     try {
       const response = await getHelpHome(language);
-      if (!aliveRef.current) return;
+      if (!aliveRef.current || refreshRequestIdRef.current !== requestId) return;
       setHome(response);
       setFailed(false);
     } catch (error) {
       console.warn("Failed to refresh Help home", error);
     } finally {
-      if (aliveRef.current) setRefreshing(false);
+      clearTimeout(spinnerTimeout);
+      if (aliveRef.current && refreshRequestIdRef.current === requestId) {
+        setRefreshing(false);
+      }
+      if (refreshRequestIdRef.current === requestId) {
+        refreshInFlightRef.current = false;
+      }
     }
   }, [language]);
 
@@ -87,6 +106,17 @@ export function HelpHomeScreen() {
 
   return (
     <Screen>
+      <View style={styles.hero}>
+        <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.title}>{t("help.home.title")}</Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push("/help/search")}
+          style={({ pressed }) => [styles.searchBar, pressed && styles.pressed]}
+        >
+          <Ionicons name="search-outline" size={20} color={colors.muted2} />
+          <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} numberOfLines={1} style={styles.searchPlaceholder}>{t("help.home.searchPlaceholder")}</Text>
+        </Pressable>
+      </View>
       <ScrollView
         ref={scrollRef}
         style={styles.scroll}
@@ -101,34 +131,24 @@ export function HelpHomeScreen() {
           />
         }
       >
-        <View style={styles.hero}>
-          <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.title}>{t("help.home.title")}</Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => router.push("/help/search")}
-            style={({ pressed }) => [styles.searchBar, pressed && styles.pressed]}
-          >
-            <Ionicons name="search-outline" size={22} color={colors.muted3} />
-            <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} numberOfLines={1} style={styles.searchPlaceholder}>{t("help.home.searchPlaceholder")}</Text>
-          </Pressable>
-        </View>
-
         <View style={styles.section}>
           <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.sectionTitle}>{t("help.home.quickActionsTitle")}</Text>
           <View style={styles.quickCards}>
-            {home.quick_actions.map((action) => {
-              const target = routeTarget(action.route, action.key);
-              return (
-                <HelpQuickActionCard
-                  key={action.key}
-                  title={action.title}
-                  subtitle={action.subtitle}
-                  actionKey={action.key}
-                  disabled={!target}
-                  onPress={target ? () => router.push(target) : undefined}
-                />
-              );
-            })}
+            {home.quick_actions
+              .filter((action) => action.key !== "understand_letter" && action.key !== "prepare_documents")
+              .map((action) => {
+                const target = routeTarget(action.route, action.key);
+                return (
+                  <HelpQuickActionCard
+                    key={action.key}
+                    title={action.title}
+                    subtitle={action.subtitle}
+                    actionKey={action.key}
+                    disabled={!target}
+                    onPress={target ? () => router.push(target) : undefined}
+                  />
+                );
+              })}
           </View>
         </View>
 
@@ -177,33 +197,40 @@ function createStyles(colors: ColorPalette) {
     scroll: { flex: 1, backgroundColor: colors.bg },
     content: {
       paddingHorizontal: 16,
-      paddingTop: 16,
+      paddingTop: 26,
       paddingBottom: 110,
       gap: 26
     },
-    hero: { gap: 16 },
+    hero: {
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 0,
+      gap: 16,
+      backgroundColor: colors.bg,
+    },
     title: {
       color: colors.primary,
       fontFamily: fonts.displayBold,
-      fontSize: 40,
-      lineHeight: 46
+      ...typeStyles.largeScreenTitle,
+      fontWeight: "800",
+      letterSpacing: -1
     },
     searchBar: {
-      minHeight: 54,
-      borderRadius: 18,
+      minHeight: 44,
+      borderRadius: 12,
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: colors.surface2,
+      backgroundColor: colors.surface,
       flexDirection: "row",
       alignItems: "center",
-      gap: 12,
-      paddingHorizontal: 15
+      gap: 10,
+      paddingHorizontal: 12
     },
     searchPlaceholder: {
       flex: 1,
       color: colors.muted3,
       fontFamily: fonts.body,
-      ...typeStyles.body
+      ...typeStyles.rowSecondary
     },
     pressed: { opacity: 0.72 },
     section: { gap: 12 },
@@ -211,7 +238,7 @@ function createStyles(colors: ColorPalette) {
       color: colors.muted2,
       fontFamily: fonts.bodyExtraBold,
       ...typeStyles.sectionHeader,
-      letterSpacing: 2.8,
+      letterSpacing: 1.4,
       textTransform: "uppercase"
     },
     quickCards: { gap: 10 },

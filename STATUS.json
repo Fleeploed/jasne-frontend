@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "meta": {
     "project": "Jasne frontend",
-    "snapshot_date": "2026-05-17",
+    "snapshot_date": "2026-05-27",
     "repo_path": "/Users/alisheribrayev/Documents/Jasne/jasne-frontend",
     "app_name": "Jasne",
     "current_version": "0.1.0",
@@ -28,11 +28,9 @@
         "Document scanner uses lazy dynamic import + TurboModuleRegistry.get('DocumentScanner') guard so app loads cleanly in Expo Go and only the scanner button errors when pressed."
       ],
       "added_packages_this_session": [
-        "expo-navigation-bar (Android system nav bar coloring synced with theme)",
-        "@expo/ngrok (tunneled dev server for testing on phones over different networks)",
-        "react-native-purchases ~10.1 (RevenueCat SDK, native module)",
-        "react-native-purchases-ui ~10.1 (paywall UI primitives, available for future use)"
-      ]
+        "yaml ^2.9.0 (parse bundled terms.yaml for the Terms of Service screen)"
+      ],
+      "metro_config": "metro.config.js extends the default Expo config to add 'yaml' and 'yml' to resolver.assetExts so .yaml content can be bundled and loaded via expo-asset; src/types/assets.d.ts declares the matching '*.yaml' module so TS imports resolve."
     },
     "app_identity": {
       "scheme": "jasne",
@@ -115,7 +113,7 @@
         {
           "file": "app/(app)/_layout.tsx",
           "route": "(app)",
-          "purpose": "Bottom tab shell: documents, deadlines, profile; Android nav-bar themed via expo-navigation-bar"
+          "purpose": "Bottom tab shell: documents, deadlines, help, profile; Android nav-bar themed via expo-navigation-bar"
         },
         {
           "file": "app/(app)/index.tsx",
@@ -128,9 +126,46 @@
           "screen": "Deadlines"
         },
         {
-          "file": "app/(app)/profile.tsx",
+          "file": "app/(app)/help/_layout.tsx + help/index.tsx",
+          "route": "/help",
+          "screen": "Help home — popular categories, quick action chips, CTA to scan"
+        },
+        {
+          "file": "app/(app)/help/search.tsx",
+          "route": "/help/search",
+          "screen": "Help search — full-text search across guides"
+        },
+        {
+          "file": "app/(app)/help/category/[slug].tsx",
+          "route": "/help/category/:slug",
+          "screen": "Help category — list of guides in one category"
+        },
+        {
+          "file": "app/(app)/help/guide/[slug].tsx",
+          "route": "/help/guide/:slug",
+          "screen": "Help guide — single article with sections (text/steps/checklist/warning/cta), sticky CTA footer, optional official source URL"
+        },
+        {
+          "file": "app/(app)/profile/index.tsx",
           "route": "/profile",
           "screen": "Profile"
+        },
+        {
+          "file": "app/(app)/profile/privacy.tsx",
+          "route": "/profile/privacy",
+          "screen": "Privacy — data overview + delete all scans"
+        },
+        {
+          "file": "app/(app)/profile/terms.tsx",
+          "route": "/profile/terms",
+          "screen": "Terms of Service",
+          "notes": "Loads localized terms content from bundled src/features/profile/terms.yaml via expo-asset + yaml parser; falls back to cs when current locale is missing."
+        },
+        {
+          "file": "app/(app)/help/status.tsx",
+          "route": "/help/status",
+          "screen": "OAMP status check",
+          "notes": "Lets the user look up an OAMP (Czech immigration office) case by řízení number or visa number; calls POST /status/oamp on the backend which scrapes the OAMP public portal and returns {kind, status, message, ...}. Outcome shown with tone-mapped icon/title and localized body."
         }
       ],
       "scan": [
@@ -168,7 +203,11 @@
           "fonts tokens (Geist / Inter)"
         ],
         "action_sheet": "Reusable iOS-style bottom sheet (Modal + slide). Accepts title/subtitle/actions[]; supports destructive style and Ionicons. Used by DeadlinesScreen long-press menu.",
-        "paywall_sheet": "Custom Modal scaffold — SDK wiring deferred (RevenueCat)."
+        "paywall_sheet": "Custom Modal scaffold — SDK wiring deferred (RevenueCat).",
+        "icon": "src/components/Icon.tsx — thin wrapper around Ionicons used for inline glyphs (e.g. eye toggle in password fields).",
+        "auth_gradient": "src/components/AuthGradient.tsx — radial/linear gradient background shared by AuthScreen and ResetPasswordScreen.",
+        "brand_mark": "src/components/BrandMark.tsx — BrandWordmark SVG logo used on auth screens.",
+        "app_icon": "src/components/AppIcon.tsx — custom SVG icon set (doc-text, calendar, user, lock, shield, trash, info, …) used throughout the app."
       },
       "auth": {
         "files": [
@@ -185,7 +224,10 @@
           "password_reset_deep_link_screen": true,
           "apple_sign_in": false,
           "session_persistence": true,
-          "auth_error_mapping": true
+          "auth_error_mapping": true,
+          "password_visibility_toggle": true,
+          "lock_icon_glyph_in_password_field": true,
+          "profile_links_to_terms_and_privacy": true
         },
         "redirects": {
           "google_callback": "jasne://auth/callback",
@@ -211,6 +253,7 @@
           "navigate_to_created_thread_on_done": true,
           "storage_upload_error_mapping": true,
           "limits_gate_before_scan": true,
+          "pinned_scans": true,
           "doc_card_v2_layout": true,
           "sender_line_in_card": true,
           "inline_header_search": true,
@@ -222,6 +265,7 @@
           "fab_camera_button": true,
           "bell_icon_removed": true
         },
+        "pinned_scans_store": "src/features/scans/pinnedScansStore.ts — persisted list of pinned scan IDs; pinned items appear at top of scan list.",
         "storage_upload_contract": {
           "bucket": "documents",
           "path_format": "<supabase_user_id>/<timestamp>-<page_index>-<safe_filename>.<ext>",
@@ -238,7 +282,8 @@
       "chat": {
         "files": [
           "src/features/chat/ChatThreadScreen.tsx",
-          "src/features/chat/chatApi.ts"
+          "src/features/chat/chatApi.ts",
+          "src/features/chat/chatThreadCache.ts"
         ],
         "features": {
           "load_scan_detail": true,
@@ -258,7 +303,8 @@
           "key_remount_per_scan_id_no_flash": true,
           "deadline_card_three_tone_urgency": true,
           "footer_transparent_no_hairline": true
-        }
+        },
+        "chat_thread_cache": "chatThreadCache.ts — in-memory Map keyed by scan_id; caches loaded threads so reopening a chat is instant; invalidateChatCache() called on deleteAllScans to prevent stale data."
       },
       "deadlines": {
         "files": [
@@ -309,11 +355,63 @@
         "responsibilities": [
           "runtime env config",
           "Supabase client",
-          "authorized API fetch",
-          "SSE parsing",
+          "authorized API fetch — fetch-throw caught and surfaced as common.networkError; 5xx and unknown proxy error envelopes (Railway/fly.io `{ status, code, message }`) collapsed to common.serviceDown so the raw envelope never leaks into UI",
+          "SSE parsing — same offline / service-down normalization applied to streamed error frames",
           "shared API response types",
           "RevenueCat configure/identify/clear wrapped with Expo Go + missing-module guards"
         ]
+      },
+      "help": {
+        "files": [
+          "src/features/help/HelpHomeScreen.tsx",
+          "src/features/help/HelpCategoryScreen.tsx",
+          "src/features/help/HelpGuideScreen.tsx",
+          "src/features/help/HelpSearchScreen.tsx",
+          "src/features/help/HelpStatusScreen.tsx",
+          "src/features/help/components.tsx",
+          "src/features/help/helpApi.ts",
+          "src/features/help/statusApi.ts",
+          "src/features/help/types.ts"
+        ],
+        "features": {
+          "help_home_popular_categories": true,
+          "help_home_quick_action_chips": true,
+          "help_category_guide_list": true,
+          "help_guide_sections": "text | steps | checklist | warning | cta",
+          "help_guide_sticky_cta_footer": true,
+          "help_guide_official_source_url": true,
+          "help_full_text_search": true,
+          "oamp_status_check": true,
+          "oamp_proceedings_lookup_by_case_number": true,
+          "oamp_visa_lookup_by_visa_number": true,
+          "status_outcome_tone_mapping": "approved | processing | not_found | rejected | found | unknown",
+          "empty_state_with_hero_icon": true,
+          "offline_error_state_uses_common_offline_strings": true
+        },
+        "cta_actions": [
+          "scan_document",
+          "add_deadline",
+          "open_deadlines",
+          "scan_oamp_letter",
+          "add_deadline_manual",
+          "scan_tax_letter",
+          "scan_bill",
+          "scan_contract",
+          "open_help_center"
+        ]
+      },
+      "profile_extra": {
+        "files": [
+          "src/features/profile/PrivacyScreen.tsx",
+          "src/features/profile/TermsScreen.tsx",
+          "src/features/profile/terms.yaml"
+        ],
+        "features": {
+          "privacy_screen": true,
+          "privacy_delete_all_invalidates_chat_cache": true,
+          "terms_of_service_screen": true,
+          "terms_localized_yaml": "cs/ru/uk/en stored together in terms.yaml; locale fallback to cs"
+        }
       }
     },
     "api_usage": {
@@ -328,6 +426,7 @@
       "scans": [
         "GET /scans?limit=50&offset=0",
         "GET /scans/{scan_id}",
+        "GET /scans/counts",
         "POST /scans/stream"
       ],
       "chat": [
@@ -339,6 +438,15 @@
         "POST /deadlines",
         "PATCH /deadlines/{deadline_id}",
         "DELETE /deadlines/{deadline_id}"
+      ],
+      "status": [
+        "POST /status/oamp"
+      ],
+      "help": [
+        "GET /help/home?language=cs|ru|uk|en",
+        "GET /help/categories/{slug}?language=...",
+        "GET /help/guides/{slug}?language=...",
+        "GET /help/search?q={query}&language=..."
       ]
     }
   },
@@ -495,7 +603,16 @@
     { "id": "fe-fix-29", "area": "i18n", "fix": "Added searchClearAria, searchEmptyTitle, searchEmptyDetail across cs/ru/uk/en; cleaned duplicate deadlines.markDone keys" },
     { "id": "fe-fix-30", "area": "purchases", "fix": "Added src/lib/purchases.ts — RevenueCat wrapper with configure/identify/clear, all guarded by Expo Go + dynamic-import detection so missing native module never crashes JS bundle" },
     { "id": "fe-fix-31", "area": "app/_layout", "fix": "configurePurchases() runs once on mount (idempotent) so RevenueCat is ready before sign-in screen renders" },
-    { "id": "fe-fix-32", "area": "AuthProvider", "fix": "On session arrival useEffect aliases RevenueCat to session.user.id; signOut calls clearPurchasesIdentity BEFORE supabase.auth.signOut so next user on device doesn't inherit purchases" }
+    { "id": "fe-fix-32", "area": "AuthProvider", "fix": "On session arrival useEffect aliases RevenueCat to session.user.id; signOut calls clearPurchasesIdentity BEFORE supabase.auth.signOut so next user on device doesn't inherit purchases" },
+    { "id": "fe-fix-33", "area": "api.ts", "fix": "fetch() wrapped in try/catch — DNS/TLS/CORS failures now throw a localized common.networkError ApiError(status=0) instead of an opaque TypeError" },
+    { "id": "fe-fix-34", "area": "api.ts + sse.ts", "fix": "Error-body normalizer collapses 5xx, empty bodies, non-JSON bodies, and platform-proxy envelopes (Railway/fly.io `{ status, code, message, request_id }`) to localized common.serviceDown — UI no longer shows 'Application not found' or raw JSON" },
+    { "id": "fe-fix-35", "area": "AuthScreen + ResetPasswordScreen", "fix": "Password fields gained an eye toggle (auth.showPassword / auth.hidePassword) and a proper AppIcon `lock` glyph replacing the typographic `•`" },
+    { "id": "fe-fix-36", "area": "ProfileScreen", "fix": "'Podmínky používání' row and footer link now navigate to /profile/terms; footer Privacy link now also routes to /profile/privacy" },
+    { "id": "fe-fix-37", "area": "TermsScreen + terms.yaml + metro.config.js", "fix": "Added Terms of Service screen rendered from bundled terms.yaml (locales cs/ru/uk/en, fallback cs); metro.config.js extends assetExts with yaml/yml, src/types/assets.d.ts declares the *.yaml module shape" },
+    { "id": "fe-fix-38", "area": "PrivacyScreen", "fix": "invalidateChatCache() called after deleteAllScans so stale chat threads do not flash on next entry" },
+    { "id": "fe-fix-39", "area": "tabs/_layout", "fix": "Tab icon wrapped in fixed-height 26pt slot so Ionicons help-circle aligns on the same baseline as AppIcon docs/calendar/user glyphs" },
+    { "id": "fe-fix-40", "area": "HelpEmptyState / HelpErrorState", "fix": "Empty state gained an optional hero icon and a filled primary CTA; HelpErrorState now uses common.offlineTitle / common.offlineDetail / common.tryAgain with alert-circle-outline hero, matching the new offline UX language" },
+    { "id": "fe-fix-41", "area": "scansApi", "fix": "Added getScanCounts() helper for new GET /scans/counts endpoint (total + by_category)" }
   ],
 
   "known_issues_and_risks": [

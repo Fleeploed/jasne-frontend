@@ -710,6 +710,7 @@ function ManualDeadlineModal({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reminderPickerOpen, setReminderPickerOpen] = useState(false);
 
   // Sync form state when the modal opens or switches to a different deadline.
   useEffect(() => {
@@ -733,7 +734,7 @@ function ManualDeadlineModal({
   async function save() {
     setSaving(true);
     setError(null);
-    const reminderDays = remindEnabled ? reminderDaysForPlan(plan) : [];
+    const reminderDays = reminderDaysToSave;
     try {
       let deadline: DeadlineResponse;
       if (editing) {
@@ -765,25 +766,70 @@ function ManualDeadlineModal({
   // Reminder switch — Free saves [1], Pro saves early reminders [30,14,7,1].
   // When off, saves with [] (no notification).
   const [remindEnabled, setRemindEnabled] = useState(() => (editing ? editing.reminder_days.length > 0 : true));
+  const [selectedReminderDays, setSelectedReminderDays] = useState<number[]>(() =>
+    editing ? editing.reminder_days : reminderDaysForPlan(plan, date)
+  );
   // Preset / custom mode for the date picker. Calendar only renders in custom.
   const [dateMode, setDateMode] = useState<"tomorrow" | "week" | "month" | "custom">(() =>
     editing ? "custom" : "tomorrow"
   );
+  const availableReminderDays = useMemo(() => reminderDaysForPlan(plan, date), [date, plan]);
 
   useEffect(() => {
     if (!open) return;
-    setRemindEnabled(editing ? editing.reminder_days.length > 0 : true);
+    const initialReminderDays = editing ? filterUpcomingReminderDays(date, editing.reminder_days) : reminderDaysForPlan(plan, date);
+    setRemindEnabled(editing ? initialReminderDays.length > 0 : true);
+    setSelectedReminderDays(initialReminderDays);
     setDateMode(editing ? "custom" : "tomorrow");
-  }, [editing, open]);
+    setReminderPickerOpen(false);
+  }, [date, editing, open, plan]);
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedReminderDays((current) => {
+      const availableSet = new Set(availableReminderDays);
+      const next = current.filter((day) => availableSet.has(day));
+      if (next.length || !remindEnabled) return next;
+      return availableReminderDays;
+    });
+  }, [availableReminderDays, open, remindEnabled]);
+
+  const reminderDaysToSave = remindEnabled
+    ? filterUpcomingReminderDays(date, selectedReminderDays).sort((a, b) => b - a)
+    : [];
+
+  const reminderSubtitle = remindEnabled
+    ? formatManualReminderSubtitle(reminderDaysToSave, date)
+    : t("deadlines.reminderOffSubtitle");
+
+  function setReminderEnabled(next: boolean) {
+    setRemindEnabled(next);
+    if (next) {
+      setSelectedReminderDays((current) => {
+        const availableSet = new Set(availableReminderDays);
+        const kept = current.filter((day) => availableSet.has(day));
+        return kept.length ? kept : availableReminderDays;
+      });
+    } else {
+      setReminderPickerOpen(false);
+    }
+  }
+
+  function toggleReminderDay(day: number) {
+    setSelectedReminderDays((current) => {
+      if (current.includes(day)) return current.filter((item) => item !== day);
+      return [...current, day].sort((a, b) => b - a);
+    });
+  }
 
   return (
-    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.sheetBackdrop}>
         {/* Tap outside the sheet to dismiss. */}
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
 
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.sheetKAV}>
-          <View style={styles.sheetContainer} onStartShouldSetResponder={() => true}>
+          <View style={styles.sheetContainer}>
             {/* Drag handle */}
             <View style={styles.sheetHandle} />
 
@@ -849,20 +895,25 @@ function ManualDeadlineModal({
 
               {/* Reminder toggle */}
               <View style={styles.reminderRow}>
-                <View style={styles.reminderIconTile}>
-                  <AppIcon name="bell" size={18} color={remindEnabled ? colors.primary : colors.muted2} strokeWidth={1.8} />
-                </View>
-                <View style={styles.reminderTextBlock}>
-                  <Text style={styles.reminderTitle}>{t("deadlines.reminderTitle")}</Text>
-                  <Text style={styles.reminderSubtitle}>
-                    {remindEnabled
-                      ? reminderSubtitleForPlan(plan, date)
-                      : t("deadlines.reminderOffSubtitle")}
-                  </Text>
-                </View>
+                <Pressable
+                  disabled={!remindEnabled}
+                  onPress={() => setReminderPickerOpen(true)}
+                  style={({ pressed }) => [styles.reminderPickerTrigger, pressed && styles.pressed]}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("deadlines.reminderTitle")}
+                >
+                  <View style={styles.reminderIconTile}>
+                    <AppIcon name="bell" size={18} color={remindEnabled ? colors.primary : colors.muted2} strokeWidth={1.8} />
+                  </View>
+                  <View style={styles.reminderTextBlock}>
+                    <Text style={styles.reminderTitle}>{t("deadlines.reminderTitle")}</Text>
+                    <Text style={styles.reminderSubtitle}>{reminderSubtitle}</Text>
+                  </View>
+                  {remindEnabled ? <AppIcon name="chevron-right" size={20} color={colors.muted3} strokeWidth={2} /> : null}
+                </Pressable>
                 <Switch
                   value={remindEnabled}
-                  onValueChange={setRemindEnabled}
+                  onValueChange={setReminderEnabled}
                   trackColor={{ false: colors.surface3, true: colors.primary }}
                   thumbColor={colors.textOnAccent}
                   ios_backgroundColor={colors.surface3}
@@ -908,6 +959,69 @@ function ManualDeadlineModal({
             </View>
           </View>
         </KeyboardAvoidingView>
+        <Modal
+          visible={reminderPickerOpen && open}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setReminderPickerOpen(false)}
+          statusBarTranslucent
+        >
+          <View style={styles.reminderPickerBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setReminderPickerOpen(false)} />
+            <View style={styles.reminderPickerCard}>
+              <View style={styles.reminderPickerHeader}>
+                <Text style={styles.reminderPickerTitle}>{t("deadlines.reminderTitle")}</Text>
+                <Pressable
+                  onPress={() => setReminderPickerOpen(false)}
+                  hitSlop={8}
+                  style={({ pressed }) => [styles.reminderPickerClose, pressed && styles.pressed]}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("common.close")}
+                >
+                  <AppIcon name="x" size={16} color={colors.muted2} strokeWidth={2.2} />
+                </Pressable>
+              </View>
+
+              <View style={styles.reminderPickerOptions}>
+                {availableReminderDays.length ? availableReminderDays.map((day, index) => {
+                  const selected = selectedReminderDays.includes(day);
+                  return (
+                    <Pressable
+                      key={day}
+                      onPress={() => toggleReminderDay(day)}
+                      style={({ pressed }) => [
+                        styles.reminderPickerOption,
+                        index < availableReminderDays.length - 1 && styles.reminderPickerOptionDivider,
+                        pressed && styles.pressed,
+                      ]}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: selected }}
+                    >
+                      <View style={[styles.reminderPickerCheck, selected && styles.reminderPickerCheckSelected]}>
+                        {selected ? <AppIcon name="check" size={14} color={colors.textOnAccent} strokeWidth={2.4} /> : null}
+                      </View>
+                      <View style={styles.reminderPickerOptionText}>
+                        <Text style={styles.reminderPickerOptionTitle}>{reminderOptionLabel(day)}</Text>
+                        <Text style={styles.reminderPickerOptionDate}>{formatReminderTriggerDate(date, day)}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                }) : (
+                  <Text style={styles.reminderPickerEmpty}>{t("deadlines.reminderNoOptions")}</Text>
+                )}
+              </View>
+
+              <Pressable
+                onPress={() => setReminderPickerOpen(false)}
+                style={({ pressed }) => [styles.reminderPickerDone, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel={t("common.ok")}
+              >
+                <Text style={styles.reminderPickerDoneText}>{t("common.ok")}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
       </View>
     </Modal>
   );
@@ -915,18 +1029,48 @@ function ManualDeadlineModal({
 
 function formatReminderDate(date: Date): string {
   // "Напомнить 20 мая" — one day before the deadline (matches reminder_days=[1])
+  return formatReminderTriggerDate(date, 1);
+}
+
+function formatReminderTriggerDate(date: Date, daysBefore: number): string {
   const reminderDay = new Date(date);
-  reminderDay.setDate(reminderDay.getDate() - 1);
-  return formatLocalizedDate(reminderDay, { day: "numeric", month: "long" });
+  reminderDay.setHours(12, 0, 0, 0);
+  reminderDay.setDate(reminderDay.getDate() - daysBefore);
+  return formatLocalizedDate(reminderDay, { day: "numeric", month: "long", year: "numeric" });
 }
 
-function reminderDaysForPlan(plan: UserPlan): number[] {
-  return [...(plan === "pro" ? PRO_REMINDER_DAYS : FREE_REMINDER_DAYS)];
+function formatManualReminderSubtitle(days: number[], date: Date): string {
+  if (!days.length) return t("deadlines.reminderOffSubtitle");
+  if (days.length === 1 && days[0] === 1) {
+    return t("deadlines.reminderActiveSubtitle", { date: formatReminderDate(date) });
+  }
+  return `${t("deadlines.detailRemindBefore")} ${formatReminderDays(days)}`;
 }
 
-function reminderSubtitleForPlan(plan: UserPlan, date: Date): string {
-  if (plan === "pro") return t("deadlines.reminderActiveSubtitlePro");
-  return t("deadlines.reminderActiveSubtitle", { date: formatReminderDate(date) });
+function reminderOptionLabel(day: number) {
+  if (day === 30) return t("chat.reminderOption30");
+  if (day === 14) return t("chat.reminderOption14");
+  if (day === 7) return t("chat.reminderOption7");
+  return t("chat.reminderOption1");
+}
+
+function reminderDaysForPlan(plan: UserPlan, date: Date): number[] {
+  return filterUpcomingReminderDays(date, plan === "pro" ? PRO_REMINDER_DAYS : FREE_REMINDER_DAYS);
+}
+
+function filterUpcomingReminderDays(date: Date, days: readonly number[]) {
+  return days.filter((day) => isReminderTriggerUpcoming(date, day));
+}
+
+function isReminderTriggerUpcoming(date: Date, daysBefore: number) {
+  if (Number.isNaN(date.getTime())) return false;
+  const triggerDate = new Date(date);
+  triggerDate.setHours(12, 0, 0, 0);
+  triggerDate.setDate(triggerDate.getDate() - daysBefore);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return triggerDate.getTime() >= today.getTime();
 }
 
 /**
@@ -1333,8 +1477,9 @@ function ManualDeadlineDetailModal({
   const { day, month } = parseDayMonthAbbr(item.due_date);
   const description = item.description?.trim();
   const reminderPlan = reminderDisplayPlan(item.reminder_days, plan);
+  const itemDueDate = new Date(`${item.due_date}T12:00:00Z`);
   const displayedReminderDays = item.reminder_days.length
-    ? reminderDaysForPlan(reminderPlan === "Pro" ? "pro" : "free")
+    ? filterUpcomingReminderDays(itemDueDate, item.reminder_days)
     : [];
   const reminderLabel = formatReminderDays(displayedReminderDays);
   const reminderText = displayedReminderDays.length
@@ -2485,12 +2630,21 @@ function createStyles(colors: ColorPalette) {
       flexDirection: "row",
       alignItems: "center",
       gap: 12,
-      paddingVertical: 12,
-      paddingHorizontal: 14,
+      paddingVertical: 10,
+      paddingLeft: 14,
+      paddingRight: 8,
       borderRadius: 14,
       backgroundColor: colors.surface2,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
+    },
+    reminderPickerTrigger: {
+      flex: 1,
+      minWidth: 0,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      paddingVertical: 2,
     },
     reminderIconTile: {
       width: 38,
@@ -2511,6 +2665,117 @@ function createStyles(colors: ColorPalette) {
       color: colors.muted2,
       fontFamily: fonts.body,
       ...typeStyles.rowMeta,
+    },
+    reminderPickerBackdrop: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 24,
+      backgroundColor: "rgba(0,0,0,0.22)",
+    },
+    reminderPickerCard: {
+      width: "100%",
+      maxWidth: 360,
+      borderRadius: 22,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      padding: 16,
+      gap: 12,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 14 },
+      shadowOpacity: 0.32,
+      shadowRadius: 26,
+    },
+    reminderPickerHeader: {
+      minHeight: 34,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+    },
+    reminderPickerTitle: {
+      flex: 1,
+      color: colors.text,
+      fontFamily: fonts.bodyBold,
+      ...typeStyles.rowTitle,
+      fontWeight: "700",
+    },
+    reminderPickerClose: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: colors.surface2,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    reminderPickerOptions: {
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      overflow: "hidden",
+    },
+    reminderPickerOption: {
+      minHeight: 62,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      paddingHorizontal: 12,
+      backgroundColor: colors.surface2,
+    },
+    reminderPickerOptionDivider: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    reminderPickerCheck: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surface,
+    },
+    reminderPickerCheckSelected: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary,
+    },
+    reminderPickerOptionText: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    reminderPickerOptionTitle: {
+      color: colors.text,
+      fontFamily: fonts.bodySemiBold,
+      ...typeStyles.rowSecondary,
+      fontWeight: "600",
+    },
+    reminderPickerOptionDate: {
+      color: colors.muted2,
+      fontFamily: fonts.body,
+      ...typeStyles.rowMeta,
+    },
+    reminderPickerEmpty: {
+      color: colors.muted2,
+      fontFamily: fonts.body,
+      ...typeStyles.rowSecondary,
+      padding: 14,
+      backgroundColor: colors.surface2,
+    },
+    reminderPickerDone: {
+      minHeight: 44,
+      borderRadius: 14,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    reminderPickerDoneText: {
+      color: colors.textOnAccent,
+      fontFamily: fonts.bodyBold,
+      ...typeStyles.callout,
+      fontWeight: "700",
     },
 
     // Note field at bottom
@@ -2535,8 +2800,6 @@ function createStyles(colors: ColorPalette) {
     sheetFooter: {
       paddingHorizontal: 20,
       paddingTop: 10,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: colors.border,
       backgroundColor: colors.surface,
     },
 

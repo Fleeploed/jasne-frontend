@@ -170,6 +170,7 @@ export function HelpCategoryScreen() {
 }
 
 function handlerForAction(action: string) {
+  if (action === "status_check") return () => router.push("/help/status");
   if (action === "scan_new") return () => router.push("/scan/new");
   // Manual deadline creation is a local DeadlinesScreen modal, so Help routes to the tab.
   if (action === "deadline_new" || action === "deadlines_tab") return () => router.push("/deadlines");
