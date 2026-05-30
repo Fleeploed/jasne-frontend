@@ -3,7 +3,9 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AuthGradient } from "@/components/AuthGradient";
+import { AppIcon } from "@/components/AppIcon";
 import { BrandWordmark } from "@/components/BrandMark";
+import { Icon } from "@/components/Icon";
 import { Button, fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { t } from "@/lib/i18n";
@@ -126,11 +128,15 @@ function PasswordInput({
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
 }) {
+  const [passwordVisible, setPasswordVisible] = useState(false);
+
   return (
     <View style={styles.inputBlock}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.inputWrap}>
-        <Text style={styles.inputIcon}>•</Text>
+        <View style={styles.inputIconGlyph}>
+          <AppIcon name="lock" size={20} color={colors.muted3} />
+        </View>
         <TextInput
           accessibilityLabel={label}
           value={value}
@@ -138,13 +144,23 @@ function PasswordInput({
           onBlur={onBlur}
           placeholder={placeholder}
           placeholderTextColor={colors.muted3}
-          secureTextEntry
+          secureTextEntry={!passwordVisible}
+          contextMenuHidden={false}
           autoCapitalize="none"
           autoCorrect={false}
           textContentType="newPassword"
           autoComplete="new-password"
-          style={[styles.input, styles.inputWithIcon]}
+          style={[styles.input, styles.inputWithIcon, styles.inputWithPasswordToggle]}
         />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t(passwordVisible ? "auth.hidePassword" : "auth.showPassword")}
+          hitSlop={10}
+          onPress={() => setPasswordVisible((visible) => !visible)}
+          style={({ pressed }) => [styles.passwordToggle, pressed && styles.pressed]}
+        >
+          <Icon name="eye" size={20} color={passwordVisible ? colors.primary : colors.muted3} />
+        </Pressable>
       </View>
     </View>
   );
@@ -200,15 +216,14 @@ function createStyles(colors: ColorPalette) {
       textTransform: "uppercase",
     },
     inputWrap: { position: "relative", justifyContent: "center" },
-    inputIcon: {
+    inputIconGlyph: {
       position: "absolute",
       left: 16,
       zIndex: 1,
-      color: colors.muted3,
-      fontSize: 19,
-      lineHeight: 22,
-      fontFamily: fonts.bodyBold,
-      fontWeight: "700",
+      width: 22,
+      height: 22,
+      alignItems: "center",
+      justifyContent: "center",
     },
     input: {
       minHeight: 54,
@@ -223,6 +238,16 @@ function createStyles(colors: ColorPalette) {
       fontWeight: "400",
     },
     inputWithIcon: { paddingLeft: 48 },
+    inputWithPasswordToggle: { paddingRight: 52 },
+    passwordToggle: {
+      position: "absolute",
+      right: 12,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     flexSpacer: { flex: 1, minHeight: 18 },
     actions: { gap: 8 },
     cancelButton: {

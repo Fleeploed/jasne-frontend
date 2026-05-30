@@ -54,6 +54,15 @@ export async function deleteScan(scanId: string) {
   await apiFetch<void>(`/scans/${scanId}`, { method: "DELETE" });
 }
 
+export type ScanCountsResponse = {
+  total: number;
+  by_category: Record<string, number>;
+};
+
+export async function getScanCounts() {
+  return apiFetch<ScanCountsResponse>(`/scans/counts`);
+}
+
 export type DeleteAllScansResponse = { deleted_scans: number; deleted_deadlines: number };
 
 export async function deleteAllScans() {

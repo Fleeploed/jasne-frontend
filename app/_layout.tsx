@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
@@ -11,6 +11,7 @@ import { ResetPasswordScreen } from "@/features/auth/ResetPasswordScreen";
 import { ThemeProvider, lightColors, useColors } from "@/components/ui";
 import { LocaleProvider } from "@/lib/LocaleContext";
 import { configurePurchases } from "@/lib/purchases";
+import { addNotificationTapListener, syncPushTokenAfterSignIn } from "@/lib/pushNotifications";
 
 export default function RootLayout() {
   // Initialize RevenueCat once for the whole app session. Safe to call
@@ -70,6 +71,29 @@ function FontLoadingScreen() {
 function RootNavigator() {
   const { initializing, passwordRecovery, session, hasHadAccount } = useAuth();
   const colors = useColors();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!session) return;
+    void syncPushTokenAfterSignIn().catch((error) => {
+      console.warn("Push notification registration failed", error);
+    });
+  }, [session]);
+
+  useEffect(() => {
+    const subscription = addNotificationTapListener((data) => {
+      const scanId = typeof data.scan_id === "string" ? data.scan_id : null;
+      if (scanId) {
+        router.push(`/scan/${scanId}`);
+        return;
+      }
+      if (data.type === "deadline_reminder" || typeof data.deadline_id === "string") {
+        router.push("/deadlines");
+      }
+    });
+
+    return () => subscription.remove();
+  }, [router]);
 
   if (initializing) {
     return (

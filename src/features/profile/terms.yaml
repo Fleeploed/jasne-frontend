@@ -1,0 +1,315 @@
+cs:
+  title: "Podmínky použití"
+  meta:
+    effective: "PLATÍ OD 01.05.2026"
+    version: "verze 1.2"
+  footer: "@2026 Jasně"
+  sections:
+    - number: "01"
+      title: "Obecná ustanovení"
+      paragraphs:
+        - >
+          Tyto podmínky upravují používání mobilní aplikace Jasně („aplikace“), která pomáhá porozumět úředním dokumentům a sledovat související termíny. Používáním aplikace potvrzujete, že jste si tyto podmínky přečetli a souhlasíte s nimi.
+        - >
+          Pokud s některým ustanovením nesouhlasíte, aplikaci prosím nepoužívejte nebo ji přestaňte používat. Pokračováním v používání Jasně potvrzujete souhlas s aktuální verzí podmínek.
+    - number: "02"
+      title: "Co aplikace dělá"
+      paragraphs:
+        - >
+          Jasně rozpoznává text ve vašich dokumentech, vysvětluje ho jednoduchým jazykem a pomáhá nepromeškat důležité termíny. Aplikace je informační nástroj, nikoli náhrada právníka, účetního nebo úřadu.
+      bullets:
+        - "Rozpoznávání textu (OCR) z fotografií a PDF."
+        - "Vysvětlení obsahu dokumentu jednoduchým jazykem."
+        - "Vyhledání dat, částek a povinných kroků."
+        - "Připomenutí termínů přes systémová oznámení."
+    - number: "03"
+      title: "Účet"
+      paragraphs:
+        - >
+          Pro používání aplikace je potřeba vytvořit účet. Odpovídáte za bezpečnost hesla a za všechny akce provedené pod vaším účtem. Při podezření na neoprávněný přístup si ihned změňte heslo a kontaktujte podporu.
+        - >
+          Minimální věk pro vytvoření účtu je 16 let. Jedna osoba může mít pouze jeden aktivní účet.
+    - number: "04"
+      title: "Předplatné a platby"
+      paragraphs:
+        - >
+          Základní funkce Jasně jsou dostupné zdarma s omezením počtu skenů a stránek. Rozšířené možnosti jsou dostupné v předplatném Jasně Pro, které se sjednává a platí přes App Store nebo Google Play.
+        - >
+          Předplatné se automaticky prodlužuje, dokud ho nezrušíte v nastavení obchodu s aplikacemi. Vrácení plateb se řídí pravidly příslušného obchodu.
+    - number: "05"
+      title: "Povolené používání"
+      paragraphs:
+        - >
+          Aplikace je určena pro práci s vašimi vlastními dokumenty. Je zakázáno nahrávat materiály, ke kterým nemáte práva, a používat aplikaci k:
+      bullets:
+        - "obcházení technických omezení a pokusům o reverzní inženýrství;"
+        - "automatizovanému hromadnému skenování pomocí externích skriptů;"
+        - "zpracování dokumentů třetích osob bez jejich souhlasu;"
+        - "činnostem porušujícím právní předpisy České republiky nebo EU."
+    - number: "06"
+      title: "Obsah a duševní vlastnictví"
+      paragraphs:
+        - >
+          Dokumenty, které do Jasně nahrajete, zůstávají vaším vlastnictvím. Udělujete nám omezené právo je zpracovat výhradně za účelem poskytování funkcí aplikace — rozpoznávání, analýzy a uložení ve vašem účtu.
+        - >
+          Všechna ostatní práva — včetně názvu Jasně, loga, designu rozhraní a zdrojového kódu — patří vývojáři aplikace.
+    - number: "07"
+      title: "Omezení odpovědnosti"
+      paragraphs:
+        - >
+          Jasně se snaží poskytovat srozumitelná a přesná vysvětlení, ale nezaručuje absolutní správnost výsledků zpracování. Před právně nebo finančně významnými rozhodnutími doporučujeme obrátit se na příslušné odborníky.
+        - >
+          Vývojář neodpovídá za následky kroků učiněných výhradně na základě informací z aplikace ani za dočasnou nedostupnost služby z technických důvodů.
+    - number: "08"
+      title: "Změny podmínek"
+      paragraphs:
+        - >
+          Tyto podmínky můžeme průběžně aktualizovat — například při přidání nových funkcí nebo změnách právních předpisů. O podstatných změnách vás předem informujeme v aplikaci. Pokračováním v používání Jasně po účinnosti změn přijímáte aktualizovanou verzi.
+    - number: "09"
+      title: "Ukončení"
+      paragraphs:
+        - >
+          Svůj účet a související data můžete kdykoli odstranit v části „Profil“. Vyhrazujeme si právo pozastavit přístup k aplikaci při porušení těchto podmínek.
+    - number: "10"
+      title: "Kontakt"
+      paragraphs:
+        - >
+          S dotazy k těmto podmínkám pište na hello@jasne.app. Právní adresa a identifikační údaje jsou uvedeny v plné verzi dokumentu.
+        - "Konec dokumentu"
+
+ru:
+  title: "Условия использования"
+  meta:
+    effective: "В СИЛЕ С 01.05.2026"
+    version: "версия 1.2"
+  footer: "@2026 Jasně"
+  sections:
+    - number: "01"
+      title: "Общие положения"
+      paragraphs:
+        - >
+          Настоящие условия регулируют использование мобильного приложения Jasně («приложение»), которое помогает понимать официальные документы и отслеживать связанные с ними сроки. Используя приложение, вы подтверждаете, что прочитали и согласны с этими условиями.
+        - >
+          Если вы не согласны с каким-либо положением, пожалуйста, не используйте приложение или прекратите его использование. Продолжая работу с Jasně, вы подтверждаете согласие с актуальной версией условий.
+    - number: "02"
+      title: "Что делает приложение"
+      paragraphs:
+        - >
+          Jasně распознаёт текст на ваших документах, объясняет его простым языком и помогает не пропустить важные сроки. Приложение — информационный инструмент, а не замена юриста, бухгалтера или официального органа (úřad).
+      bullets:
+        - "Распознавание текста (OCR) с фотографий и PDF."
+        - "Объяснение содержания документа простым языком."
+        - "Извлечение дат, сумм и обязательных действий."
+        - "Напоминания о сроках через системные уведомления."
+    - number: "03"
+      title: "Аккаунт"
+      paragraphs:
+        - >
+          Для использования приложения необходимо создать аккаунт. Вы несёте ответственность за сохранность пароля и за все действия, совершённые под вашим аккаунтом. При подозрении на несанкционированный доступ незамедлительно смените пароль и свяжитесь с поддержкой.
+        - >
+          Минимальный возраст для создания аккаунта — 16 лет. Один человек может иметь только один действующий аккаунт.
+    - number: "04"
+      title: "Подписка и оплата"
+      paragraphs:
+        - >
+          Базовый функционал Jasně предоставляется бесплатно с ограничением на количество сканирований и страниц. Расширенные возможности доступны в рамках подписки Jasně Pro, которая оформляется и оплачивается через App Store или Google Play.
+        - >
+          Подписка автоматически продлевается до тех пор, пока вы её не отмените в настройках магазина приложений. Возвраты регулируются правилами соответствующего магазина.
+    - number: "05"
+      title: "Допустимое использование"
+      paragraphs:
+        - >
+          Приложение предназначено для работы с вашими собственными документами. Запрещено загружать материалы, права на которые вам не принадлежат, а также использовать приложение для:
+      bullets:
+        - "обхода технических ограничений и попыток реверс-инжиниринга;"
+        - "автоматизированного массового сканирования через сторонние скрипты;"
+        - "обработки документов третьих лиц без их согласия;"
+        - "действий, нарушающих законодательство Чешской Республики или ЕС."
+    - number: "06"
+      title: "Содержимое и интеллектуальная собственность"
+      paragraphs:
+        - >
+          Документы, которые вы загружаете в Jasně, остаются вашей собственностью. Вы предоставляете нам ограниченное право обрабатывать их исключительно для предоставления функций приложения — распознавания, анализа и хранения в вашем аккаунте.
+        - >
+          Все остальные права — включая название Jasně, логотип, дизайн интерфейса и исходный код — принадлежат разработчику приложения.
+    - number: "07"
+      title: "Ограничение ответственности"
+      paragraphs:
+        - >
+          Jasně старается давать понятные и точные объяснения, но не гарантирует абсолютной корректности результатов обработки. Перед принятием юридически или финансово значимых решений мы рекомендуем обращаться к профильным специалистам.
+        - >
+          Разработчик не несёт ответственности за последствия действий, совершённых исключительно на основании информации из приложения, а также за временную недоступность сервиса по техническим причинам.
+    - number: "08"
+      title: "Изменения условий"
+      paragraphs:
+        - >
+          Мы можем периодически обновлять эти условия — например, при добавлении новых функций или изменениях законодательства. О существенных изменениях мы сообщим в приложении заранее. Продолжая использовать Jasně после вступления изменений в силу, вы принимаете обновлённую версию.
+    - number: "09"
+      title: "Прекращение"
+      paragraphs:
+        - >
+          Вы можете в любой момент удалить аккаунт и связанные с ним данные в разделе «Профиль». Мы оставляем за собой право приостановить доступ к приложению при нарушении этих условий.
+    - number: "10"
+      title: "Контакты"
+      paragraphs:
+        - >
+          По вопросам, связанным с этими условиями, пишите на hello@jasne.app. Юридический адрес и реквизиты — в полной версии документа.
+        - "Конец документа"
+
+uk:
+  title: "Умови використання"
+  meta:
+    effective: "ЧИННІ З 01.05.2026"
+    version: "версія 1.2"
+  footer: "@2026 Jasně"
+  sections:
+    - number: "01"
+      title: "Загальні положення"
+      paragraphs:
+        - >
+          Ці умови регулюють використання мобільного застосунку Jasně («застосунок»), який допомагає розуміти офіційні документи та відстежувати пов'язані з ними терміни. Використовуючи застосунок, ви підтверджуєте, що прочитали ці умови та погоджуєтеся з ними.
+        - >
+          Якщо ви не згодні з будь-яким положенням, будь ласка, не використовуйте застосунок або припиніть його використання. Продовжуючи роботу з Jasně, ви підтверджуєте згоду з актуальною версією умов.
+    - number: "02"
+      title: "Що робить застосунок"
+      paragraphs:
+        - >
+          Jasně розпізнає текст у ваших документах, пояснює його простою мовою та допомагає не пропустити важливі терміни. Застосунок є інформаційним інструментом, а не заміною юриста, бухгалтера або офіційного органу (úřad).
+      bullets:
+        - "Розпізнавання тексту (OCR) з фотографій і PDF."
+        - "Пояснення змісту документа простою мовою."
+        - "Витягування дат, сум і обов'язкових дій."
+        - "Нагадування про терміни через системні сповіщення."
+    - number: "03"
+      title: "Акаунт"
+      paragraphs:
+        - >
+          Для використання застосунку потрібно створити акаунт. Ви відповідаєте за збереження пароля та за всі дії, виконані під вашим акаунтом. У разі підозри на несанкціонований доступ негайно змініть пароль і зв'яжіться з підтримкою.
+        - >
+          Мінімальний вік для створення акаунта — 16 років. Одна людина може мати лише один активний акаунт.
+    - number: "04"
+      title: "Підписка та оплата"
+      paragraphs:
+        - >
+          Базові функції Jasně надаються безкоштовно з обмеженням кількості сканувань і сторінок. Розширені можливості доступні в межах підписки Jasně Pro, яка оформлюється та оплачується через App Store або Google Play.
+        - >
+          Підписка автоматично продовжується, доки ви не скасуєте її в налаштуваннях магазину застосунків. Повернення коштів регулюється правилами відповідного магазину.
+    - number: "05"
+      title: "Дозволене використання"
+      paragraphs:
+        - >
+          Застосунок призначений для роботи з вашими власними документами. Заборонено завантажувати матеріали, права на які вам не належать, а також використовувати застосунок для:
+      bullets:
+        - "обходу технічних обмежень і спроб реверс-інжинірингу;"
+        - "автоматизованого масового сканування через сторонні скрипти;"
+        - "обробки документів третіх осіб без їхньої згоди;"
+        - "дій, що порушують законодавство Чеської Республіки або ЄС."
+    - number: "06"
+      title: "Вміст та інтелектуальна власність"
+      paragraphs:
+        - >
+          Документи, які ви завантажуєте в Jasně, залишаються вашою власністю. Ви надаєте нам обмежене право обробляти їх виключно для надання функцій застосунку — розпізнавання, аналізу та зберігання у вашому акаунті.
+        - >
+          Усі інші права — включно з назвою Jasně, логотипом, дизайном інтерфейсу та вихідним кодом — належать розробнику застосунку.
+    - number: "07"
+      title: "Обмеження відповідальності"
+      paragraphs:
+        - >
+          Jasně прагне надавати зрозумілі й точні пояснення, але не гарантує абсолютної правильності результатів обробки. Перед ухваленням юридично або фінансово значущих рішень радимо звертатися до профільних фахівців.
+        - >
+          Розробник не несе відповідальності за наслідки дій, виконаних виключно на підставі інформації із застосунку, а також за тимчасову недоступність сервісу з технічних причин.
+    - number: "08"
+      title: "Зміни умов"
+      paragraphs:
+        - >
+          Ми можемо періодично оновлювати ці умови — наприклад, при додаванні нових функцій або зміні законодавства. Про суттєві зміни ми повідомимо в застосунку заздалегідь. Продовжуючи використовувати Jasně після набрання змінами чинності, ви приймаєте оновлену версію.
+    - number: "09"
+      title: "Припинення"
+      paragraphs:
+        - >
+          Ви можете будь-коли видалити акаунт і пов'язані з ним дані в розділі «Профіль». Ми залишаємо за собою право призупинити доступ до застосунку в разі порушення цих умов.
+    - number: "10"
+      title: "Контакти"
+      paragraphs:
+        - >
+          З питань, пов'язаних із цими умовами, пишіть на hello@jasne.app. Юридична адреса та реквізити наведені в повній версії документа.
+        - "Кінець документа"
+
+en:
+  title: "Terms of use"
+  meta:
+    effective: "EFFECTIVE FROM 01.05.2026"
+    version: "version 1.2"
+  footer: "@2026 Jasně"
+  sections:
+    - number: "01"
+      title: "General provisions"
+      paragraphs:
+        - >
+          These terms govern the use of the Jasně mobile application (the “app”), which helps users understand official documents and track related deadlines. By using the app, you confirm that you have read and agree to these terms.
+        - >
+          If you do not agree with any provision, please do not use the app or stop using it. By continuing to use Jasně, you confirm your agreement with the current version of the terms.
+    - number: "02"
+      title: "What the app does"
+      paragraphs:
+        - >
+          Jasně recognizes text in your documents, explains it in plain language, and helps you avoid missing important deadlines. The app is an informational tool, not a replacement for a lawyer, accountant, or government office (úřad).
+      bullets:
+        - "Text recognition (OCR) from photos and PDFs."
+        - "Plain-language explanation of document content."
+        - "Extraction of dates, amounts, and required actions."
+        - "Deadline reminders through system notifications."
+    - number: "03"
+      title: "Account"
+      paragraphs:
+        - >
+          To use the app, you need to create an account. You are responsible for keeping your password secure and for all actions performed under your account. If you suspect unauthorized access, change your password immediately and contact support.
+        - >
+          The minimum age for creating an account is 16. One person may have only one active account.
+    - number: "04"
+      title: "Subscription and payment"
+      paragraphs:
+        - >
+          Jasně's basic features are provided for free with limits on the number of scans and pages. Extended features are available through the Jasně Pro subscription, which is purchased and paid for through the App Store or Google Play.
+        - >
+          The subscription renews automatically until you cancel it in the app store settings. Refunds are governed by the rules of the relevant store.
+    - number: "05"
+      title: "Permitted use"
+      paragraphs:
+        - >
+          The app is intended for working with your own documents. You may not upload materials for which you do not have rights, or use the app for:
+      bullets:
+        - "bypassing technical restrictions or attempting reverse engineering;"
+        - "automated bulk scanning through third-party scripts;"
+        - "processing third-party documents without their consent;"
+        - "actions that violate the laws of the Czech Republic or the EU."
+    - number: "06"
+      title: "Content and intellectual property"
+      paragraphs:
+        - >
+          Documents you upload to Jasně remain your property. You grant us a limited right to process them solely to provide the app's functions — recognition, analysis, and storage in your account.
+        - >
+          All other rights — including the Jasně name, logo, interface design, and source code — belong to the app developer.
+    - number: "07"
+      title: "Limitation of liability"
+      paragraphs:
+        - >
+          Jasně aims to provide clear and accurate explanations, but it does not guarantee the absolute correctness of processing results. Before making legally or financially significant decisions, we recommend consulting qualified professionals.
+        - >
+          The developer is not liable for consequences of actions taken solely on the basis of information from the app, or for temporary unavailability of the service for technical reasons.
+    - number: "08"
+      title: "Changes to the terms"
+      paragraphs:
+        - >
+          We may update these terms from time to time, for example when adding new features or when laws change. We will notify you in advance about material changes in the app. By continuing to use Jasně after changes take effect, you accept the updated version.
+    - number: "09"
+      title: "Termination"
+      paragraphs:
+        - >
+          You may delete your account and related data at any time in the “Profile” section. We reserve the right to suspend access to the app if these terms are violated.
+    - number: "10"
+      title: "Contact"
+      paragraphs:
+        - >
+          For questions related to these terms, write to hello@jasne.app. The legal address and company details are provided in the full version of the document.
+        - "End of document"

@@ -80,9 +80,22 @@ function getTabLabel(route: string): string {
 }
 
 function TabGlyph({ name, color }: { name: TabIcon; color: string }) {
-  if (name === "help") return <Ionicons name="help-circle-outline" size={25} color={color} />;
-  const iconName = name === "docs" ? "doc-text" : name === "deadlines" ? "calendar" : "user";
-  return <AppIcon name={iconName} size={23} color={color} strokeWidth={1.8} />;
+  // Fixed-height slot so icons with different intrinsic glyph metrics
+  // (Ionicons help vs AppIcon calendar/doc-text/user) align on the same baseline.
+  return (
+    <View style={{ height: 26, alignItems: "center", justifyContent: "center" }}>
+      {name === "help" ? (
+        <Ionicons name="help-circle-outline" size={25} color={color} />
+      ) : (
+        <AppIcon
+          name={name === "docs" ? "doc-text" : name === "deadlines" ? "calendar" : "user"}
+          size={23}
+          color={color}
+          strokeWidth={1.8}
+        />
+      )}
+    </View>
+  );
 }
 
 function MockupTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
@@ -127,7 +140,7 @@ function MockupTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
             style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
           >
             <TabGlyph name={icon} color={focused ? colors.primary : colors.muted2} />
-            <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>{label}</Text>
+            <Text maxFontSizeMultiplier={1} style={[styles.tabLabel, focused && styles.tabLabelActive]}>{label}</Text>
           </Pressable>
         );
       })}
@@ -146,8 +159,8 @@ function createTabStyles(colors: ColorPalette) {
       paddingBottom: 30
     },
     tab: { flex: 1, alignItems: "center", gap: 3, paddingVertical: 5 },
-    tabLabel: { color: colors.muted2, fontFamily: fonts.bodyMedium, ...typeStyles.caption2, fontWeight: "500" },
-    tabLabelActive: { color: colors.primary, fontWeight: "700" },
+    tabLabel: { color: colors.muted2, fontFamily: fonts.bodySemiBold, ...typeStyles.caption2, fontWeight: "600" },
+    tabLabelActive: { color: colors.primary },
     pressed: { opacity: 0.7 }
   });
 }

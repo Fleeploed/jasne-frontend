@@ -10,6 +10,7 @@ export type CtaAction =
   | "scan_tax_letter"
   | "scan_bill"
   | "scan_contract"
+  | "check_status_visa"
   | "open_help_center";
 
 export type Section =
@@ -99,6 +100,7 @@ export type HelpGuideDetailResponse = {
   fallback_language?: HelpLanguage | null;
   sections: Section[];
   official_source_url?: string | null;
+  updated_at?: string | null;
 };
 
 export type HelpSearchResult = {

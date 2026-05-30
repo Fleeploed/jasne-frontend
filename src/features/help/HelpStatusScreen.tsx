@@ -125,8 +125,7 @@ function StatusTopBar({ title, styles, colors }: {
         onPress={() => router.back()}
         style={({ pressed }) => [styles.backLink, pressed && styles.pressed]}
       >
-        <Ionicons name="chevron-back" size={26} color={colors.primary} />
-        <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.backText}>{t("help.status.backLabel")}</Text>
+        <Ionicons name="chevron-back" size={28} color={colors.text} />
       </Pressable>
       <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} numberOfLines={1} style={styles.topTitle}>{title}</Text>
       <View style={styles.topSpacer} />
@@ -814,15 +813,14 @@ function createStyles(colors: ColorPalette) {
       backgroundColor: colors.bg,
     },
     backLink: {
-      minWidth: 92,
+      width: 44,
       minHeight: 38,
       flexDirection: "row",
       alignItems: "center",
-      gap: 1,
+      justifyContent: "flex-start",
     },
-    backText: { color: colors.primary, fontFamily: fonts.body, ...typeStyles.callout },
     topTitle: { flex: 1, marginHorizontal: 6, textAlign: "center", color: colors.text, fontFamily: fonts.bodyBold, ...typeStyles.headline },
-    topSpacer: { width: 92 },
+    topSpacer: { width: 44 },
     pressed: { opacity: 0.72 },
     scroll: { flex: 1, backgroundColor: colors.bg },
     content: { paddingHorizontal: 18, paddingBottom: 44 },

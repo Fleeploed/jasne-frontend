@@ -14,7 +14,7 @@ import {
   getPendingScanList,
   subscribePendingScan,
 } from "@/features/scans/pendingScanStore";
-import { formatCategoryLabel, formatLocalizedDate, t } from "@/lib/i18n";
+import { formatCategoryLabel, formatLocalizedDate, getLocale, pluralize, t, type PluralForms } from "@/lib/i18n";
 import type { DeadlineResponse, LimitsResponse, ScanListItem } from "@/lib/types";
 
 // Enable LayoutAnimation on Android (iOS has it by default).
@@ -255,6 +255,7 @@ export function ScanListScreen() {
   }
 
   const scanDisabled = Boolean(limits && limits.scans_remaining <= 0);
+  const limitWarning = getScanLimitWarning(limits);
   const activePendingScans = pendingScans.filter((p) => p.active);
   const hasPending = activePendingScans.length > 0;
   // The empty state lives below the pending-stack header. While a scan is in
@@ -296,7 +297,7 @@ export function ScanListScreen() {
         searchInputRef={searchInputRef}
       />
       {error && !showOfflineState ? <ErrorText message={error} /> : null}
-      {scanDisabled ? <Text style={styles.warning}>{t("documents.limitReached")}</Text> : null}
+      {limitWarning ? <Text style={styles.warning}>{limitWarning}</Text> : null}
       {showCategoryFilters ? (
         <DocumentCategoryFilterBar
           filters={categoryFilters}
@@ -1176,6 +1177,50 @@ function mergeScansById(current: ScanListItem[], next: ScanListItem[]) {
   });
   return merged;
 }
+
+function getScanLimitWarning(limits: LimitsResponse | null) {
+  if (!limits || limits.scans_remaining > 0) return null;
+  if (limits.plan !== "pro") return t("documents.limitReached");
+
+  const days = getDaysUntilScanLimitReset(limits.month);
+  return t("documents.limitReachedPro", { days: formatLimitResetDays(days) });
+}
+
+function getDaysUntilScanLimitReset(period?: string) {
+  const resetDate = parseScanLimitResetDate(period);
+  if (!resetDate) return 1;
+
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  return Math.max(1, Math.ceil((resetDate.getTime() - today.getTime()) / 86_400_000));
+}
+
+function parseScanLimitResetDate(period?: string) {
+  if (!period) return null;
+
+  if (period.startsWith("pro:")) {
+    const [, , endDate] = period.split(":");
+    if (!endDate) return null;
+    const resetDate = new Date(`${endDate}T12:00:00`);
+    return Number.isNaN(resetDate.getTime()) ? null : resetDate;
+  }
+
+  const [year, month] = period.split("-").map(Number);
+  if (!year || !month) return null;
+  return new Date(year, month, 1, 12);
+}
+
+function formatLimitResetDays(days: number) {
+  const locale = getLocale();
+  return `${days} ${pluralize(days, LIMIT_RESET_DAY_FORMS[locale], locale)}`;
+}
+
+const LIMIT_RESET_DAY_FORMS: Record<ReturnType<typeof getLocale>, PluralForms> = {
+  cs: { one: "den", few: "dny", many: "dní" },
+  ru: { one: "день", few: "дня", many: "дней" },
+  uk: { one: "день", few: "дні", many: "днів" },
+  en: { one: "day", many: "days" },
+};
 
 function getTitle(item: ScanListItem) {
   if (item.document_type_cz) return item.document_type_cz;

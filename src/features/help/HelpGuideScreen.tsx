@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -109,7 +109,7 @@ export function HelpGuideScreen() {
       <View style={styles.wrap}>
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={[styles.content, { paddingBottom: Math.max(132, insets.bottom + 120) }]}
+          contentContainerStyle={[styles.content, { paddingBottom: Math.max(32, insets.bottom + 24) }]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -126,22 +126,22 @@ export function HelpGuideScreen() {
             </View>
           ) : null}
           <HelpContentRenderer sections={guide.sections} onAction={handleCtaAction} />
+          {guide.updated_at ? (
+            <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.updatedAt}>
+              {formatGuideUpdatedAt(guide.updated_at, language)}
+            </Text>
+          ) : null}
         </ScrollView>
-        <View style={[styles.sticky, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-          <Pressable onPress={() => router.push("/scan/new")} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
-            <Ionicons name="camera-outline" size={19} color={colors.textOnAccent} />
-            <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.primaryButtonText}>{t("help.guide.ctaScan")}</Text>
-          </Pressable>
-          <Pressable onPress={() => router.push("/deadlines")} style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}>
-            <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.textButtonText}>{t("help.guide.ctaManualDeadline")}</Text>
-          </Pressable>
-        </View>
       </View>
     </Screen>
   );
 }
 
 function handleCtaAction(action: CtaAction) {
+  if (action === "check_status_visa") {
+    router.push("/help/status");
+    return;
+  }
   if (action === "scan_document" || action === "scan_oamp_letter" || action === "scan_tax_letter" || action === "scan_bill" || action === "scan_contract") {
     router.push("/scan/new");
     return;
@@ -165,6 +165,22 @@ function fallbackLanguageNote(language: HelpLanguage) {
   return t("help.guide.fallbackLanguageNoteEn");
 }
 
+function formatGuideUpdatedAt(value: string, language: HelpLanguage) {
+  const updated = new Date(value);
+  if (Number.isNaN(updated.getTime())) return null;
+
+  const now = new Date();
+  const updatedDay = new Date(updated.getFullYear(), updated.getMonth(), updated.getDate()).getTime();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dayDiff = Math.round((today - updatedDay) / 86400000);
+
+  if (dayDiff === 0) return t("help.guide.updatedToday", undefined, language);
+  if (dayDiff === 1) return t("help.guide.updatedYesterday", undefined, language);
+
+  const date = `${updated.getDate()}.${updated.getMonth() + 1}.${updated.getFullYear()}`;
+  return t("help.guide.updatedOn", { date }, language);
+}
+
 function isNotFound(error: unknown) {
   return typeof error === "object" && error !== null && "status" in error && error.status === 404;
 }
@@ -184,30 +200,12 @@ function createStyles(colors: ColorPalette) {
       gap: 8
     },
     fallbackText: { flex: 1, color: colors.primary, fontFamily: fonts.bodySemiBold, ...typeStyles.caption1 },
-    sticky: {
-      position: "absolute",
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: colors.bg,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: colors.border,
-      paddingHorizontal: 16,
-      paddingTop: 10,
-      gap: 6
-    },
-    primaryButton: {
-      minHeight: 50,
-      borderRadius: 16,
-      backgroundColor: colors.primaryDark,
-      alignItems: "center",
-      justifyContent: "center",
-      flexDirection: "row",
-      gap: 10
-    },
-    primaryButtonText: { color: colors.textOnAccent, fontFamily: fonts.bodyBold, ...typeStyles.button },
-    textButton: { minHeight: 44, alignItems: "center", justifyContent: "center" },
-    textButtonText: { color: colors.primary, fontFamily: fonts.bodyBold, ...typeStyles.rowSecondary },
-    pressed: { opacity: 0.72 }
+    updatedAt: {
+      color: colors.muted2,
+      fontFamily: fonts.bodySemiBold,
+      ...typeStyles.caption1,
+      textAlign: "center",
+      marginTop: 6
+    }
   });
 }

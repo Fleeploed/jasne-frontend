@@ -7,6 +7,7 @@ import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import { Screen, fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { listDeadlines } from "@/features/deadlines/deadlinesApi";
 import { deleteAllScans, listScans } from "@/features/scans/scansApi";
+import { invalidateChatCache } from "@/features/chat/chatThreadCache";
 import { t } from "@/lib/i18n";
 
 const PRIVACY_POLICY_URL = "https://jasne.app/privacy";
@@ -58,6 +59,7 @@ export function PrivacyScreen() {
     setDeleting(true);
     try {
       const result = await deleteAllScans();
+      invalidateChatCache();
       if (!aliveRef.current) return;
       setScansCount(0);
       setDeadlinesCount(0);

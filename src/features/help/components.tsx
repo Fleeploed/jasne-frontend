@@ -28,6 +28,8 @@ export function HelpCard({
   disabled,
   children,
   style,
+  titleNumberOfLines,
+  subtitleNumberOfLines,
 }: {
   title?: string | null;
   subtitle?: string | null;
@@ -39,6 +41,8 @@ export function HelpCard({
   disabled?: boolean;
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
+  titleNumberOfLines?: number;
+  subtitleNumberOfLines?: number;
 }) {
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -51,7 +55,7 @@ export function HelpCard({
       ) : null}
       <View style={styles.cardBody}>
         <View style={styles.titleRow}>
-          {title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.cardTitle}>{title}</Text> : null}
+          {title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} numberOfLines={titleNumberOfLines} style={styles.cardTitle}>{title}</Text> : null}
           {badge ? (
             <View style={[styles.badge, badgeTone === "green" && styles.badgeGreen]}>
               {badgeTone === "green" ? <View style={styles.badgeDot} /> : null}
@@ -59,7 +63,7 @@ export function HelpCard({
             </View>
           ) : null}
         </View>
-        {subtitle ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.cardSubtitle}>{subtitle}</Text> : null}
+        {subtitle ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} numberOfLines={subtitleNumberOfLines} style={styles.cardSubtitle}>{subtitle}</Text> : null}
         {children}
       </View>
       {onPress ? <Ionicons name="chevron-forward" size={22} color={colors.muted3} /> : null}
@@ -148,7 +152,6 @@ export function HelpActionCard({ action, onPress }: {
   action: HelpUsefulAction;
   onPress?: () => void;
 }) {
-  const colors = useColors();
   return (
     <HelpCard
       title={action.title}
@@ -157,7 +160,6 @@ export function HelpActionCard({ action, onPress }: {
       iconTone={action.highlighted ? "blue" : "neutral"}
       onPress={onPress}
       disabled={!onPress}
-      style={action.highlighted ? { borderColor: colors.primary } : undefined}
     />
   );
 }
@@ -182,7 +184,14 @@ export function HelpQuickActionCard({ title, subtitle, actionKey, onPress, disab
       iconTone="blue"
       onPress={onPress}
       disabled={disabled}
-      style={{ minHeight: 74, backgroundColor: colors.surface, borderColor: colors.borderSoft, borderWidth: 1 }}
+      titleNumberOfLines={2}
+      subtitleNumberOfLines={2}
+      style={{
+        minHeight: 84,
+        backgroundColor: colors.surface,
+        borderColor: colors.borderSoft,
+        borderWidth: 1,
+      }}
     />
   );
 }
@@ -365,9 +374,10 @@ export function HelpChip({ label, selected, onPress }: {
   );
 }
 
-export function HelpEmptyState({ title, subtitle, primaryLabel, primaryIcon, secondaryLabel, onPrimary, onSecondary }: {
+export function HelpEmptyState({ title, subtitle, heroIcon, primaryLabel, primaryIcon, secondaryLabel, onPrimary, onSecondary }: {
   title: string;
   subtitle: string;
+  heroIcon?: IoniconName;
   primaryLabel: string;
   primaryIcon?: IoniconName;
   secondaryLabel?: string;
@@ -378,11 +388,16 @@ export function HelpEmptyState({ title, subtitle, primaryLabel, primaryIcon, sec
   const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <View style={styles.emptyState}>
+      {heroIcon ? (
+        <View style={styles.emptyHeroIconWrap}>
+          <Ionicons name={heroIcon} size={40} color={colors.muted2} />
+        </View>
+      ) : null}
       <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.emptyTitle}>{title}</Text>
       <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.emptySubtitle}>{subtitle}</Text>
-      <Pressable onPress={onPrimary} style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}>
-        <Ionicons name={primaryIcon ?? "camera-outline"} size={20} color={colors.primary} />
-        <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.secondaryButtonText}>{primaryLabel}</Text>
+      <Pressable onPress={onPrimary} style={({ pressed }) => [styles.emptyPrimaryButton, pressed && styles.pressed]}>
+        <Ionicons name={primaryIcon ?? "camera-outline"} size={20} color={colors.textOnAccent} />
+        <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.emptyPrimaryButtonText}>{primaryLabel}</Text>
       </Pressable>
       {secondaryLabel && onSecondary ? (
         <Pressable onPress={onSecondary} style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}>
@@ -393,19 +408,18 @@ export function HelpEmptyState({ title, subtitle, primaryLabel, primaryIcon, sec
   );
 }
 
-export function HelpErrorState({ onRetry, onScan }: {
+export function HelpErrorState({ onRetry }: {
   onRetry: () => void;
   onScan?: () => void;
 }) {
   return (
     <HelpEmptyState
-      title={t("help.errors.loadFailed")}
-      subtitle={t("help.errors.loadFailedSubtitle")}
-      primaryLabel={t("help.errors.retry")}
+      heroIcon="alert-circle-outline"
+      title={t("common.offlineTitle")}
+      subtitle={t("common.offlineDetail")}
+      primaryLabel={t("common.tryAgain")}
       primaryIcon="refresh-outline"
-      secondaryLabel={onScan ? t("help.guide.ctaScan") : undefined}
       onPrimary={onRetry}
-      onSecondary={onScan}
     />
   );
 }
@@ -451,11 +465,7 @@ function iconForCategory(value: string): IoniconName {
   return "folder-open-outline";
 }
 
-function toneForCategory(value: string): "blue" | "amber" | "green" | "purple" | "neutral" {
-  if (value === "receipt" || value === "taxes") return "amber";
-  if (value === "zap" || value === "bills") return "green";
-  if (value === "briefcase" || value === "urad-prace") return "purple";
-  if (value === "doc" || value === "contracts") return "neutral";
+function toneForCategory(_value: string): "blue" | "amber" | "green" | "purple" | "neutral" {
   return "blue";
 }
 
@@ -465,12 +475,14 @@ function iconForAction(action: string): IoniconName {
 }
 
 function iconForCtaAction(action: CtaAction): IoniconName {
+  if (action === "check_status_visa") return "search-outline";
   if (action === "add_deadline" || action === "add_deadline_manual" || action === "open_deadlines") return "calendar-outline";
   if (action === "open_help_center") return "book-outline";
   return "camera-outline";
 }
 
 function labelForCtaAction(action: CtaAction) {
+  if (action === "check_status_visa") return t("help.guide.ctaCheckStatus");
   if (action === "scan_document" || action === "scan_oamp_letter" || action === "scan_tax_letter" || action === "scan_bill" || action === "scan_contract") {
     return t("help.guide.ctaScan");
   }
@@ -679,14 +691,60 @@ function createStyles(colors: ColorPalette) {
     chipText: { color: colors.muted2, fontFamily: fonts.bodySemiBold, ...typeStyles.rowMeta },
     chipTextSelected: { color: colors.primary },
     emptyState: {
+      flex: 1,
       alignItems: "center",
       justifyContent: "center",
       gap: 12,
-      paddingHorizontal: 24,
-      paddingVertical: 34
+      paddingHorizontal: 32,
+      paddingBottom: 48,
     },
-    emptyTitle: { color: colors.text, fontFamily: fonts.bodyBold, ...typeStyles.rowTitle, textAlign: "center" },
-    emptySubtitle: { color: colors.muted2, fontFamily: fonts.body, ...typeStyles.rowMeta, textAlign: "center" },
+    emptyHeroIconWrap: {
+      width: 80,
+      height: 80,
+      borderRadius: 22,
+      backgroundColor: colors.surface3,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 8,
+    },
+    emptyTitle: {
+      color: colors.text,
+      fontFamily: fonts.displayBold,
+      ...typeStyles.compactTitle,
+      fontWeight: "700",
+      textAlign: "center",
+      maxWidth: 280,
+    },
+    emptySubtitle: {
+      color: colors.muted2,
+      fontFamily: fonts.body,
+      ...typeStyles.rowSecondary,
+      textAlign: "center",
+      maxWidth: 300,
+    },
+    emptyPrimaryButton: {
+      marginTop: 8,
+      minHeight: 52,
+      paddingHorizontal: 28,
+      borderRadius: 16,
+      backgroundColor: colors.primary,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 10,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.28,
+      shadowRadius: 16,
+    },
+    emptyPrimaryButtonText: {
+      color: colors.textOnAccent,
+      fontFamily: fonts.bodyBold,
+      ...typeStyles.button,
+      fontWeight: "700",
+    },
     textButton: { minHeight: 44, alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
     textButtonText: { color: colors.primary, fontFamily: fonts.bodyBold, ...typeStyles.rowSecondary }
   });

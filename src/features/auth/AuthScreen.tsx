@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppIcon } from "@/components/AppIcon";
 import { BrandWordmark } from "@/components/BrandMark";
+import { Icon } from "@/components/Icon";
 import { supabase } from "@/lib/supabase";
 import { AuthGradient } from "@/components/AuthGradient";
 import { Button, fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
@@ -209,7 +210,7 @@ export function AuthScreen({ initialMode = "register" }: { initialMode?: "regist
                   secureTextEntry
                   textContentType={mode === "login" ? "password" : "newPassword"}
                   autoComplete={mode === "login" ? "password" : "new-password"}
-                  iconLabel="•"
+                  iconName="lock"
                   hint={mode === "register" ? t("auth.errorPasswordLength") : undefined}
                   error={showError("password") ? fieldErrors.password : undefined}
                   colors={colors}
@@ -238,7 +239,7 @@ export function AuthScreen({ initialMode = "register" }: { initialMode?: "regist
                 secureTextEntry
                 textContentType="newPassword"
                 autoComplete="new-password"
-                iconLabel="•"
+                iconName="lock"
                 error={showError("confirmPassword") ? fieldErrors.confirmPassword : undefined}
                 colors={colors}
                 styles={styles}
@@ -356,6 +357,7 @@ function AuthInput({
   onBlur,
   placeholder,
   secureTextEntry,
+  iconName,
   iconLabel,
   hint,
   keyboardType = "default",
@@ -371,6 +373,7 @@ function AuthInput({
   onBlur: () => void;
   placeholder: string;
   secureTextEntry?: boolean;
+  iconName?: "lock";
   iconLabel?: string;
   hint?: string;
   keyboardType?: "default" | "email-address";
@@ -380,11 +383,21 @@ function AuthInput({
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
 }) {
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const isPasswordField = Boolean(secureTextEntry);
+  const hasLeftIcon = Boolean(iconName || iconLabel);
+
   return (
     <View style={styles.inputBlock}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.inputWrap}>
-        {iconLabel ? <Text style={styles.inputIcon}>{iconLabel}</Text> : null}
+        {iconName ? (
+          <View style={styles.inputIconGlyph}>
+            <AppIcon name={iconName} size={20} color={colors.muted3} />
+          </View>
+        ) : iconLabel ? (
+          <Text style={styles.inputIcon}>{iconLabel}</Text>
+        ) : null}
         <TextInput
           accessibilityLabel={label}
           value={value}
@@ -392,14 +405,31 @@ function AuthInput({
           onBlur={onBlur}
           placeholder={placeholder}
           placeholderTextColor={colors.muted3}
-          secureTextEntry={secureTextEntry}
+          secureTextEntry={isPasswordField && !passwordVisible}
+          contextMenuHidden={false}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType={keyboardType}
           textContentType={textContentType}
           autoComplete={autoComplete}
-          style={[styles.input, iconLabel && styles.inputWithIcon, error && styles.inputError]}
+          style={[
+            styles.input,
+            hasLeftIcon && styles.inputWithIcon,
+            isPasswordField && styles.inputWithPasswordToggle,
+            error && styles.inputError,
+          ]}
         />
+        {isPasswordField ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t(passwordVisible ? "auth.hidePassword" : "auth.showPassword")}
+            hitSlop={10}
+            onPress={() => setPasswordVisible((visible) => !visible)}
+            style={({ pressed }) => [styles.passwordToggle, pressed && styles.pressed]}
+          >
+            <Icon name="eye" size={20} color={passwordVisible ? colors.primary : colors.muted3} />
+          </Pressable>
+        ) : null}
       </View>
       {hint && !error ? <Text style={styles.fieldHint}>{hint}</Text> : null}
       {error ? <Text style={styles.fieldError}>{error}</Text> : null}
@@ -588,6 +618,15 @@ function createStyles(colors: ColorPalette) {
       fontFamily: fonts.bodyBold,
       fontWeight: "700"
     },
+    inputIconGlyph: {
+      position: "absolute",
+      left: 16,
+      zIndex: 1,
+      width: 22,
+      height: 22,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     input: {
       minHeight: 54,
       borderRadius: 16,
@@ -601,6 +640,16 @@ function createStyles(colors: ColorPalette) {
       fontWeight: "400"
     },
     inputWithIcon: { paddingLeft: 48 },
+    inputWithPasswordToggle: { paddingRight: 52 },
+    passwordToggle: {
+      position: "absolute",
+      right: 12,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     inputError: { borderColor: colors.danger },
     fieldHint: {
       color: colors.muted2,

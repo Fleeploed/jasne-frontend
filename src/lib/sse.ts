@@ -114,10 +114,26 @@ async function handleHttpError(status: number, responseText: string) {
 }
 
 function readErrorDetail(status: number, responseText: string) {
+  if (status >= 500) return t("common.serviceDown");
+  if (!responseText) return t("common.serviceDown");
+
+  let parsed: unknown;
   try {
-    const body = JSON.parse(responseText) as { detail?: unknown };
-    return typeof body.detail === "string" ? body.detail : JSON.stringify(body);
+    parsed = JSON.parse(responseText);
   } catch {
-    return t("common.networkStream", { status });
+    return t("common.serviceDown");
   }
+
+  if (!isRecord(parsed)) return t("common.serviceDown");
+  if (typeof parsed.detail === "string") return parsed.detail;
+  if (isRecord(parsed.detail) && typeof parsed.detail.message === "string") {
+    return parsed.detail.message;
+  }
+  if (parsed.status === "error" && "code" in parsed) return t("common.serviceDown");
+
+  return t("common.networkStream", { status });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

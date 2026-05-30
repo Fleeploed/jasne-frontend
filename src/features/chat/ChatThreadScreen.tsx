@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View, type DimensionValue, type NativeScrollEvent, type NativeSyntheticEvent, type StyleProp, type TextStyle } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -27,7 +27,7 @@ import {
 } from "@/features/scans/pendingScanStore";
 import { formatCategoryLabel, formatLocalizedDate, t } from "@/lib/i18n";
 import { supabase } from "@/lib/supabase";
-import type { AnalysisDeadline, LimitsResponse, ScanMessage, ScanResponse } from "@/lib/types";
+import type { AnalysisDeadline, DeadlineResponse, LimitsResponse, ScanMessage, ScanResponse, UserPlan } from "@/lib/types";
 
 // In-memory cache of last scroll offset per scan id.
 // Survives navigation but resets on app restart — that's fine for chat UX.
@@ -40,6 +40,11 @@ const attachmentUrlCache = new Map<string, { urls: string[]; cachedAt: number }>
 // Scans whose analysis deadlines we already synced into the deadlines table
 // this session. Prevents recreating deadlines the user has intentionally deleted.
 const deadlineSyncDone = new Set<string>();
+const REMINDER_DAYS = [30, 14, 7, 1] as const;
+const REMINDER_SHEET_HIDDEN = 900;
+const REMINDER_TEXT_SCALE = 1;
+
+type ReminderDay = typeof REMINDER_DAYS[number];
 
 async function syncAnalysisDeadlines(scan: ScanResponse) {
   // Only run once per scan per session, and only when the analysis actually
@@ -97,6 +102,23 @@ type UiMessage = ScanMessage | {
   attachments: PendingAttachment[];
 };
 
+function isInitialImageMessage(message: UiMessage) {
+  return message.message_type === "image" || message.message_type === "local_image";
+}
+
+function orderInitialScanMessages(source: UiMessage[]) {
+  const resultIndex = source.findIndex((message) => message.message_type === "result_card");
+  if (resultIndex === -1) return source;
+
+  const imageIndex = source.findIndex(isInitialImageMessage);
+  if (imageIndex === -1 || imageIndex < resultIndex) return source;
+
+  const ordered = [...source];
+  const [imageMessage] = ordered.splice(imageIndex, 1);
+  ordered.splice(resultIndex, 0, imageMessage);
+  return ordered;
+}
+
 export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string } = {}) {
   const params = useLocalSearchParams<{ id?: string; pending?: string }>();
   const insets = useSafeAreaInsets();
@@ -127,6 +149,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
   const [scan, setScan] = useState<ScanResponse | null>(cachedEntry?.scan ?? null);
   const [limits, setLimits] = useState<LimitsResponse | null>(cachedEntry?.limits ?? null);
   const [messages, setMessages] = useState<UiMessage[]>(cachedEntry?.messages ?? []);
+  const [existingDeadlines, setExistingDeadlines] = useState<DeadlineResponse[]>([]);
   const [question, setQuestion] = useState("");
   // Pending mode is used when ChatThreadScreen is mounted with a localId
   // (either prop from NewScanScreen or ?pending=<localId> from the pending card).
@@ -189,12 +212,18 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
     (async () => {
       setError(null);
       try {
-        const [nextScan, nextMessages, nextLimits] = await Promise.all([getScan(targetId), listMessages(targetId), getLimits(targetId)]);
+        const [nextScan, nextMessages, nextLimits, nextDeadlines] = await Promise.all([
+          getScan(targetId),
+          listMessages(targetId),
+          getLimits(targetId),
+          listAllDeadlines(false),
+        ]);
         if (!alive) return;
         serverHydratedRef.current = true;
         setScan(nextScan);
         setMessages(nextMessages);
         setLimits(nextLimits);
+        setExistingDeadlines(nextDeadlines);
         setChatCache(targetId, { scan: nextScan, messages: nextMessages, limits: nextLimits });
         void syncAnalysisDeadlines(nextScan);
       } catch (loadError) {
@@ -208,6 +237,20 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
       alive = false;
     };
   }, [initialPending, params.id]);
+
+  // Refresh existing deadlines whenever the screen comes back into focus so
+  // that deleting or completing a deadline on the Deadlines screen immediately
+  // unlocks the reminder button on return.
+  useFocusEffect(
+    useCallback(() => {
+      if (initialPending) return;
+      let alive = true;
+      listAllDeadlines(false)
+        .then((deadlines) => { if (alive) setExistingDeadlines(deadlines); })
+        .catch(() => {});
+      return () => { alive = false; };
+    }, [initialPending]),
+  );
 
   // Cold-start hydrate: if there was no in-memory cache, try disk in parallel
   // with the server fetch. Whichever arrives first fills state; server always
@@ -273,8 +316,9 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
   }, [initialPending, pendingId]);
 
   const displayMessages = useMemo(() => {
-    const hasResultCard = messages.some((message) => message.message_type === "result_card");
-    const hasImageMessage = messages.some((message) => message.message_type === "image" || message.message_type === "local_image");
+    const orderedMessages = orderInitialScanMessages(messages);
+    const hasResultCard = orderedMessages.some((message) => message.message_type === "result_card");
+    const hasImageMessage = orderedMessages.some(isInitialImageMessage);
     const localImageMessage: UiMessage | null = !hasImageMessage && pendingAttachments.length
       ? {
           id: `local-image-${scan?.id ?? "pending"}`,
@@ -288,7 +332,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
       : null;
 
     if (!scan?.result || hasResultCard) {
-      return localImageMessage ? [localImageMessage, ...messages] : messages;
+      return orderInitialScanMessages(localImageMessage ? [localImageMessage, ...orderedMessages] : orderedMessages);
     }
 
     const resultMessage: UiMessage = {
@@ -299,8 +343,8 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
       message_type: "result_card",
       created_at: scan.created_at
     };
-    const sourceMessages = localImageMessage ? [localImageMessage, ...messages] : messages;
-    const firstImageIndex = sourceMessages.findIndex((message) => message.message_type === "image" || message.message_type === "local_image");
+    const sourceMessages = orderInitialScanMessages(localImageMessage ? [localImageMessage, ...orderedMessages] : orderedMessages);
+    const firstImageIndex = sourceMessages.findIndex(isInitialImageMessage);
 
     if (firstImageIndex === -1) return [resultMessage, ...sourceMessages];
 
@@ -433,6 +477,9 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
               <MessageBubble
                 message={item}
                 scan={scan}
+                plan={limits?.plan ?? "free"}
+                existingDeadlines={existingDeadlines}
+                onReminderCreated={(created) => setExistingDeadlines((prev) => [...prev, created])}
                 colors={colors}
                 styles={styles}
                 onOpenViewer={(images, index) => { setViewerImages(images); setViewerIndex(index); }}
@@ -493,7 +540,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
   );
 }
 
-function ResultCard({ scan, colors, styles }: { scan: ScanResponse; colors: ColorPalette; styles: ReturnType<typeof createStyles> }) {
+function ResultCard({ scan, plan, existingDeadlines, onReminderCreated, colors, styles }: { scan: ScanResponse; plan: UserPlan; existingDeadlines: DeadlineResponse[]; onReminderCreated: (created: DeadlineResponse) => void; colors: ColorPalette; styles: ReturnType<typeof createStyles> }) {
   const result = scan.result;
   if (!result) return null;
 
@@ -528,6 +575,9 @@ function ResultCard({ scan, colors, styles }: { scan: ScanResponse; colors: Colo
           deadline={deadline}
           scanId={scan.id}
           whereToGo={result.where_to_go ?? null}
+          plan={plan}
+          existingDeadlines={existingDeadlines}
+          onReminderCreated={onReminderCreated}
           styles={styles}
           colors={colors}
         />
@@ -572,17 +622,35 @@ function DeadlineReminderRow({
   deadline,
   scanId,
   whereToGo,
+  plan,
+  existingDeadlines,
+  onReminderCreated,
   styles,
   colors,
 }: {
   deadline: AnalysisDeadline;
   scanId: string;
   whereToGo: string | null;
+  plan: UserPlan;
+  existingDeadlines: DeadlineResponse[];
+  onReminderCreated: (created: DeadlineResponse) => void;
   styles: ReturnType<typeof createStyles>;
   colors: ColorPalette;
 }) {
-  const [saved, setSaved] = useState(false);
+  const alreadySaved = existingDeadlines.some(
+    (d) => d.scan_id === scanId && d.due_date === deadline.date && d.status === "active",
+  );
+  const [saved, setSaved] = useState(alreadySaved);
+
+  // existingDeadlines arrives asynchronously after mount — sync saved if it
+  // arrives later or changes (e.g. after a refresh).
+  useEffect(() => {
+    if (alreadySaved) setSaved(true);
+  }, [alreadySaved]);
   const [saving, setSaving] = useState(false);
+  const [sheetError, setSheetError] = useState<string | null>(null);
+  const [showReminderSheet, setShowReminderSheet] = useState(false);
+  const [showPaywall, setShowPaywall] = useState(false);
 
   const showAddress = (deadline.type === "action" || deadline.type === "response") && Boolean(whereToGo);
   const time = parseTimeFromDescription(deadline.description) ?? parseTimeFromDate(deadline.date);
@@ -590,57 +658,397 @@ function DeadlineReminderRow({
 
   async function handleAdd() {
     if (saved || saving) return;
+    setSheetError(null);
+    setShowReminderSheet(true);
+  }
+
+  async function handleCreateReminder(reminderDays: number[]) {
+    const upcomingReminderDays = filterUpcomingReminderDays(deadline.date, reminderDays);
+    if (saved || saving || !upcomingReminderDays.length) return;
     setSaving(true);
+    setSheetError(null);
     try {
-      await createManualDeadline({
+      const created = await createManualDeadline({
         title: deadline.description,
         description: null,
         due_date: deadline.date,
         deadline_type: deadline.type,
         scan_id: scanId,
+        reminder_days: upcomingReminderDays,
       });
       setSaved(true);
+      onReminderCreated(created);
+      setShowReminderSheet(false);
     } catch {
-      // silent — user can tap again
+      setSheetError(t("deadlines.createError"));
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <LinearGradient
-      colors={["rgba(111,160,230,0.16)", "rgba(111,160,230,0.06)"]}
-      style={styles.deadlineCard}
+    <>
+      <LinearGradient
+        colors={["rgba(111,160,230,0.16)", "rgba(111,160,230,0.06)"]}
+        style={styles.deadlineCard}
+      >
+        <Text style={styles.deadlineCardLabel}>{t(`deadlineType.${deadline.type}` as Parameters<typeof t>[0]).toUpperCase()}</Text>
+        <Text selectable style={styles.deadlineCardDate}>{dateLabel}</Text>
+        {showAddress && whereToGo ? (
+          <View style={styles.deadlineCardAddress}>
+            <Text style={styles.deadlineCardPin}>⊙</Text>
+            <Text selectable style={styles.deadlineCardAddressText}>{whereToGo}</Text>
+          </View>
+        ) : null}
+        <Pressable
+          onPress={handleAdd}
+          style={[styles.deadlineCardBtn, saved && styles.deadlineCardBtnSaved]}
+          accessibilityLabel={t(saved ? "chat.reminderSaved" : "chat.createReminder")}
+          disabled={saved || saving}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color={colors.textOnAccent} />
+          ) : saved ? (
+            <Text style={[styles.deadlineCardBtnText, styles.deadlineCardBtnTextSaved]}>
+              {`✓  ${t("chat.reminderSaved")}`}
+            </Text>
+          ) : (
+            <>
+              <Icon name="calendar" size={16} color={colors.textOnAccent} />
+              <Text style={styles.deadlineCardBtnText}>{t("chat.createReminder")}</Text>
+            </>
+          )}
+        </Pressable>
+      </LinearGradient>
+      <ReminderSheet
+        visible={showReminderSheet}
+        plan={plan}
+        deadline={deadline}
+        saving={saving}
+        error={sheetError}
+        onClose={() => {
+          if (!saving) setShowReminderSheet(false);
+        }}
+        onConfirm={handleCreateReminder}
+        onUpgrade={() => {
+          setShowReminderSheet(false);
+          setShowPaywall(true);
+        }}
+        colors={colors}
+        styles={styles}
+      />
+      <PaywallSheet visible={showPaywall} onClose={() => setShowPaywall(false)} />
+    </>
+  );
+}
+
+function ReminderSheet({
+  visible,
+  plan,
+  deadline,
+  saving,
+  error,
+  onClose,
+  onConfirm,
+  onUpgrade,
+  colors,
+  styles,
+}: {
+  visible: boolean;
+  plan: UserPlan;
+  deadline: AnalysisDeadline;
+  saving: boolean;
+  error: string | null;
+  onClose: () => void;
+  onConfirm: (reminderDays: number[]) => void;
+  onUpgrade: () => void;
+  colors: ColorPalette;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const insets = useSafeAreaInsets();
+  const sheetY = useRef(new Animated.Value(REMINDER_SHEET_HIDDEN)).current;
+  const isPro = plan === "pro";
+  const availableDays = useMemo(() => filterUpcomingReminderDays(deadline.date, REMINDER_DAYS), [deadline.date]);
+  const initialDays = useMemo(
+    () => (isPro ? availableDays : availableDays.filter((day) => day === 1)),
+    [availableDays, isPro],
+  );
+  const [selectedDays, setSelectedDays] = useState<number[]>(initialDays);
+
+  useEffect(() => {
+    if (!visible) return;
+    setSelectedDays(initialDays);
+    sheetY.setValue(REMINDER_SHEET_HIDDEN);
+    Animated.spring(sheetY, {
+      toValue: 0,
+      useNativeDriver: true,
+      damping: 22,
+      stiffness: 210,
+      mass: 0.9,
+    }).start();
+  }, [initialDays, sheetY, visible]);
+
+  const enabledCount = selectedDays.length;
+  const ctaText = enabledCount > 1
+    ? t("chat.reminderSheetCtaMany", { count: enabledCount })
+    : t("chat.reminderSheetCtaOne");
+
+  function toggleDay(day: ReminderDay) {
+    if (!availableDays.includes(day)) return;
+    if (!isPro && day !== 1) {
+      onUpgrade();
+      return;
+    }
+
+    setSelectedDays((current) => {
+      if (current.includes(day)) return current.filter((item) => item !== day);
+      return [...current, day].sort((a, b) => b - a);
+    });
+  }
+
+  function close() {
+    if (!saving) onClose();
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={close} statusBarTranslucent>
+      <View style={styles.reminderOverlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={close} />
+        <Animated.View
+          style={[
+            styles.reminderSheet,
+            {
+              paddingBottom: Math.max(insets.bottom + 18, 28),
+              transform: [{ translateY: sheetY }],
+            },
+          ]}
+        >
+          <View style={styles.reminderHandleWrap}>
+            <View style={styles.reminderHandle} />
+          </View>
+          <ScrollView
+            bounces={false}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.reminderSheetContent}
+          >
+            <Text maxFontSizeMultiplier={REMINDER_TEXT_SCALE} style={styles.reminderSheetTitle}>
+              {reminderSheetTitle(deadline.type)}
+            </Text>
+            <View style={styles.reminderDueRow}>
+              <View style={styles.reminderTypePill}>
+                <Text maxFontSizeMultiplier={REMINDER_TEXT_SCALE} style={styles.reminderTypePillText}>
+                  {t(`deadlineType.${deadline.type}` as Parameters<typeof t>[0]).toUpperCase()}
+                </Text>
+              </View>
+              <Text maxFontSizeMultiplier={REMINDER_TEXT_SCALE} selectable style={styles.reminderDueDate}>
+                {formatDeadlineDate(deadline.date)}
+              </Text>
+            </View>
+
+            <Text maxFontSizeMultiplier={REMINDER_TEXT_SCALE} style={styles.reminderSectionTitle}>
+              {t("chat.reminderSheetChoose")}
+            </Text>
+
+            <View style={styles.reminderOptions}>
+              {availableDays.length ? availableDays.map((day, index) => {
+                const locked = !isPro && day !== 1;
+                return (
+                  <ReminderOptionRow
+                    key={day}
+                    day={day}
+                    dateLabel={formatReminderTriggerDate(deadline.date, day)}
+                    selected={selectedDays.includes(day)}
+                    locked={locked}
+                    saving={saving}
+                    last={index === availableDays.length - 1}
+                    onPress={() => toggleDay(day)}
+                    onUpgrade={onUpgrade}
+                    colors={colors}
+                    styles={styles}
+                  />
+                );
+              }) : (
+                <Text maxFontSizeMultiplier={REMINDER_TEXT_SCALE} style={styles.reminderNoOptionsText}>
+                  {t("chat.reminderSheetNoOptions")}
+                </Text>
+              )}
+            </View>
+
+            {!isPro ? (
+              <View style={styles.reminderProHint}>
+                <Icon name="star" size={18} color={colors.pro} />
+                <Text maxFontSizeMultiplier={REMINDER_TEXT_SCALE} style={styles.reminderProHintText}>
+                  {t("chat.reminderSheetProHint")}
+                </Text>
+              </View>
+            ) : null}
+
+            {error ? <Text maxFontSizeMultiplier={REMINDER_TEXT_SCALE} style={styles.reminderErrorText}>{error}</Text> : null}
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={ctaText}
+              disabled={saving || enabledCount === 0}
+              onPress={() => onConfirm(filterUpcomingReminderDays(deadline.date, selectedDays).sort((a, b) => b - a))}
+              style={({ pressed }) => [
+                styles.reminderCta,
+                (saving || enabledCount === 0) && styles.reminderCtaDisabled,
+                pressed && !saving && enabledCount > 0 && styles.reminderPressed,
+              ]}
+            >
+              {saving ? (
+                <ActivityIndicator color={colors.textOnAccent} />
+              ) : (
+                <Text maxFontSizeMultiplier={REMINDER_TEXT_SCALE} style={styles.reminderCtaText}>{ctaText}</Text>
+              )}
+            </Pressable>
+
+            {!isPro ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("chat.reminderSheetTryPro")}
+                disabled={saving}
+                onPress={onUpgrade}
+                style={({ pressed }) => [styles.reminderUpgradeButton, pressed && styles.reminderPressed]}
+              >
+                <Icon name="star" size={18} color={colors.pro} />
+                <Text maxFontSizeMultiplier={REMINDER_TEXT_SCALE} style={styles.reminderUpgradeText}>
+                  {t("chat.reminderSheetTryPro")}
+                </Text>
+              </Pressable>
+            ) : null}
+          </ScrollView>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
+function ReminderOptionRow({
+  day,
+  dateLabel,
+  selected,
+  locked,
+  saving,
+  last,
+  onPress,
+  onUpgrade,
+  colors,
+  styles,
+}: {
+  day: ReminderDay;
+  dateLabel: string;
+  selected: boolean;
+  locked: boolean;
+  saving: boolean;
+  last: boolean;
+  onPress: () => void;
+  onUpgrade: () => void;
+  colors: ColorPalette;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected, disabled: saving }}
+      disabled={saving}
+      onPress={locked ? onUpgrade : onPress}
+      style={({ pressed }) => [
+        styles.reminderOptionRow,
+        !last && styles.reminderOptionDivider,
+        pressed && styles.reminderPressed,
+      ]}
     >
-      <Text style={styles.deadlineCardLabel}>{t(`deadlineType.${deadline.type}` as Parameters<typeof t>[0]).toUpperCase()}</Text>
-      <Text selectable style={styles.deadlineCardDate}>{dateLabel}</Text>
-      {showAddress && whereToGo ? (
-        <View style={styles.deadlineCardAddress}>
-          <Text style={styles.deadlineCardPin}>⊙</Text>
-          <Text selectable style={styles.deadlineCardAddressText}>{whereToGo}</Text>
+      <View style={[styles.reminderIconTile, locked && styles.reminderIconTileLocked]}>
+        <Icon name="bell" size={22} color={locked ? colors.muted3 : colors.primary} />
+      </View>
+      <View style={styles.reminderOptionTextBlock}>
+        <Text
+          style={[styles.reminderOptionTitle, locked && styles.reminderOptionTitleLocked]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.82}
+          maxFontSizeMultiplier={REMINDER_TEXT_SCALE}
+        >
+          {reminderOptionTitle(day)}
+        </Text>
+        <Text
+          maxFontSizeMultiplier={REMINDER_TEXT_SCALE}
+          style={[styles.reminderOptionDate, locked && styles.reminderOptionDateLocked]}
+          numberOfLines={1}
+        >
+          {dateLabel}
+        </Text>
+      </View>
+      {locked ? (
+        <View style={styles.reminderLockedBadge}>
+          <Icon name="lock-small" size={14} color={colors.pro} />
+          <Text maxFontSizeMultiplier={REMINDER_TEXT_SCALE} style={styles.reminderLockedBadgeText}>Pro</Text>
         </View>
       ) : null}
-      <Pressable
-        onPress={handleAdd}
-        style={[styles.deadlineCardBtn, saved && styles.deadlineCardBtnSaved]}
-        accessibilityLabel={t(saved ? "chat.reminderSaved" : "chat.createReminder")}
-        disabled={saved || saving}
-      >
-        {saving ? (
-          <ActivityIndicator size="small" color={colors.textOnAccent} />
-        ) : saved ? (
-          <Text style={[styles.deadlineCardBtnText, styles.deadlineCardBtnTextSaved]}>
-            {`✓  ${t("chat.reminderSaved")}`}
-          </Text>
-        ) : (
-          <>
-            <Icon name="calendar" size={16} color={colors.textOnAccent} />
-            <Text style={styles.deadlineCardBtnText}>{t("chat.createReminder")}</Text>
-          </>
-        )}
-      </Pressable>
-    </LinearGradient>
+      <ReminderToggle selected={selected} disabled={locked || saving} colors={colors} styles={styles} />
+    </Pressable>
   );
+}
+
+function ReminderToggle({
+  selected,
+  disabled,
+  colors,
+  styles,
+}: {
+  selected: boolean;
+  disabled: boolean;
+  colors: ColorPalette;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <View
+      style={[
+        styles.reminderToggle,
+        selected ? styles.reminderToggleOn : styles.reminderToggleOff,
+        disabled && styles.reminderToggleDisabled,
+        { justifyContent: selected ? "flex-end" : "flex-start" },
+      ]}
+    >
+      <View style={[styles.reminderToggleKnob, disabled && !selected && { backgroundColor: colors.muted3 }]} />
+    </View>
+  );
+}
+
+function reminderSheetTitle(type: AnalysisDeadline["type"]) {
+  if (type === "payment") return t("chat.reminderSheetTitlePayment");
+  if (type === "action") return t("chat.reminderSheetTitleAction");
+  if (type === "response") return t("chat.reminderSheetTitleResponse");
+  return t("chat.reminderSheetTitleExpiration");
+}
+
+function reminderOptionTitle(day: ReminderDay) {
+  if (day === 30) return t("chat.reminderOption30");
+  if (day === 14) return t("chat.reminderOption14");
+  if (day === 7) return t("chat.reminderOption7");
+  return t("chat.reminderOption1");
+}
+
+function formatReminderTriggerDate(dueDate: string, daysBefore: number) {
+  const date = new Date(`${dueDate}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) return dueDate;
+  date.setUTCDate(date.getUTCDate() - daysBefore);
+  return formatLocalizedDate(date, { day: "numeric", month: "long", year: "numeric" });
+}
+
+function filterUpcomingReminderDays<T extends number>(dueDate: string, days: readonly T[]): T[] {
+  return days.filter((day) => isReminderTriggerUpcoming(dueDate, day));
+}
+
+function isReminderTriggerUpcoming(dueDate: string, daysBefore: number) {
+  const triggerDate = new Date(`${dueDate}T12:00:00Z`);
+  if (Number.isNaN(triggerDate.getTime())) return false;
+  triggerDate.setUTCDate(triggerDate.getUTCDate() - daysBefore);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return triggerDate.getTime() >= today.getTime();
 }
 
 function ResultInfoBlock({ tone, title, value, styles }: {
@@ -729,16 +1137,19 @@ function LockedChatComposer({
   );
 }
 
-function MessageBubble({ message, scan, colors, styles, onOpenViewer }: {
+function MessageBubble({ message, scan, plan, existingDeadlines, onReminderCreated, colors, styles, onOpenViewer }: {
   message: UiMessage;
   scan: ScanResponse | null;
+  plan: UserPlan;
+  existingDeadlines: DeadlineResponse[];
+  onReminderCreated: (created: DeadlineResponse) => void;
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
   onOpenViewer?: (images: string[], index: number) => void;
 }) {
   const isUser = message.role === "user";
   if (message.message_type === "result_card") {
-    return scan ? <ResultCard scan={scan} colors={colors} styles={styles} /> : null;
+    return scan ? <ResultCard scan={scan} plan={plan} existingDeadlines={existingDeadlines} onReminderCreated={onReminderCreated} colors={colors} styles={styles} /> : null;
   }
   if (message.message_type === "image") {
     return <DocumentAttachmentBubble scanId={message.scan_id} content={message.content} colors={colors} styles={styles} onOpenViewer={onOpenViewer} />;
@@ -1516,6 +1927,8 @@ function ZoomableViewerImage({ uri, width, height }: { uri: string; width: numbe
 }
 
 function createStyles(colors: ColorPalette) {
+  const isDark = colors.bg === "#0F0D0B";
+
   return StyleSheet.create({
     wrap: { flex: 1 },
     list: { flex: 1 },
@@ -1766,6 +2179,240 @@ function createStyles(colors: ColorPalette) {
       fontWeight: "600",
     },
     deadlineCardBtnTextSaved: { color: colors.greenDark },
+    reminderOverlay: {
+      flex: 1,
+      justifyContent: "flex-end",
+      backgroundColor: isDark ? "rgba(0,0,0,0.74)" : "rgba(30,27,23,0.45)",
+    },
+    reminderSheet: {
+      maxHeight: "90%",
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 28,
+      borderTopRightRadius: 28,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      overflow: "hidden",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: -8 },
+      shadowOpacity: isDark ? 0.32 : 0.12,
+      shadowRadius: 22,
+      elevation: 12,
+    },
+    reminderHandleWrap: {
+      alignItems: "center",
+      paddingTop: 14,
+      paddingBottom: 12,
+    },
+    reminderHandle: {
+      width: 42,
+      height: 5,
+      borderRadius: 2.5,
+      backgroundColor: isDark ? "#6F675D" : "#C0B9AF",
+    },
+    reminderSheetContent: {
+      paddingHorizontal: 22,
+      gap: 16,
+    },
+    reminderSheetTitle: {
+      color: colors.text,
+      fontFamily: fonts.displayBold,
+      ...typeStyles.compactTitle,
+      fontWeight: "700",
+    },
+    reminderDueRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginTop: -4,
+    },
+    reminderTypePill: {
+      minHeight: 28,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.amber200,
+      backgroundColor: colors.amberLight,
+      paddingHorizontal: 11,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    reminderTypePillText: {
+      color: colors.amberDark,
+      fontFamily: fonts.bodyExtraBold,
+      ...typeStyles.caption2,
+      letterSpacing: 0.9,
+      fontWeight: "800",
+    },
+    reminderDueDate: {
+      flex: 1,
+      minWidth: 0,
+      color: colors.muted,
+      fontFamily: fonts.body,
+      ...typeStyles.callout,
+    },
+    reminderSectionTitle: {
+      color: colors.amberDark,
+      fontFamily: fonts.bodyExtraBold,
+      ...typeStyles.caption1,
+      letterSpacing: 1.8,
+      textTransform: "uppercase",
+    },
+    reminderOptions: {
+      gap: 0,
+    },
+    reminderNoOptionsText: {
+      color: colors.muted2,
+      fontFamily: fonts.body,
+      ...typeStyles.rowSecondary,
+      paddingVertical: 12,
+    },
+    reminderOptionRow: {
+      minHeight: 64,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 14,
+      paddingVertical: 9,
+    },
+    reminderOptionDivider: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    reminderPressed: {
+      opacity: 0.76,
+    },
+    reminderIconTile: {
+      width: 44,
+      height: 44,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface2,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    reminderIconTileLocked: {
+      opacity: 0.46,
+    },
+    reminderOptionTextBlock: {
+      flex: 1,
+      minWidth: 0,
+      gap: 3,
+    },
+    reminderOptionTitle: {
+      color: colors.text,
+      fontFamily: fonts.bodyBold,
+      ...typeStyles.callout,
+      fontWeight: "700",
+    },
+    reminderOptionTitleLocked: {
+      color: colors.muted3,
+      opacity: 0.7,
+    },
+    reminderOptionDate: {
+      color: colors.muted2,
+      fontFamily: fonts.body,
+      ...typeStyles.rowMeta,
+    },
+    reminderOptionDateLocked: {
+      color: colors.muted3,
+      opacity: 0.7,
+    },
+    reminderLockedBadge: {
+      height: 26,
+      minWidth: 60,
+      borderRadius: 13,
+      borderWidth: 1,
+      borderColor: colors.proLight,
+      backgroundColor: isDark ? "rgba(168,147,224,0.08)" : "rgba(124,58,237,0.05)",
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+      paddingHorizontal: 8,
+    },
+    reminderLockedBadgeText: {
+      color: colors.pro,
+      fontFamily: fonts.bodyExtraBold,
+      ...typeStyles.rowMeta,
+      fontWeight: "800",
+    },
+    reminderToggle: {
+      width: 48,
+      height: 28,
+      borderRadius: 14,
+      padding: 3,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    reminderToggleOn: {
+      backgroundColor: colors.primaryMid,
+    },
+    reminderToggleOff: {
+      backgroundColor: colors.surface2,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    reminderToggleDisabled: {
+      opacity: 0.55,
+    },
+    reminderToggleKnob: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: colors.surface,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: isDark ? 0.12 : 0.16,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    reminderProHint: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginTop: 2,
+    },
+    reminderProHintText: {
+      flex: 1,
+      color: colors.muted2,
+      fontFamily: fonts.body,
+      ...typeStyles.rowSecondary,
+    },
+    reminderErrorText: {
+      color: colors.dangerDark,
+      fontFamily: fonts.bodySemiBold,
+      ...typeStyles.rowMeta,
+    },
+    reminderCta: {
+      minHeight: 52,
+      borderRadius: 17,
+      backgroundColor: colors.primaryMid,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 18,
+    },
+    reminderCtaDisabled: {
+      opacity: 0.5,
+    },
+    reminderCtaText: {
+      color: colors.textOnAccent,
+      fontFamily: fonts.bodyBold,
+      ...typeStyles.callout,
+      fontWeight: "700",
+      textAlign: "center",
+    },
+    reminderUpgradeButton: {
+      minHeight: 44,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+    },
+    reminderUpgradeText: {
+      color: colors.pro,
+      fontFamily: fonts.bodyBold,
+      ...typeStyles.callout,
+      fontWeight: "700",
+    },
     placeLine: {
       color: colors.text,
       fontFamily: fonts.body,

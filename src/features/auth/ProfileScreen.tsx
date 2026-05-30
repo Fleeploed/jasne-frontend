@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Linking, Modal, PanResponder, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import { ErrorText, Screen, fonts, typeStyles, useColors, useThemePreference, type ColorPalette, type ThemePreference } from "@/components/ui";
@@ -20,6 +21,9 @@ const LOCALE_OPTIONS = [
 
 // Sheet starts off-screen (translateY = SHEET_HIDDEN), animates to 0 on open
 const SHEET_HIDDEN = 700;
+const PROFILE_LIMITS_CACHE_PREFIX = "jasne.profile.limits.v1";
+
+const profileLimitsMemoryCache = new Map<string, LimitsResponse>();
 
 export function ProfileScreen() {
   const { user, signOut } = useAuth();
@@ -30,6 +34,7 @@ export function ProfileScreen() {
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const sheetY = useRef(new Animated.Value(SHEET_HIDDEN)).current;
+  const limitsCacheKey = useMemo(() => profileLimitsCacheKey(user?.id), [user?.id]);
 
   const closeLangSheet = useCallback(() => {
     Animated.timing(sheetY, { toValue: SHEET_HIDDEN, duration: 220, useNativeDriver: true }).start(() => {
@@ -72,8 +77,8 @@ export function ProfileScreen() {
     })
   ).current;
 
-  const [limits, setLimits] = useState<LimitsResponse | null>(null);
-  const [loadingLimits, setLoadingLimits] = useState(true);
+  const [limits, setLimits] = useState<LimitsResponse | null>(() => profileLimitsMemoryCache.get(limitsCacheKey) ?? null);
+  const [loadingLimits, setLoadingLimits] = useState(() => !profileLimitsMemoryCache.has(limitsCacheKey));
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,11 +94,38 @@ export function ProfileScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    const cached = profileLimitsMemoryCache.get(limitsCacheKey) ?? null;
+    setLimits(cached);
+    setLoadingLimits(!cached);
+    setError(null);
+  }, [limitsCacheKey]);
+
+  useEffect(() => {
+    if (profileLimitsMemoryCache.has(limitsCacheKey)) return;
+
+    let cancelled = false;
+    AsyncStorage.getItem(limitsCacheKey)
+      .then((raw) => {
+        const cached = parseCachedLimits(raw);
+        if (!cached || cancelled || !aliveRef.current) return;
+        profileLimitsMemoryCache.set(limitsCacheKey, cached);
+        setLimits((current) => current ?? cached);
+        setLoadingLimits(false);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [limitsCacheKey]);
+
   const loadLimits = useCallback(async () => {
     setError(null);
     try {
       const next = await getLimits();
       if (!aliveRef.current) return;
+      cacheProfileLimits(limitsCacheKey, next);
       setLimits(next);
     } catch (limitsError) {
       if (!aliveRef.current) return;
@@ -104,7 +136,7 @@ export function ProfileScreen() {
         setRefreshing(false);
       }
     }
-  }, []);
+  }, [limitsCacheKey]);
 
   useEffect(() => {
     void loadLimits();
@@ -150,7 +182,7 @@ export function ProfileScreen() {
               <Text style={styles.proBadge}>PRO</Text>
               <Text style={styles.proRenewal}>{formatRenewal(limits.month)}</Text>
             </View>
-          ) : (
+          ) : loadingLimits && !limits ? null : (
             <Pressable
               onPress={() => setShowPaywall(true)}
               style={({ pressed }) => [styles.proCta, pressed && styles.pressed]}
@@ -226,7 +258,7 @@ export function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t("profile.dataSection")}</Text>
           <ProfileRow icon="shield" label={t("profile.privacy")} detail={t("profile.privacyDetail")} tone="neutral" onPress={() => router.push("/profile/privacy")} colors={colors} styles={styles} />
-          <ProfileRow icon="info" label={t("profile.terms")} tone="neutral" colors={colors} styles={styles} />
+          <ProfileRow icon="info" label={t("profile.terms")} tone="neutral" onPress={() => router.push("/profile/terms")} colors={colors} styles={styles} />
           <ProfileRow icon="trash" label={t("profile.deleteAccount")} tone="danger" labelTone="danger" colors={colors} styles={styles} />
         </View>
 
@@ -237,7 +269,10 @@ export function ProfileScreen() {
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            {t("profile.footer")}<Text style={styles.footerLink}>{t("profile.terms")}</Text> · <Text style={styles.footerLink}>{t("profile.privacyLink")}</Text>
+            {t("profile.footer")}
+            <Text style={styles.footerLink} onPress={() => router.push("/profile/terms")}>{t("profile.terms")}</Text>
+            {" · "}
+            <Text style={styles.footerLink} onPress={() => router.push("/profile/privacy")}>{t("profile.privacyLink")}</Text>
           </Text>
         </View>
       </ScrollView>
@@ -289,6 +324,39 @@ export function ProfileScreen() {
 
       <PaywallSheet visible={showPaywall} onClose={() => setShowPaywall(false)} />
     </Screen>
+  );
+}
+
+function profileLimitsCacheKey(userId?: string) {
+  return userId ? `${PROFILE_LIMITS_CACHE_PREFIX}:${userId}` : PROFILE_LIMITS_CACHE_PREFIX;
+}
+
+function cacheProfileLimits(key: string, limits: LimitsResponse) {
+  profileLimitsMemoryCache.set(key, limits);
+  void AsyncStorage.setItem(key, JSON.stringify(limits)).catch(() => {});
+}
+
+function parseCachedLimits(raw: string | null): LimitsResponse | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isLimitsResponse(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isLimitsResponse(value: unknown): value is LimitsResponse {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<LimitsResponse>;
+  return (
+    (candidate.plan === "free" || candidate.plan === "pro") &&
+    typeof candidate.month === "string" &&
+    typeof candidate.scans_used === "number" &&
+    typeof candidate.scans_max === "number" &&
+    typeof candidate.scans_remaining === "number" &&
+    typeof candidate.max_pages_per_scan === "number" &&
+    typeof candidate.max_questions_per_scan === "number"
   );
 }
 
@@ -425,10 +493,10 @@ function createStyles(colors: ColorPalette) {
     scroll: { flex: 1, backgroundColor: colors.bg },
     content: { paddingBottom: 110 },
     header: {
-      minHeight: 92,
-      paddingHorizontal: 24,
-      paddingTop: 22,
-      paddingBottom: 14,
+      minHeight: 78,
+      paddingHorizontal: 22,
+      paddingTop: 16,
+      paddingBottom: 10,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
       backgroundColor: colors.bg,
@@ -436,21 +504,21 @@ function createStyles(colors: ColorPalette) {
     title: { color: colors.primary, fontFamily: fonts.displayBold, ...typeStyles.screenTitle, fontWeight: "800", letterSpacing: -0.7 },
     identity: {
       alignItems: "center",
-      paddingHorizontal: 24,
-      paddingTop: 22,
-      paddingBottom: 26,
-      gap: 7
+      paddingHorizontal: 22,
+      paddingTop: 16,
+      paddingBottom: 20,
+      gap: 6
     },
     avatar: {
-      width: 84,
-      height: 84,
-      borderRadius: 42,
+      width: 72,
+      height: 72,
+      borderRadius: 36,
       overflow: "hidden",
       alignItems: "center",
       justifyContent: "center",
-      marginBottom: 8
+      marginBottom: 6
     },
-    avatarText: { color: colors.textOnAccent, fontFamily: fonts.display, ...typeStyles.largeTitle, fontWeight: "600" },
+    avatarText: { color: colors.textOnAccent, fontFamily: fonts.display, ...typeStyles.screenTitle, fontWeight: "600" },
     name: {
       maxWidth: "90%",
       color: colors.text,
@@ -468,13 +536,13 @@ function createStyles(colors: ColorPalette) {
       textAlign: "center"
     },
     proStaticBadge: {
-      marginTop: 10,
+      marginTop: 8,
       flexDirection: "row",
       alignItems: "center",
       gap: 8,
-      paddingHorizontal: 16,
-      paddingVertical: 8,
-      borderRadius: 22,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: 20,
       borderWidth: 1,
       borderColor: colors.pro,
       backgroundColor: colors.proLight,
@@ -486,10 +554,10 @@ function createStyles(colors: ColorPalette) {
       fontWeight: "600",
     },
     proCta: {
-      marginTop: 10,
+      marginTop: 8,
       maxWidth: "86%",
-      minHeight: 44,
-      borderRadius: 22,
+      minHeight: 40,
+      borderRadius: 20,
       borderWidth: 1,
       borderColor: colors.pro,
       backgroundColor: colors.surface2,
