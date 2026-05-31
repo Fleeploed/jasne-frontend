@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 
 import { ActionSheet } from "@/components/ActionSheet";
@@ -7,7 +7,7 @@ import { AppIcon } from "@/components/AppIcon";
 import { TrackingTypeRenderer } from "@/components/tracking/TrackingTypeRenderer";
 import { fonts, type ColorPalette, typeStyles, useColors } from "@/components/ui";
 import { trackingConfigFor, type TrackingTone } from "@/constants/trackings";
-import { useStopTracking } from "@/hooks/useTrackings";
+import { useCheckTracking, useStopTracking } from "@/hooks/useTrackings";
 import { formatLocalizedDate, getLocale, t } from "@/lib/i18n";
 import type { Tracking } from "@/lib/types";
 import { trackEvent } from "@/lib/analytics";
@@ -17,9 +17,11 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const config = trackingConfigFor(tracking.tracking_type);
   const stopTracking = useStopTracking();
+  const checkTracking = useCheckTracking();
   const [sheetVisible, setSheetVisible] = useState(false);
   const status = tracking.current_status ?? "unknown";
   const tone = config?.statusColors[status] ?? "gray";
+  const checking = checkTracking.isPending;
 
   useEffect(() => {
     trackEvent("tracking_card_viewed", {
@@ -66,32 +68,69 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
     );
   }, [stopTracking, tracking]);
 
+  const checkAgain = useCallback(() => {
+    trackEvent("tracking_check_again_tapped", {
+      tracking_type: tracking.tracking_type,
+      current_status: status,
+    });
+    checkTracking.mutate(tracking, {
+      onError: (error) => {
+        Alert.alert(
+          t("tracking.checkAgainError.title"),
+          error instanceof Error ? error.message : t("tracking.checkAgainError.message"),
+        );
+      },
+    });
+  }, [checkTracking, status, tracking]);
+
   return (
     <>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${t("tracking.section.title")}: ${tracking.identifier}`}
-        onPress={open}
-        onLongPress={() => setSheetVisible(true)}
-        delayLongPress={350}
-        style={({ pressed }) => [styles.card, pressed && styles.pressed]}
-      >
-        <View style={styles.iconSlot}>
-          <AppIcon name={config?.icon ?? "bell"} size={22} color={colors.primary} strokeWidth={1.9} />
-        </View>
-        <View style={styles.copy}>
-          <View style={styles.topRow}>
-            <View style={[styles.statusDot, { backgroundColor: dotColor(tone, colors) }]} />
-            <Text style={styles.lastChecked} numberOfLines={1}>
-              {t("tracking.lastCheckedAt", { time: relativeTimestamp(tracking.last_checked_at) })}
-            </Text>
+      <View style={styles.card}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${t("tracking.section.title")}: ${tracking.identifier}`}
+          onPress={open}
+          onLongPress={() => setSheetVisible(true)}
+          delayLongPress={350}
+          style={({ pressed }) => [styles.cardMain, pressed && styles.pressed]}
+        >
+          <View style={styles.iconSlot}>
+            <AppIcon name={config?.icon ?? "bell"} size={22} color={colors.primary} strokeWidth={1.9} />
           </View>
-          <View style={styles.bodyRow}>
-            <TrackingTypeRenderer tracking={tracking} />
-            <AppIcon name="chevron-right" size={18} color={colors.muted3} strokeWidth={2} />
+          <View style={styles.copy}>
+            <View style={styles.topRow}>
+              <View style={[styles.statusDot, { backgroundColor: dotColor(tone, colors) }]} />
+              <Text style={styles.lastChecked} numberOfLines={1}>
+                {t("tracking.lastCheckedAt", { time: relativeTimestamp(tracking.last_checked_at) })}
+              </Text>
+            </View>
+            <View style={styles.bodyRow}>
+              <TrackingTypeRenderer tracking={tracking} />
+              <AppIcon name="chevron-right" size={18} color={colors.muted3} strokeWidth={2} />
+            </View>
           </View>
-        </View>
-      </Pressable>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("tracking.actions.checkAgain")}
+          disabled={checking}
+          onPress={checkAgain}
+          style={({ pressed }) => [
+            styles.checkButton,
+            pressed && !checking && styles.pressed,
+            checking && styles.disabled,
+          ]}
+        >
+          {checking ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <AppIcon name="restore" size={17} color={colors.primary} strokeWidth={2} />
+          )}
+          <Text style={styles.checkButtonText}>
+            {checking ? t("tracking.actions.checking") : t("tracking.actions.checkAgain")}
+          </Text>
+        </Pressable>
+      </View>
       <ActionSheet
         visible={sheetVisible}
         title={tracking.identifier}
@@ -103,6 +142,13 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
             label: t("tracking.actions.open"),
             icon: "doc",
             onPress: open,
+          },
+          {
+            key: "check",
+            label: checking ? t("tracking.actions.checking") : t("tracking.actions.checkAgain"),
+            icon: "restore",
+            disabled: checking,
+            onPress: checkAgain,
           },
           {
             key: "stop",
@@ -155,11 +201,14 @@ function createStyles(colors: ColorPalette) {
       borderWidth: 1,
       borderColor: colors.borderSoft,
       backgroundColor: colors.surface,
+      padding: 12,
+      gap: 10,
+    },
+    cardMain: {
+      minHeight: 58,
       flexDirection: "row",
       alignItems: "center",
       gap: 12,
-      paddingHorizontal: 14,
-      paddingVertical: 13,
     },
     iconSlot: {
       width: 42,
@@ -196,6 +245,26 @@ function createStyles(colors: ColorPalette) {
     },
     pressed: {
       opacity: 0.72,
+    },
+    disabled: {
+      opacity: 0.64,
+    },
+    checkButton: {
+      minHeight: 44,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.borderSoft,
+      backgroundColor: colors.surface2,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      paddingHorizontal: 12,
+    },
+    checkButtonText: {
+      color: colors.primary,
+      fontFamily: fonts.bodySemiBold,
+      ...typeStyles.footnote,
     },
   });
 }
