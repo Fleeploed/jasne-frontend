@@ -68,6 +68,7 @@ export function OampStatusResultBody({
   const createTracking = useCreateTracking();
   const stopTracking = useStopTracking();
   const [confirmStopVisible, setConfirmStopVisible] = useState(false);
+  const [optimisticTracking, setOptimisticTracking] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
   const normalizedIdentifier = normalizeTrackingIdentifier(cisloJednaci);
   const activeTracking = useMemo<Tracking | null>(
@@ -83,16 +84,19 @@ export function OampStatusResultBody({
         : null),
     [createTracking.data, normalizedIdentifier, trackings.data]
   );
-  const isTracking = Boolean(activeTracking);
-  const trackingBusy =
-    subscriptionLoading || trackings.isLoading || createTracking.isPending || stopTracking.isPending;
+  const isTracking = Boolean(activeTracking) || optimisticTracking;
+  const trackingBusy = subscriptionLoading || stopTracking.isPending;
 
   useEffect(() => {
     trackEvent("oamp_result_viewed", { status });
   }, [status]);
 
+  useEffect(() => {
+    if (activeTracking) setOptimisticTracking(false);
+  }, [activeTracking]);
+
   const handleTrackPress = useCallback(() => {
-    if (trackingBusy) return;
+    if (trackingBusy || createTracking.isPending) return;
 
     trackEvent("oamp_track_plate_tapped", { isPro });
 
@@ -107,10 +111,12 @@ export function OampStatusResultBody({
       return;
     }
 
+    setOptimisticTracking(true);
     void createTracking
       .mutateAsync({
         tracking_type: "oamp_status",
         identifier: cisloJednaci,
+        metadata: { current_status: status },
       })
       .then(() => {
         trackEvent("oamp_track_enabled");
@@ -125,15 +131,17 @@ export function OampStatusResultBody({
           setTimeout(() => setToastVisible(false), 3200);
           return;
         }
+        setOptimisticTracking(false);
         Alert.alert(t("oamp.tracking.errorTitle"), trackingErrorMessage(err));
       });
-  }, [cisloJednaci, createTracking, isPro, isTracking, refetchTrackings, trackingBusy]);
+  }, [cisloJednaci, createTracking, isPro, isTracking, refetchTrackings, status, trackingBusy]);
 
   const disableTracking = useCallback(() => {
     if (!activeTracking) return;
     void stopTracking
       .mutateAsync(activeTracking)
       .then(() => {
+        setOptimisticTracking(false);
         createTracking.reset();
         trackEvent("oamp_track_disabled");
       })
