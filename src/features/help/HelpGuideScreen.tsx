@@ -8,8 +8,10 @@ import { AppBar, BackButton, Screen, fonts, typeStyles, useColors, type ColorPal
 import { HelpContentRenderer, HelpEmptyState, HelpErrorState, HelpLoadingState } from "@/features/help/components";
 import { getHelpGuide } from "@/features/help/helpApi";
 import { helpLanguageForLocale, type CtaAction, type HelpGuideDetailResponse, type HelpLanguage } from "@/features/help/types";
+import { getLimits } from "@/features/scans/scansApi";
 import { normalizeLocale, t } from "@/lib/i18n";
 import { useLocale } from "@/lib/LocaleContext";
+import type { UserPlan } from "@/lib/types";
 
 const HELP_TEXT_SCALE = 1;
 
@@ -27,12 +29,24 @@ export function HelpGuideScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [failed, setFailed] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  // Default to "free" so pro_only sections stay gated until we confirm Pro.
+  const [userPlan, setUserPlan] = useState<UserPlan>("free");
 
   useEffect(() => {
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
     };
+  }, []);
+
+  useEffect(() => {
+    getLimits()
+      .then((res) => {
+        if (aliveRef.current) setUserPlan(res.plan);
+      })
+      .catch(() => {
+        // Keep the safe "free" default on failure.
+      });
   }, []);
 
   const load = useCallback(async () => {
@@ -125,7 +139,11 @@ export function HelpGuideScreen() {
               <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.fallbackText}>{fallbackLanguageNote(guide.fallback_language)}</Text>
             </View>
           ) : null}
-          <HelpContentRenderer sections={guide.sections} onAction={handleCtaAction} />
+          <HelpContentRenderer
+            sections={guide.sections}
+            onAction={handleCtaAction}
+            plan={userPlan}
+          />
           {guide.updated_at ? (
             <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.updatedAt}>
               {formatGuideUpdatedAt(guide.updated_at, language)}

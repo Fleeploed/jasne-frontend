@@ -259,7 +259,7 @@ export function ProfileScreen() {
           <Text style={styles.sectionTitle}>{t("profile.dataSection")}</Text>
           <ProfileRow icon="shield" label={t("profile.privacy")} detail={t("profile.privacyDetail")} tone="neutral" onPress={() => router.push("/profile/privacy")} colors={colors} styles={styles} />
           <ProfileRow icon="info" label={t("profile.terms")} tone="neutral" onPress={() => router.push("/profile/terms")} colors={colors} styles={styles} />
-          <ProfileRow icon="trash" label={t("profile.deleteAccount")} tone="danger" labelTone="danger" colors={colors} styles={styles} />
+          <ProfileRow icon="trash" label={t("profile.deleteAccount")} tone="danger" labelTone="danger" onPress={() => router.push("/profile/delete-account")} colors={colors} styles={styles} />
         </View>
 
         <View style={styles.section}>

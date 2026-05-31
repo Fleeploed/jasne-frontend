@@ -14,11 +14,11 @@ export type CtaAction =
   | "open_help_center";
 
 export type Section =
-  | { type: "text"; title?: string | null; body: string }
-  | { type: "steps"; title?: string | null; items: string[] }
-  | { type: "checklist"; title?: string | null; items: string[] }
-  | { type: "warning"; title?: string | null; body: string }
-  | { type: "cta"; title?: string | null; actions: CtaAction[] };
+  | { type: "text"; title?: string | null; body: string; pro_only?: boolean }
+  | { type: "steps"; title?: string | null; items: string[]; pro_only?: boolean }
+  | { type: "checklist"; title?: string | null; items: string[]; pro_only?: boolean }
+  | { type: "warning"; title?: string | null; body: string; pro_only?: boolean }
+  | { type: "cta"; title?: string | null; actions: CtaAction[]; pro_only?: boolean };
 
 export type HelpQuickAction = {
   key: string;
