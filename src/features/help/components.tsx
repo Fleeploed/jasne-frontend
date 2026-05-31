@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, type S
 import { Ionicons } from "@expo/vector-icons";
 
 import { fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
+import { ProBlurSection } from "@/features/help/ProBlurSection";
 import { t } from "@/lib/i18n";
 import type {
   CtaAction,
@@ -13,6 +14,7 @@ import type {
   HelpUsefulAction,
   Section,
 } from "@/features/help/types";
+import type { UserPlan } from "@/lib/types";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 const HELP_TEXT_SCALE = 1;
@@ -274,40 +276,94 @@ export function ChecklistList({ title, items }: { title?: string | null; items: 
   );
 }
 
-export function HelpContentRenderer({ sections, onAction }: {
+export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
   sections: Section[];
   onAction: (action: CtaAction) => void;
+  plan?: UserPlan;
 }) {
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <View style={styles.renderer}>
       {sections.map((section, index) => {
+        const key = `${index}-${section.type}`;
+        let rendered: ReactNode;
         if (section.type === "text") {
-          return (
-            <View key={`${index}-${section.type}`} style={styles.contentCard}>
+          rendered = (
+            <View style={styles.contentCard}>
               {section.title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.eyebrow}>{section.title}</Text> : null}
               <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{section.body}</Text>
             </View>
           );
+        } else if (section.type === "steps") {
+          rendered = <StepsList title={section.title} items={section.items} />;
+        } else if (section.type === "checklist") {
+          rendered = <ChecklistList title={section.title} items={section.items} />;
+        } else if (section.type === "warning") {
+          rendered = <WarningCard title={section.title} body={section.body} />;
+        } else {
+          rendered = (
+            <View style={styles.ctaSection}>
+              {section.title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{section.title}</Text> : null}
+              {section.actions.map((action) => (
+                <CtaActionButton key={action} action={action} onPress={() => onAction(action)} />
+              ))}
+            </View>
+          );
         }
-        if (section.type === "steps") {
-          return <StepsList key={`${index}-${section.type}`} title={section.title} items={section.items} />;
+
+        // warning/cta are always open regardless of the pro_only flag.
+        const gated = section.pro_only && section.type !== "warning" && section.type !== "cta";
+        if (gated && plan === "free") {
+          // Build the section body WITHOUT the outer contentCard wrapper
+          // and WITHOUT a title — ProBlurSection provides both. The body
+          // is what BlurView blurs.
+          let body: ReactNode;
+          if (section.type === "text") {
+            body = (
+              <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
+                {section.body}
+              </Text>
+            );
+          } else if (section.type === "steps") {
+            body = (
+              <View style={styles.listBlock}>
+                {section.items.map((item, i) => (
+                  <View key={`${i}-${item}`} style={styles.stepRow}>
+                    <View style={styles.stepNumber}>
+                      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.stepNumberText}>
+                        {i + 1}
+                      </Text>
+                    </View>
+                    <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
+                      {item}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            );
+          } else {
+            // checklist
+            body = (
+              <View style={styles.listBlock}>
+                {section.items.map((item, i) => (
+                  <View key={`${i}-${item}`} style={styles.checkRow}>
+                    <Ionicons name="checkmark-outline" size={24} color={colors.primary} />
+                    <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
+                      {item}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            );
+          }
+          return (
+            <ProBlurSection key={key} title={section.title ?? null}>
+              {body}
+            </ProBlurSection>
+          );
         }
-        if (section.type === "checklist") {
-          return <ChecklistList key={`${index}-${section.type}`} title={section.title} items={section.items} />;
-        }
-        if (section.type === "warning") {
-          return <WarningCard key={`${index}-${section.type}`} title={section.title} body={section.body} />;
-        }
-        return (
-          <View key={`${index}-${section.type}`} style={styles.ctaSection}>
-            {section.title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{section.title}</Text> : null}
-            {section.actions.map((action) => (
-              <CtaActionButton key={action} action={action} onPress={() => onAction(action)} />
-            ))}
-          </View>
-        );
+        return <View key={key}>{rendered}</View>;
       })}
     </View>
   );

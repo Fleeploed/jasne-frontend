@@ -10,7 +10,7 @@ import { useLocale } from "@/lib/LocaleContext";
 import { checkOampStatus, type OampStatusResponse } from "@/features/help/statusApi";
 
 const HELP_TEXT_SCALE = 1;
-const CASE_TYPES = ["CC", "CD", "DO", "DP", "DV", "MK", "PP", "ST", "TP", "VP", "ZK", "ZM"] as const;
+const CASE_TYPES = ["ZM","ST", "CC", "CD", "DO", "DP", "DV", "MK", "PP", "TP", "VP", "ZK"] as const;
 const CASE_YEARS = Array.from({ length: 8 }, (_, index) => String(new Date().getFullYear() + 1 - index));
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
