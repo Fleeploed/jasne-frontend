@@ -122,6 +122,9 @@ function RootNavigator() {
       <Stack.Screen name="(app)" />
       <Stack.Screen name="scan/new" />
       <Stack.Screen name="scan/[id]" />
+      <Stack.Screen name="paywall" />
+      <Stack.Screen name="oamp/status-result" />
+      <Stack.Screen name="oamp/odvolani-guide" />
     </Stack>
   );
 }

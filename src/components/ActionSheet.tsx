@@ -106,6 +106,8 @@ export function ActionSheet({
             return (
               <Pressable
                 key={action.key}
+                accessibilityRole="button"
+                accessibilityLabel={action.label}
                 disabled={action.disabled}
                 onPress={() => {
                   onClose();
@@ -136,6 +138,8 @@ export function ActionSheet({
 
         {/* Separate Cancel card (iOS-style) */}
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("common.cancel")}
           style={({ pressed }) => [styles.cancel, pressed && styles.pressed]}
           onPress={onClose}
         >
