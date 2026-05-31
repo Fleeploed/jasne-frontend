@@ -5,11 +5,13 @@ import { useScrollToTop } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppIcon } from "@/components/AppIcon";
+import { TrackingCard } from "@/components/tracking/TrackingCard";
 import { Button, EmptyState, ErrorText, Field, Screen, fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { completeDeadline, createManualDeadline, deleteDeadline, listDeadlines, updateManualDeadline } from "@/features/deadlines/deadlinesApi";
 import { getLimits } from "@/features/scans/scansApi";
+import { useTrackings } from "@/hooks/useTrackings";
 import { formatLocalizedDate, getLocale, pluralize, t, type PluralForms } from "@/lib/i18n";
-import type { DeadlineResponse, UserPlan } from "@/lib/types";
+import type { DeadlineResponse, Tracking, UserPlan } from "@/lib/types";
 
 const HORIZONTAL_PADDING = 24;
 
@@ -70,6 +72,8 @@ export function DeadlinesScreen() {
   const colors = useColors();
   const router = useRouter();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const trackingsQuery = useTrackings();
+  const trackings: Tracking[] = trackingsQuery.data ?? [];
   const { width: screenWidth } = useWindowDimensions();
   const cardWidth = Math.max(0, screenWidth - HORIZONTAL_PADDING * 2);
 
@@ -167,7 +171,13 @@ export function DeadlinesScreen() {
     requestAnimationFrame(() => setPendingDelete(item));
   }
 
-  if (loading) {
+  const hasActive = activeSections.length > 0;
+  const hasCompleted = completedCount > 0;
+  const hasTrackings = trackings.length > 0;
+  const hasAnyItems = deadlines.length > 0 || hasTrackings;
+  const trackingError = trackingsQuery.error instanceof Error ? trackingsQuery.error.message : null;
+
+  if (loading || (trackingsQuery.isLoading && !trackingsQuery.data)) {
     return (
       <Screen>
         <View style={styles.center}>
@@ -177,8 +187,12 @@ export function DeadlinesScreen() {
     );
   }
 
-  const hasActive = activeSections.length > 0;
-  const hasCompleted = completedCount > 0;
+  function refreshAll() {
+    setRefreshing(true);
+    void Promise.all([load(), trackingsQuery.refetch()]).finally(() => {
+      if (aliveRef.current) setRefreshing(false);
+    });
+  }
 
   return (
     <Screen>
@@ -201,17 +215,33 @@ export function DeadlinesScreen() {
           </View>
         ) : null}
       </View>
-      <ErrorText message={error} />
+      <ErrorText message={error ?? trackingError} />
       <ScrollView
         ref={scrollRef}
         style={styles.scroll}
-        contentContainerStyle={deadlines.length ? styles.list : styles.emptyList}
-        refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
+        contentContainerStyle={hasAnyItems ? styles.list : styles.emptyList}
+        refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={refreshAll} />}
       >
-        {!deadlines.length ? (
+        {!hasAnyItems ? (
           <EmptyState title={t("deadlines.emptyTitle")} detail={t("deadlines.emptyDetail")} />
         ) : (
           <>
+            {hasTrackings ? (
+              <View style={styles.section}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>{t("tracking.section.title")}</Text>
+                  <View style={styles.sectionCount}>
+                    <Text style={styles.sectionCountText}>{trackings.length}</Text>
+                  </View>
+                </View>
+                <View style={styles.sectionCards}>
+                  {trackings.map((item) => (
+                    <TrackingCard key={item.id} tracking={item} />
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
             {activeSections.map((section, sectionIndex) => (
               <View key={`${section.title}-${sectionIndex}`} style={styles.section}>
                 <View style={styles.sectionHeaderRow}>

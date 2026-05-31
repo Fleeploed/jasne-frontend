@@ -4,6 +4,7 @@ export type DeadlineStatus = "active" | "completed" | "missed";
 export type DeadlineType = "payment" | "action" | "response" | "expiration";
 export type MessageRole = "user" | "assistant";
 export type MessageType = "text" | "image" | "result_card";
+export type TrackingType = "oamp_status" | "tax_status" | "zp_refund" | "court_hearing" | string;
 
 export type AnalysisDeadline = {
   date: string;
@@ -78,6 +79,21 @@ export type DeadlineResponse = {
   status: DeadlineStatus;
   auto_created: boolean;
   created_at: string;
+};
+
+export type Tracking = {
+  id: string;
+  user_id: string;
+  tracking_type: TrackingType;
+  identifier: string;
+  current_status: string | null;
+  metadata: Record<string, unknown>;
+  last_checked_at: string | null;
+  next_check_at: string;
+  is_active: boolean;
+  notification_count: number;
+  created_at: string;
+  updated_at: string;
 };
 
 export type LimitsResponse = {

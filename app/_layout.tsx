@@ -4,6 +4,7 @@ import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
+import { QueryClientProvider } from "@tanstack/react-query";
 
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { AuthScreen } from "@/features/auth/AuthScreen";
@@ -11,7 +12,12 @@ import { ResetPasswordScreen } from "@/features/auth/ResetPasswordScreen";
 import { ThemeProvider, lightColors, useColors } from "@/components/ui";
 import { LocaleProvider } from "@/lib/LocaleContext";
 import { configurePurchases } from "@/lib/purchases";
-import { addNotificationTapListener, syncPushTokenAfterSignIn } from "@/lib/pushNotifications";
+import {
+  addNotificationReceivedListener,
+  addNotificationTapListener,
+  syncPushTokenAfterSignIn,
+} from "@/lib/pushNotifications";
+import { queryClient } from "@/lib/queryClient";
 
 export default function RootLayout() {
   // Initialize RevenueCat once for the whole app session. Safe to call
@@ -42,12 +48,14 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <ThemedStatusBar />
-        <LocaleProvider>
-          <AuthProvider>
-            <RootNavigator />
-          </AuthProvider>
-        </LocaleProvider>
+        <QueryClientProvider client={queryClient}>
+          <ThemedStatusBar />
+          <LocaleProvider>
+            <AuthProvider>
+              <RootNavigator />
+            </AuthProvider>
+          </LocaleProvider>
+        </QueryClientProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );
@@ -82,6 +90,10 @@ function RootNavigator() {
 
   useEffect(() => {
     const subscription = addNotificationTapListener((data) => {
+      if (data.type === "tracking_status_change") {
+        router.push("/deadlines");
+        return;
+      }
       const scanId = typeof data.scan_id === "string" ? data.scan_id : null;
       if (scanId) {
         router.push(`/scan/${scanId}`);
@@ -94,6 +106,11 @@ function RootNavigator() {
 
     return () => subscription.remove();
   }, [router]);
+
+  useEffect(() => {
+    const subscription = addNotificationReceivedListener();
+    return () => subscription.remove();
+  }, []);
 
   if (initializing) {
     return (
