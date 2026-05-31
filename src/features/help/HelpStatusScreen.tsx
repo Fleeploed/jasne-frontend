@@ -8,6 +8,8 @@ import { Screen, fonts, typeStyles, useColors, type ColorPalette } from "@/compo
 import { getLocale, normalizeLocale, t } from "@/lib/i18n";
 import { useLocale } from "@/lib/LocaleContext";
 import { checkOampStatus, type OampStatusResponse } from "@/features/help/statusApi";
+import { OampStatusResultBody } from "@/features/oamp/OampStatusResultScreen";
+import type { OampStatus } from "@/constants/oamp";
 
 const HELP_TEXT_SCALE = 1;
 const CASE_TYPES = ["ZM","ST", "CC", "CD", "DO", "DP", "DV", "MK", "PP", "TP", "VP", "ZK"] as const;
@@ -105,7 +107,6 @@ export function HelpStatusScreen() {
               setError(null);
             }}
             styles={styles}
-            colors={colors}
           />
         )}
       </ScrollView>
@@ -122,6 +123,7 @@ function StatusTopBar({ title, styles, colors }: {
     <View style={styles.topBar}>
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={t("common.back")}
         onPress={() => router.back()}
         style={({ pressed }) => [styles.backLink, pressed && styles.pressed]}
       >
@@ -451,24 +453,33 @@ function StatusResultView({
   result,
   onEdit,
   styles,
-  colors,
 }: {
   caseNumber: string;
   result: OampStatusResponse;
   onEdit: () => void;
   styles: ReturnType<typeof createStyles>;
-  colors: ColorPalette;
 }) {
+  const status = toOampStatus(resolveDisplayStatus(result));
+  const cisloJednaci = result.query || caseNumber;
+
   return (
     <>
       <CaseNumberStrip caseNumber={caseNumber} onEdit={onEdit} styles={styles} />
-      {result.status === "not_found" ? (
-        <NotFoundResult message={statusBody(result)} styles={styles} colors={colors} />
-      ) : (
-        <BackendStatusResult result={result} styles={styles} colors={colors} />
-      )}
+      <OampStatusResultBody
+        cisloJednaci={cisloJednaci}
+        onEdit={onEdit}
+        onRescan={() => router.push("/scan/new")}
+        status={status}
+      />
     </>
   );
+}
+
+function toOampStatus(status: OampStatusResponse["status"]): OampStatus {
+  if (status === "approved") return "schvaleno";
+  if (status === "rejected") return "zamitnuto";
+  if (status === "not_found") return "not_found";
+  return "probiha";
 }
 
 function BackendStatusResult({
@@ -528,7 +539,12 @@ function CaseNumberStrip({ caseNumber, onEdit, styles }: {
         <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.caseStripLabel}>{label}</Text>
         <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} selectable style={styles.caseStripValue}>{caseNumber.trim()}</Text>
       </View>
-      <Pressable accessibilityRole="button" onPress={onEdit} style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t("help.status.edit")}
+        onPress={onEdit}
+        style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}
+      >
         <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.editButtonText}>{t("help.status.edit")}</Text>
       </Pressable>
     </View>
