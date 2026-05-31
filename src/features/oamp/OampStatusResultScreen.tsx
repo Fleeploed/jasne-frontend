@@ -64,6 +64,7 @@ export function OampStatusResultBody({
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { isPro, loading: subscriptionLoading } = useSubscription();
   const trackings = useTrackings("oamp_status");
+  const refetchTrackings = trackings.refetch;
   const createTracking = useCreateTracking();
   const stopTracking = useStopTracking();
   const [confirmStopVisible, setConfirmStopVisible] = useState(false);
@@ -118,9 +119,15 @@ export function OampStatusResultBody({
         setTimeout(() => setToastVisible(false), 3200);
       })
       .catch((err) => {
+        if (isAlreadyActiveTrackingError(err)) {
+          void refetchTrackings();
+          setToastVisible(true);
+          setTimeout(() => setToastVisible(false), 3200);
+          return;
+        }
         Alert.alert(t("oamp.tracking.errorTitle"), trackingErrorMessage(err));
       });
-  }, [cisloJednaci, createTracking, isPro, isTracking, trackingBusy]);
+  }, [cisloJednaci, createTracking, isPro, isTracking, refetchTrackings, trackingBusy]);
 
   const disableTracking = useCallback(() => {
     if (!activeTracking) return;
@@ -190,6 +197,12 @@ function trackingErrorMessage(err: unknown) {
     return t("oamp.tracking.unavailable");
   }
   return message;
+}
+
+function isAlreadyActiveTrackingError(err: unknown) {
+  const maybeStatus = typeof err === "object" && err !== null && "status" in err ? Number(err.status) : null;
+  const message = err instanceof Error ? err.message.toLowerCase() : "";
+  return maybeStatus === 409 || message.includes("already active");
 }
 
 function normalizeTrackingIdentifier(value: string) {
