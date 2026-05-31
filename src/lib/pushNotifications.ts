@@ -2,6 +2,8 @@ import Constants from "expo-constants";
 import { Platform } from "react-native";
 
 import { apiFetch } from "@/lib/api";
+import { TRACKINGS_QUERY_KEY } from "@/features/trackings/queryKeys";
+import { queryClient } from "@/lib/queryClient";
 
 const DEADLINE_CHANNEL_ID = "deadline-reminders";
 
@@ -39,7 +41,36 @@ export function addNotificationTapListener(onTap: (data: NotificationData) => vo
   void getNotificationsModule().then((Notifications) => {
     if (!active || !Notifications) return;
     nativeSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      onTap(response.notification.request.content.data ?? {});
+      const data = response.notification.request.content.data ?? {};
+      handleNotificationData(data);
+      onTap(data);
+    });
+  });
+
+  return {
+    remove: () => {
+      active = false;
+      nativeSubscription?.remove();
+    },
+  };
+}
+
+export function addNotificationReceivedListener(
+  onReceive: (data: NotificationData) => void = () => undefined
+): NotificationSubscription {
+  if (Platform.OS === "web" || !Constants.isDevice) {
+    return { remove: () => undefined };
+  }
+
+  let active = true;
+  let nativeSubscription: NotificationSubscription | null = null;
+
+  void getNotificationsModule().then((Notifications) => {
+    if (!active || !Notifications) return;
+    nativeSubscription = Notifications.addNotificationReceivedListener((notification) => {
+      const data = notification.request.content.data ?? {};
+      handleNotificationData(data);
+      onReceive(data);
     });
   });
 
@@ -123,6 +154,12 @@ function configureNotificationHandler(Notifications: NotificationsModule) {
     }),
   });
   notificationHandlerConfigured = true;
+}
+
+function handleNotificationData(data: NotificationData) {
+  if (data.type === "tracking_status_change") {
+    void queryClient.invalidateQueries({ queryKey: TRACKINGS_QUERY_KEY });
+  }
 }
 
 function getProjectId() {

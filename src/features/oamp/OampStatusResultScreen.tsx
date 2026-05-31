@@ -8,16 +8,17 @@ import { ActionableBlock } from "@/components/oamp/ActionableBlock";
 import { StatusCard } from "@/components/oamp/StatusCard";
 import { fonts, Screen, type ColorPalette, typeStyles, useColors } from "@/components/ui";
 import type { OampStatus } from "@/constants/oamp";
-import { useOampTracking } from "@/hooks/useOampTracking";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useCreateTracking, useStopTracking, useTrackings } from "@/hooks/useTrackings";
 import { trackEvent } from "@/lib/analytics";
 import { t } from "@/lib/i18n";
+import type { Tracking } from "@/lib/types";
 import { useLocale } from "@/lib/LocaleContext";
 
 export function OampStatusResultScreen() {
-  const params = useLocalSearchParams<{ status?: string; cisloJednaci?: string }>();
+  const params = useLocalSearchParams<{ status?: string; cisloJednaci?: string; identifier?: string }>();
   const status = normalizeOampStatus(params.status);
-  const cisloJednaci = String(params.cisloJednaci ?? "");
+  const cisloJednaci = String(params.cisloJednaci ?? params.identifier ?? "");
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   useLocale();
@@ -62,9 +63,28 @@ export function OampStatusResultBody({
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { isPro, loading: subscriptionLoading } = useSubscription();
-  const tracking = useOampTracking(cisloJednaci);
+  const trackings = useTrackings("oamp_status");
+  const createTracking = useCreateTracking();
+  const stopTracking = useStopTracking();
   const [confirmStopVisible, setConfirmStopVisible] = useState(false);
-  const trackingBusy = subscriptionLoading || tracking.loading || tracking.mutating;
+  const [toastVisible, setToastVisible] = useState(false);
+  const normalizedIdentifier = normalizeTrackingIdentifier(cisloJednaci);
+  const activeTracking = useMemo<Tracking | null>(
+    () =>
+      (trackings.data ?? []).find(
+        (item: Tracking) =>
+          item.tracking_type === "oamp_status" &&
+          normalizeTrackingIdentifier(item.identifier) === normalizedIdentifier
+      ) ??
+      (createTracking.data &&
+      normalizeTrackingIdentifier(createTracking.data.identifier) === normalizedIdentifier
+        ? createTracking.data
+        : null),
+    [createTracking.data, normalizedIdentifier, trackings.data]
+  );
+  const isTracking = Boolean(activeTracking);
+  const trackingBusy =
+    subscriptionLoading || trackings.isLoading || createTracking.isPending || stopTracking.isPending;
 
   useEffect(() => {
     trackEvent("oamp_result_viewed", { status });
@@ -81,31 +101,39 @@ export function OampStatusResultBody({
       return;
     }
 
-    if (tracking.isTracking) {
+    if (isTracking) {
       setConfirmStopVisible(true);
       return;
     }
 
-    void tracking
-      .enableTracking()
+    void createTracking
+      .mutateAsync({
+        tracking_type: "oamp_status",
+        identifier: cisloJednaci,
+      })
       .then(() => {
         trackEvent("oamp_track_enabled");
+        trackEvent("tracking_created_from_result_screen", { tracking_type: "oamp_status" });
+        setToastVisible(true);
+        setTimeout(() => setToastVisible(false), 3200);
       })
       .catch((err) => {
         Alert.alert(t("oamp.tracking.errorTitle"), trackingErrorMessage(err));
       });
-  }, [isPro, tracking, trackingBusy]);
+  }, [cisloJednaci, createTracking, isPro, isTracking, trackingBusy]);
 
   const disableTracking = useCallback(() => {
-    void tracking
-      .disableTracking()
+    if (!activeTracking) return;
+    void stopTracking
+      .mutateAsync(activeTracking)
       .then(() => {
+        createTracking.reset();
         trackEvent("oamp_track_disabled");
       })
       .catch((err) => {
         Alert.alert(t("oamp.tracking.errorTitle"), trackingErrorMessage(err));
       });
-  }, [tracking]);
+  }, [activeTracking, createTracking, stopTracking]);
 
   return (
     <>
@@ -113,13 +141,14 @@ export function OampStatusResultBody({
       <ActionableBlock
         cisloJednaci={cisloJednaci}
         isPro={isPro}
-        isTracking={tracking.isTracking}
+        isTracking={isTracking}
         onEditPress={onEdit}
         onRescanPress={onRescan}
         onTrackPress={handleTrackPress}
         status={status}
         trackingBusy={trackingBusy}
       />
+      {toastVisible ? <TrackingCreatedToast /> : null}
       <ActionSheet
         visible={confirmStopVisible}
         title={t("oamp.tracking.stopTitle")}
@@ -139,12 +168,32 @@ export function OampStatusResultBody({
   );
 }
 
+function TrackingCreatedToast() {
+  const colors = useColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t("tracking.createdToast")}
+      onPress={() => router.push("/deadlines")}
+      style={({ pressed }) => [styles.toast, pressed && styles.pressed]}
+    >
+      <Text style={styles.toastTitle}>{t("tracking.createdToast")}</Text>
+      <Text style={styles.toastHint}>{t("tracking.openDeadlinesHint")}</Text>
+    </Pressable>
+  );
+}
+
 function trackingErrorMessage(err: unknown) {
   const message = err instanceof Error ? err.message : "";
   if (!message || message.toLowerCase() === "not found") {
     return t("oamp.tracking.unavailable");
   }
   return message;
+}
+
+function normalizeTrackingIdentifier(value: string) {
+  return value.trim().toUpperCase().replace(/\s+/g, "").replace(/^0AM/, "OAM");
 }
 
 export function normalizeOampStatus(value?: string): OampStatus {
@@ -198,6 +247,25 @@ function createStyles(colors: ColorPalette) {
     },
     errorText: {
       color: colors.danger,
+      fontFamily: fonts.bodyMedium,
+      ...typeStyles.footnote,
+    },
+    toast: {
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.green,
+      backgroundColor: colors.greenLight,
+      paddingHorizontal: 15,
+      paddingVertical: 12,
+      gap: 3,
+    },
+    toastTitle: {
+      color: colors.greenDark,
+      fontFamily: fonts.bodyBold,
+      ...typeStyles.callout,
+    },
+    toastHint: {
+      color: colors.muted2,
       fontFamily: fonts.bodyMedium,
       ...typeStyles.footnote,
     },
