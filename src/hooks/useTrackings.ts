@@ -3,6 +3,7 @@ import { useFocusEffect } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  checkTracking,
   createTracking,
   listTrackings,
   stopTracking,
@@ -54,6 +55,28 @@ export function useStopTracking() {
       context?.previous.forEach(([key, value]) => {
         queryClient.setQueryData(key, value);
       });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: TRACKINGS_QUERY_KEY });
+    },
+  });
+}
+
+export function useCheckTracking() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (tracking: Tracking) => checkTracking(tracking.id),
+    onSuccess: (updated) => {
+      queryClient.setQueriesData<Tracking[]>(
+        { queryKey: TRACKINGS_QUERY_KEY },
+        (current: Tracking[] | undefined) => {
+          if (!current) return current;
+          if (!updated.is_active) {
+            return current.filter((item: Tracking) => item.id !== updated.id);
+          }
+          return current.map((item: Tracking) => (item.id === updated.id ? updated : item));
+        },
+      );
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: TRACKINGS_QUERY_KEY });

@@ -24,3 +24,9 @@ export async function stopTracking(id: string) {
     method: "DELETE",
   });
 }
+
+export async function checkTracking(id: string) {
+  return apiFetch<Tracking>(`/trackings/${encodeURIComponent(id)}/check`, {
+    method: "POST",
+  });
+}
