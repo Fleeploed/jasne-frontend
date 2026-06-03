@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentProps } from "react";
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -82,34 +93,40 @@ export function HelpStatusScreen() {
   return (
     <Screen>
       <StatusTopBar title={t("help.status.title")} styles={styles} colors={colors} />
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.content, showInput ? styles.inputContent : styles.resultContent]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.keyboard}
       >
-        {showInput ? (
-          <StatusInput
-            caseParts={caseParts}
-            setCaseParts={setCaseParts}
-            submitting={submitting}
-            error={error}
-            onSubmit={handleSubmit}
-            styles={styles}
-            colors={colors}
-          />
-        ) : (
-          <StatusResultView
-            caseNumber={submittedQuery}
-            result={result}
-            onEdit={() => {
-              setResult(null);
-              setError(null);
-            }}
-            styles={styles}
-          />
-        )}
-      </ScrollView>
+        <ScrollView
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          style={styles.scroll}
+          contentContainerStyle={[styles.content, showInput ? styles.inputContent : styles.resultContent]}
+        >
+          {showInput ? (
+            <StatusInput
+              caseParts={caseParts}
+              setCaseParts={setCaseParts}
+              submitting={submitting}
+              error={error}
+              onSubmit={handleSubmit}
+              styles={styles}
+              colors={colors}
+            />
+          ) : (
+            <StatusResultView
+              caseNumber={submittedQuery}
+              result={result}
+              onEdit={() => {
+                setResult(null);
+                setError(null);
+              }}
+              styles={styles}
+            />
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
@@ -837,6 +854,7 @@ function createStyles(colors: ColorPalette) {
     },
     topTitle: { flex: 1, marginHorizontal: 6, textAlign: "center", color: colors.text, fontFamily: fonts.bodyBold, ...typeStyles.headline },
     topSpacer: { width: 44 },
+    keyboard: { flex: 1 },
     pressed: { opacity: 0.72 },
     scroll: { flex: 1, backgroundColor: colors.bg },
     content: { paddingHorizontal: 18, paddingBottom: 44 },
