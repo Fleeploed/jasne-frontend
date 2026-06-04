@@ -21,6 +21,12 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
   const [sheetVisible, setSheetVisible] = useState(false);
   const status = tracking.current_status ?? "unknown";
   const tone = config?.statusColors[status] ?? "gray";
+  const statusLabel = localizedStatusLabel(tracking.tracking_type, status);
+  // Background first-check is in flight when the row exists but the probe
+  // hasn't landed yet — show that in the top row only. The action button
+  // keeps its normal "Проверить снова" label so we don't have two
+  // "Проверяем…" labels stacked on the same card.
+  const firstCheckPending = tracking.last_checked_at == null;
   const checking = checkTracking.isPending;
 
   useEffect(() => {
@@ -99,9 +105,15 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
           </View>
           <View style={styles.copy}>
             <View style={styles.topRow}>
-              <View style={[styles.statusDot, { backgroundColor: dotColor(tone, colors) }]} />
+              {firstCheckPending ? (
+                <ActivityIndicator size="small" color={colors.primary} style={styles.topRowSpinner} />
+              ) : (
+                <View style={[styles.statusDot, { backgroundColor: dotColor(tone, colors) }]} />
+              )}
               <Text style={styles.lastChecked} numberOfLines={1}>
-                {t("tracking.lastCheckedAt", { time: relativeTimestamp(tracking.last_checked_at) })}
+                {firstCheckPending
+                  ? t("tracking.actions.checking")
+                  : t("tracking.lastCheckedAt", { time: relativeTimestamp(tracking.last_checked_at) })}
               </Text>
             </View>
             <View style={styles.bodyRow}>
@@ -110,31 +122,33 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
             </View>
           </View>
         </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("tracking.actions.checkAgain")}
-          disabled={checking}
-          onPress={checkAgain}
-          style={({ pressed }) => [
-            styles.checkButton,
-            pressed && !checking && styles.pressed,
-            checking && styles.disabled,
-          ]}
-        >
-          {checking ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : (
-            <AppIcon name="restore" size={17} color={colors.primary} strokeWidth={2} />
-          )}
-          <Text style={styles.checkButtonText}>
-            {checking ? t("tracking.actions.checking") : t("tracking.actions.checkAgain")}
-          </Text>
-        </Pressable>
+        {firstCheckPending ? null : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("tracking.actions.checkAgain")}
+            disabled={checking}
+            onPress={checkAgain}
+            style={({ pressed }) => [
+              styles.checkButton,
+              pressed && !checking && styles.pressed,
+              checking && styles.disabled,
+            ]}
+          >
+            {checking ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <AppIcon name="restore" size={17} color={colors.primary} strokeWidth={2} />
+            )}
+            <Text style={styles.checkButtonText}>
+              {checking ? t("tracking.actions.checking") : t("tracking.actions.checkAgain")}
+            </Text>
+          </Pressable>
+        )}
       </View>
       <ActionSheet
         visible={sheetVisible}
         title={tracking.identifier}
-        subtitle={tracking.current_status ?? undefined}
+        subtitle={statusLabel}
         onClose={() => setSheetVisible(false)}
         actions={[
           {
@@ -143,13 +157,20 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
             icon: "doc",
             onPress: open,
           },
-          {
-            key: "check",
-            label: checking ? t("tracking.actions.checking") : t("tracking.actions.checkAgain"),
-            icon: "restore",
-            disabled: checking,
-            onPress: checkAgain,
-          },
+          // Hide manual recheck while the background first check is still in
+          // flight — kicking off a second probe in parallel would just race
+          // with the one Azure DI is already running.
+          ...(firstCheckPending
+            ? []
+            : [
+                {
+                  key: "check",
+                  label: checking ? t("tracking.actions.checking") : t("tracking.actions.checkAgain"),
+                  icon: "restore" as const,
+                  disabled: checking,
+                  onPress: checkAgain,
+                },
+              ]),
           {
             key: "stop",
             label: t("tracking.actions.stop"),
@@ -162,6 +183,29 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
     </>
   );
 }
+
+/**
+ * Translate a raw tracker status code (e.g. "probiha") into a human-readable
+ * localized label using the existing oamp.status.*.title i18n keys.
+ * Falls back to the raw code so we never crash on a status the backend
+ * introduces before the frontend translation is added.
+ */
+function localizedStatusLabel(trackingType: string, status: string): string | undefined {
+  if (status === "unknown") return undefined;
+  if (trackingType === "oamp_status") {
+    // Treat the *_stopped variants as their base status — the label is the
+    // same, only the polling cadence differs.
+    const base = status === "not_found_stopped" ? "not_found" : status === "error_stopped" ? "error" : status;
+    const key = `oamp.status.${base}.title`;
+    // Status codes come from the backend dynamically — cast to the
+    // translation key type and rely on the runtime fallback when a code
+    // isn't translated yet.
+    const translated = t(key as Parameters<typeof t>[0]);
+    return translated === key ? status : translated;
+  }
+  return status;
+}
+
 
 function dotColor(tone: TrackingTone, colors: ColorPalette) {
   if (tone === "green") return colors.green;
@@ -231,6 +275,12 @@ function createStyles(colors: ColorPalette) {
       width: 8,
       height: 8,
       borderRadius: 4,
+    },
+    topRowSpinner: {
+      // Match the visual footprint of the 8x8 dot so the row doesn't reflow
+      // when the first check lands and the dot replaces the spinner.
+      width: 14,
+      height: 14,
     },
     lastChecked: {
       flex: 1,

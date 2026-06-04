@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "meta": {
     "project": "Jasne frontend",
-    "snapshot_date": "2026-06-03",
+    "snapshot_date": "2026-06-04",
     "repo_path": "/Users/alisheribrayev/Documents/Jasne/jasne-frontend",
     "app_name": "Jasne",
     "current_version": "0.1.0",
@@ -28,9 +28,12 @@
         "Document scanner uses lazy dynamic import + TurboModuleRegistry.get('DocumentScanner') guard so app loads cleanly in Expo Go and only the scanner button errors when pressed."
       ],
       "added_packages_this_session": [
-        "yaml ^2.9.0 (parse bundled terms.yaml for the Terms of Service screen)"
+        "yaml ^2.9.0 (parse bundled terms.yaml for the Terms of Service screen)",
+        "posthog-react-native ^4.46.10 (product analytics events, screen views, app lifecycle)",
+        "@sentry/react-native ~6.10.0 (mobile crash/error reporting)",
+        "expo-application ~6.0.2, expo-device ~7.0.3, expo-localization ~16.0.1 (PostHog/Sentry peer dependencies and app/device metadata)"
       ],
-      "metro_config": "metro.config.js extends the default Expo config to add 'yaml' and 'yml' to resolver.assetExts so .yaml content can be bundled and loaded via expo-asset; src/types/assets.d.ts declares the matching '*.yaml' module so TS imports resolve."
+      "metro_config": "metro.config.js extends the default Expo config to add 'yaml' and 'yml' to resolver.assetExts so .yaml content can be bundled and loaded via expo-asset; src/types/assets.d.ts declares the matching '*.yaml' module so TS imports resolve. It also contains a targeted resolver for @posthog/core/surveys -> @posthog/core/dist/surveys/index.js because Expo SDK 52 Metro has package exports disabled and posthog-react-native imports that subpath."
     },
     "app_identity": {
       "scheme": "jasne",
@@ -68,11 +71,20 @@
       "optional_public_env": [
         "EXPO_PUBLIC_APP_LOCALE",
         "EXPO_PUBLIC_REVENUECAT_IOS_KEY",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY",
+        "EXPO_PUBLIC_POSTHOG_KEY",
+        "EXPO_PUBLIC_POSTHOG_HOST",
+        "EXPO_PUBLIC_SENTRY_DSN",
+        "EXPO_PUBLIC_ANALYTICS_ENV"
+      ],
+      "optional_build_env": [
+        "SENTRY_ORG",
+        "SENTRY_PROJECT",
+        "SENTRY_AUTH_TOKEN"
       ],
       "current_api_base_url_default": "https://jasne-backend.onrender.com",
       "current_api_base_url_default_role": "temporary development/staging fallback; update for release production hosting",
-      "secrets_policy": "STATUS.json intentionally does not store anon key or other secrets."
+      "secrets_policy": "STATUS_FRONTEND.json intentionally does not store anon key, PostHog key, Sentry DSN, Sentry auth token, RevenueCat keys, or other secrets."
     },
     "ios_native": {
       "xcode_required": true,
@@ -352,15 +364,66 @@
           "src/lib/sse.ts",
           "src/lib/supabase.ts",
           "src/lib/types.ts",
+          "src/lib/analytics.ts",
+          "src/lib/AnalyticsRouteTracker.tsx",
           "src/lib/purchases.ts"
         ],
         "responsibilities": [
           "runtime env config",
           "Supabase client",
-          "authorized API fetch — fetch-throw caught and surfaced as common.networkError; 5xx and unknown proxy error envelopes (Railway/fly.io `{ status, code, message }`) collapsed to common.serviceDown so the raw envelope never leaks into UI",
+          "authorized API fetch — fetch-throw caught and surfaced as common.networkError; 5xx and unknown proxy error envelopes (Railway/fly.io `{ status, code, message }`) collapsed to common.serviceDown so the raw envelope never leaks into UI; 403 account_pending_deletion keeps the Supabase session so the restore screen can render",
           "SSE parsing — same offline / service-down normalization applied to streamed error frames",
           "shared API response types",
+          "PostHog product analytics and Sentry crash reporting with sensitive property filtering; document/OCR text, email, file URLs, scan IDs, deadline IDs, tokens, and similar PII-like keys are dropped before capture",
+          "Expo Router screen view tracking plus app_backgrounded/app_foregrounded lifecycle events with sanitized route names",
+          "Sentry user is set only to Supabase UUID; Sentry request payload is removed in beforeSend; session replay and tracing are disabled",
           "RevenueCat configure/identify/clear wrapped with Expo Go + missing-module guards"
+        ]
+      },
+      "analytics": {
+        "files": [
+          "src/lib/analytics.ts",
+          "src/lib/AnalyticsRouteTracker.tsx",
+          "app/_layout.tsx",
+          "src/features/auth/AuthProvider.tsx",
+          "app/(app)/profile/delete-account.tsx"
+        ],
+        "providers": {
+          "posthog": {
+            "enabled_when": "EXPO_PUBLIC_POSTHOG_KEY is set",
+            "host_env": "EXPO_PUBLIC_POSTHOG_HOST",
+            "host_default": "https://eu.i.posthog.com",
+            "person_profiles": "identified_only",
+            "session_replay": false,
+            "events_added": [
+              "$screen via posthog.screen()",
+              "app_backgrounded",
+              "app_foregrounded",
+              "delete_account_reason_selected",
+              "delete_account_reason_cleared",
+              "delete_account_confirmed",
+              "delete_account_scheduled",
+              "delete_account_failed",
+              "account_restore_requested",
+              "account_restored"
+            ],
+            "dashboard_status": "PostHog event export verified on 2026-06-04; delete-account reason appears as property *.properties.reason. Dashboard should use delete_account_scheduled or delete_account_confirmed broken down by reason for churn-intent reasons."
+          },
+          "sentry": {
+            "enabled_when": "EXPO_PUBLIC_SENTRY_DSN is set",
+            "project": "jasne-mobile",
+            "organization": "jasne-6q",
+            "expo_plugin_configured": true,
+            "source_maps": "SENTRY_ORG, SENTRY_PROJECT, and SENTRY_AUTH_TOKEN are configured as build env; token must not be committed or exposed as EXPO_PUBLIC_*",
+            "tracing": false,
+            "session_replay": false,
+            "purpose": "Crash/error reporting only; product behavior stays in PostHog."
+          }
+        },
+        "privacy_rules": [
+          "Do not send document text, OCR text, file URLs, email, scan_id, deadline_id, tokens, or auth payloads as analytics properties.",
+          "Use aggregate dashboards for product decisions; avoid per-user inspection unless needed for support/debugging.",
+          "Privacy policy must mention product analytics and crash reporting before public release."
         ]
       },
       "help": {
@@ -412,6 +475,8 @@
         "features": {
           "privacy_screen": true,
           "privacy_delete_all_invalidates_chat_cache": true,
+          "delete_account_reason_analytics": true,
+          "delete_account_subscription_management_uses_revenuecat_management_url_with_store_fallback": true,
           "terms_of_service_screen": true,
           "terms_localized_yaml": "cs/ru/uk/en stored together in terms.yaml; locale fallback to cs"
         }
@@ -518,6 +583,39 @@
       ],
       "supabase_callback_url": "https://ndestbxknbgaxxdjoqkv.supabase.co/auth/v1/callback"
     },
+    "analytics_and_crash_reporting": {
+      "status": "code wired; keys configured locally; PostHog event export verified",
+      "posthog": {
+        "required_env": [
+          "EXPO_PUBLIC_POSTHOG_KEY",
+          "EXPO_PUBLIC_POSTHOG_HOST"
+        ],
+        "dashboard_recommendations": [
+          "Delete reasons: Trends event delete_account_scheduled breakdown by reason",
+          "Account deletion funnel: /profile -> /profile/delete-account -> delete_account_reason_selected -> delete_account_confirmed -> delete_account_scheduled",
+          "Top screens: Trends event $screen breakdown by $screen_name",
+          "Exit screens: Trends event app_backgrounded breakdown by screen",
+          "User paths: path analysis over $screen"
+        ]
+      },
+      "sentry": {
+        "project": "jasne-mobile",
+        "organization": "jasne-6q",
+        "required_runtime_env": [
+          "EXPO_PUBLIC_SENTRY_DSN"
+        ],
+        "required_build_env_for_source_maps": [
+          "SENTRY_ORG",
+          "SENTRY_PROJECT",
+          "SENTRY_AUTH_TOKEN"
+        ],
+        "notes": [
+          "Sentry auth token is build-only and must not be stored in app.json or exposed with EXPO_PUBLIC_*.",
+          "Sentry plugin org/project are explicit in app.json, so expo config no longer warns about missing organization/project.",
+          "Sentry should be used for crashes/errors; PostHog should be used for product analytics."
+        ]
+      }
+    },
     "apple_sign_in": {
       "enabled_in_app": false,
       "reason": "Requires paid Apple Developer Program and Sign in with Apple capability.",
@@ -556,7 +654,7 @@
   },
 
   "tested_locally": {
-    "date": "2026-05-12",
+    "date": "2026-06-04",
     "environment": "MacBook Air Alisher, Expo SDK 52, iOS Simulator",
     "checks": [
       {
@@ -565,14 +663,24 @@
         "purpose": "TypeScript compile without emit"
       },
       {
-        "command": "npx expo export --platform ios --output-dir /private/tmp/jasne-frontend-export",
+        "command": "npx expo export --platform ios --output-dir /private/tmp/jasne-export-test --clear",
         "status": "passed",
-        "purpose": "Metro bundle smoke test for iOS"
+        "purpose": "Metro bundle smoke test for iOS after PostHog/Sentry installation and @posthog/core/surveys resolver fix"
       },
       {
-        "command": "node -e \"JSON.parse(require('fs').readFileSync('STATUS.json','utf8'))\"",
+        "command": "npx expo export --platform ios --output-dir /private/tmp/jasne-export-softdelete --clear",
         "status": "passed",
-        "purpose": "STATUS.json is valid JSON"
+        "purpose": "Metro bundle smoke test for iOS after account soft-delete restore screen and apiFetch 403 handling"
+      },
+      {
+        "command": "npx expo config --type public",
+        "status": "passed",
+        "purpose": "Expo config loads env and Sentry plugin without missing organization/project warning"
+      },
+      {
+        "command": "node -e \"JSON.parse(require('fs').readFileSync('STATUS_FRONTEND.json','utf8'))\"",
+        "status": "passed",
+        "purpose": "STATUS_FRONTEND.json is valid JSON"
       }
     ],
     "manual_flows_observed": [
@@ -627,7 +735,19 @@
     { "id": "fe-fix-39", "area": "tabs/_layout", "fix": "Tab icon wrapped in fixed-height 26pt slot so Ionicons help-circle aligns on the same baseline as AppIcon docs/calendar/user glyphs" },
     { "id": "fe-fix-40", "area": "HelpEmptyState / HelpErrorState", "fix": "Empty state gained an optional hero icon and a filled primary CTA; HelpErrorState now uses common.offlineTitle / common.offlineDetail / common.tryAgain with alert-circle-outline hero, matching the new offline UX language" },
     { "id": "fe-fix-41", "area": "scansApi", "fix": "Added getScanCounts() helper for new GET /scans/counts endpoint (total + by_category)" },
-    { "id": "fe-fix-42", "area": "HelpStatusScreen", "fix": "KeyboardAvoidingView keeps the ŽOV visa-number input visible while typing; keyboardDismissMode is interactive on iOS" }
+    { "id": "fe-fix-42", "area": "HelpStatusScreen", "fix": "KeyboardAvoidingView keeps the ŽOV visa-number input visible while typing; keyboardDismissMode is interactive on iOS" },
+    { "id": "fe-fix-43", "area": "ProfileScreen", "fix": "Static Jasně Pro subscription-status row no longer renders a chevron/action affordance; Manage Subscription remains the actionable row." },
+    { "id": "fe-fix-44", "area": "purchases", "fix": "Added RevenueCat customerInfo.managementURL based subscription-management helper with iOS App Store and Android Google Play fallbacks; Profile and Delete Account screens use it instead of hardcoded links." },
+    { "id": "fe-fix-45", "area": "delete-account + i18n", "fix": "Delete-account subscription copy clarified: account deletion does not cancel App Store / Google Play subscription; user must cancel subscription separately." },
+    { "id": "fe-fix-46", "area": "analytics", "fix": "Replaced dev-only analytics stub with PostHog + Sentry wrapper, sensitive-property filtering, screen tracking, app lifecycle events, user identify/reset, flush, and captureAppError helpers." },
+    { "id": "fe-fix-47", "area": "delete-account analytics", "fix": "Delete account screen now tracks reason selected/cleared, confirmed, scheduled, and failed events; final churn-intent dashboard should break down delete_account_scheduled or delete_account_confirmed by reason." },
+    { "id": "fe-fix-48", "area": "app/_layout + AuthProvider", "fix": "Analytics initializes at app root, Sentry wraps RootLayout, AnalyticsRouteTracker records route changes, and Supabase session UUID is synced to PostHog/Sentry then reset on signOut." },
+    { "id": "fe-fix-49", "area": "metro.config.js", "fix": "Added targeted resolver for @posthog/core/surveys to fix iOS bundling failure from posthog-react-native under Expo SDK 52 Metro package-exports defaults." },
+    { "id": "fe-fix-50", "area": "app.json", "fix": "Added @sentry/react-native Expo plugin with organization jasne-6q and project jasne-mobile; auth token remains env-only." },
+    { "id": "fe-fix-51", "area": "README + .env.example", "fix": "Documented PostHog/Sentry env variables, Sentry build secrets, Render staging backend URL, and corrected cp .env.example .env setup command." },
+    { "id": "fe-fix-52", "area": "api.ts", "fix": "403 errors with backend detail.code=account_pending_deletion no longer force Supabase signOut; ApiError now carries code so account-restore UX can stay authenticated." },
+    { "id": "fe-fix-53", "area": "app/_layout + AccountDeletionScreen", "fix": "Root auth gate now loads /profile after sign-in, blocks normal app UI when deletion_status=pending, shows the scheduled deletion date, and lets the user restore via POST /profile/restore or sign out." },
+    { "id": "fe-fix-54", "area": "delete-account + i18n", "fix": "Delete-account copy now says deletion is scheduled with a 7-day restore window; CTA changed from permanent deletion to scheduled deletion across cs/ru/uk/en." }
   ],
 
   "known_issues_and_risks": [
@@ -694,6 +814,12 @@
       "area": "Notification bell removed",
       "status": "intentional",
       "detail": "Bell icon dropped from documents AppBar — no in-app notification inbox exists. System push will use OS shade only."
+    },
+    {
+      "area": "Account deletion final purge scheduling",
+      "status": "backend endpoint ready; external scheduler pending",
+      "detail": "Backend now exposes /internal/accounts/purge-deleted, but Render/GitHub cron must call it with X-Cron-Secret after deployment so pending accounts are actually purged after 7 days.",
+      "mitigation": "Add scheduled call to /internal/accounts/purge-deleted alongside the existing notification cron and monitor scanned_profiles/purged/failed in logs."
     }
   ],
 
@@ -703,6 +829,7 @@
       "Unify document/scan list timestamp format (pick relative or absolute).",
       "Verify password reset from iPhone simulator Mail/Gmail or real iPhone development build.",
       "Confirm Supabase Redirect URLs contain the exact reset redirect URL printed by Metro.",
+      "Deploy backend migration 0014_account_soft_delete and add cron call for /internal/accounts/purge-deleted with X-Cron-Secret.",
       "Wire Expo Notifications token registration and save to profile (coordinate with be-todo-4 push scheduler).",
       "Decide done-section treatment (compact rows / 'Vyřízeno (N)' expander / Archive tab) — earlier compact attempt reverted, needs rethink."
     ],

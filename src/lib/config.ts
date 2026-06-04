@@ -1,5 +1,5 @@
 const apiBaseUrl =
-  process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://jasne-backend-production.up.railway.app";
+  process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://jasne-backend.onrender.com";
 
 export const config = {
   apiBaseUrl: apiBaseUrl.replace(/\/$/, ""),

@@ -1,5 +1,6 @@
 export type UserLanguage = "cs" | "en" | "uk" | "ru";
 export type UserPlan = "free" | "pro";
+export type AccountDeletionStatus = "active" | "pending";
 export type DeadlineStatus = "active" | "completed" | "missed";
 export type DeadlineType = "payment" | "action" | "response" | "expiration";
 export type MessageRole = "user" | "assistant";
@@ -107,7 +108,26 @@ export type LimitsResponse = {
   max_questions_per_scan: number;
 };
 
+export type ProfileResponse = {
+  id: string;
+  display_name?: string | null;
+  language: UserLanguage;
+  has_datova_schranka: boolean;
+  plan: UserPlan;
+  subscription_product_id?: string | null;
+  subscription_expires_at?: string | null;
+  subscription_will_renew: boolean;
+  deletion_status: AccountDeletionStatus;
+  deletion_requested_at?: string | null;
+  deletion_scheduled_at?: string | null;
+  deletion_reason?: string | null;
+  deletion_restored_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ApiError = Error & {
   status?: number;
   detail?: string;
+  code?: string;
 };

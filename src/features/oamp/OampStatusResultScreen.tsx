@@ -150,11 +150,14 @@ export function OampStatusResultBody({
       });
   }, [activeTracking, createTracking, stopTracking]);
 
+  const intervalHint = activeTracking ? trackingIntervalHint(activeTracking.created_at) : undefined;
+
   return (
     <>
       <StatusCard status={status} cisloJednaci={cisloJednaci} />
       <ActionableBlock
         cisloJednaci={cisloJednaci}
+        intervalHint={intervalHint}
         isPro={isPro}
         isTracking={isTracking}
         onEditPress={onEdit}
@@ -200,11 +203,22 @@ function TrackingCreatedToast() {
 }
 
 function trackingErrorMessage(err: unknown) {
+  const maybeStatus = typeof err === "object" && err !== null && "status" in err ? Number(err.status) : null;
+  if (maybeStatus === 429) return t("oamp.tracking.limitReached");
   const message = err instanceof Error ? err.message : "";
   if (!message || message.toLowerCase() === "not found") {
     return t("oamp.tracking.unavailable");
   }
   return message;
+}
+
+function trackingIntervalHint(createdAt: string | null | undefined): string {
+  const ageDays = createdAt
+    ? (Date.now() - new Date(createdAt).getTime()) / 86_400_000
+    : 0;
+  if (ageDays < 30) return t("oamp.tracking.intervalWeekly");
+  if (ageDays <= 90) return t("oamp.tracking.interval3Days");
+  return t("oamp.tracking.intervalDaily");
 }
 
 function isAlreadyActiveTrackingError(err: unknown) {

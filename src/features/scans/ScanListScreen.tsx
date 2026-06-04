@@ -1107,20 +1107,21 @@ type ScanRow = { key: string; type: "scan"; scan: ScanListItem; deadline?: Deadl
 type ListRow = SectionRow | ScanRow;
 
 function splitScans(scans: ScanListItem[], deadlines: DeadlineResponse[], pinnedIds: Set<string>) {
+  const todayKey = getTodayDateKey();
   const byScanId = new Map<string, DeadlineResponse>();
   [...deadlines]
-    .filter((deadline) => Boolean(deadline.scan_id))
+    .filter((deadline) => Boolean(deadline.scan_id) && isCurrentDeadline(deadline, todayKey))
     .sort((a, b) => a.due_date.localeCompare(b.due_date))
     .forEach((deadline) => {
       if (deadline.scan_id && !byScanId.has(deadline.scan_id)) byScanId.set(deadline.scan_id, deadline);
     });
 
-  // Treat scans whose analysis extracted a deadline as "with deadlines" even
-  // if no DB deadline row exists yet — matches the chat UI, which shows the
-  // "Create reminder" CTA derived from the same analysis data.
+  // Analysis deadlines can exist before a DB reminder row is created. Only
+  // current dates should promote the scan into the "with deadlines" section.
   scans.forEach((scan) => {
     if (byScanId.has(scan.id)) return;
     if (!scan.has_analysis_deadlines || !scan.next_analysis_deadline_at) return;
+    if (!isCurrentDeadlineDate(scan.next_analysis_deadline_at, todayKey)) return;
     byScanId.set(scan.id, synthesizeAnalysisDeadline(scan));
   });
 
@@ -1165,6 +1166,31 @@ function synthesizeAnalysisDeadline(scan: ScanListItem): DeadlineResponse {
     auto_created: false,
     created_at: scan.created_at,
   };
+}
+
+function isCurrentDeadline(deadline: DeadlineResponse, todayKey = getTodayDateKey()) {
+  return deadline.status === "active" && isCurrentDeadlineDate(deadline.due_date, todayKey);
+}
+
+function isCurrentDeadlineDate(value?: string | null, todayKey = getTodayDateKey()) {
+  const dateKey = getDeadlineDateKey(value);
+  return Boolean(dateKey && dateKey >= todayKey);
+}
+
+function getDeadlineDateKey(value?: string | null) {
+  const dateKey = value?.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+  if (!dateKey) return null;
+
+  const date = new Date(`${dateKey}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : dateKey;
+}
+
+function getTodayDateKey() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function mergeScansById(current: ScanListItem[], next: ScanListItem[]) {

@@ -38,7 +38,15 @@
       ],
       "@react-native-community/datetimepicker",
       "expo-font",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-localization",
+      [
+        "@sentry/react-native",
+        {
+          "organization": "jasne-6q",
+          "project": "jasne-mobile"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

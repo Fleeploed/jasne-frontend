@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { BlurView } from "expo-blur";
@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { fonts, typeStyles, useColors, useThemePreference, type ColorPalette } from "@/components/ui";
 import { t } from "@/lib/i18n";
+import { getProPackages } from "@/lib/purchases";
 
 const HELP_TEXT_SCALE = 1;
 
@@ -46,6 +47,21 @@ export function ProBlurSection({
   const { scheme } = useThemePreference();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [showPaywall, setShowPaywall] = useState(false);
+  const [monthlyPrice, setMonthlyPrice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getProPackages().then((packages) => {
+      if (!cancelled) setMonthlyPrice(packages?.monthly?.price ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const gateButtonLabel = monthlyPrice
+    ? t("help.pro.gateButton", { price: monthlyPrice })
+    : t("help.pro.gateButtonNoPrice");
 
   return (
     <View style={styles.card}>
@@ -84,7 +100,7 @@ export function ProBlurSection({
               style={({ pressed }) => [styles.gateButton, pressed && styles.pressed]}
             >
               <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.gateButtonText}>
-                {t("help.pro.gateButton")}
+                {gateButtonLabel}
               </Text>
             </Pressable>
           </View>

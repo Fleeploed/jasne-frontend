@@ -13,6 +13,7 @@ import { TrackingPlate } from "@/components/oamp/TrackingPlate";
 export function ActionableBlock({
   status,
   cisloJednaci,
+  intervalHint,
   isPro,
   isTracking,
   onEditPress,
@@ -22,6 +23,7 @@ export function ActionableBlock({
 }: {
   status: OampStatus;
   cisloJednaci: string;
+  intervalHint?: string;
   isPro: boolean;
   isTracking: boolean;
   onEditPress: () => void;
@@ -41,7 +43,7 @@ export function ActionableBlock({
           <Ionicons name="hourglass-outline" size={19} color={colors.amberDark} />
           <Text style={styles.hintText}>{t("oamp.status.probiha.waitingTimeHint")}</Text>
         </View>
-        <TrackingPlate isPro={isPro} isTracking={isTracking} loading={trackingBusy} onPress={onTrackPress} />
+        <TrackingPlate intervalHint={intervalHint} isPro={isPro} isTracking={isTracking} loading={trackingBusy} onPress={onTrackPress} />
       </View>
     );
   }
