@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import { fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { t } from "@/lib/i18n";
-
-type Plan = "monthly" | "yearly";
+import {
+  getProPackages,
+  isRevenueCatPurchaseCancelled,
+  purchaseRevenueCatPackage,
+  restoreRevenueCatPurchases,
+  type ProPackages,
+  type RevenueCatPlan,
+} from "@/lib/purchases";
 
 const SHEET_HIDDEN = 900;
 
@@ -16,13 +22,18 @@ export function PaywallSheet({
 }: {
   visible: boolean;
   onClose: () => void;
-  onPurchase?: (plan: Plan) => void;
+  onPurchase?: (plan: RevenueCatPlan) => void;
 }) {
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const sheetY = useRef(new Animated.Value(SHEET_HIDDEN)).current;
-  const [selected, setSelected] = useState<Plan>("yearly");
+  const [selected, setSelected] = useState<RevenueCatPlan>("yearly");
+  const [packages, setPackages] = useState<ProPackages | null>(null);
+  const [loadingPackages, setLoadingPackages] = useState(false);
+  const [purchasePending, setPurchasePending] = useState(false);
+  const [restorePending, setRestorePending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const close = useCallback(() => {
     Animated.timing(sheetY, { toValue: SHEET_HIDDEN, duration: 220, useNativeDriver: true }).start(() => {
@@ -34,6 +45,9 @@ export function PaywallSheet({
   useEffect(() => {
     if (visible) {
       setSelected("yearly");
+      setError(null);
+      setPurchasePending(false);
+      setRestorePending(false);
       sheetY.setValue(SHEET_HIDDEN);
       Animated.spring(sheetY, {
         toValue: 0,
@@ -44,6 +58,33 @@ export function PaywallSheet({
       }).start();
     }
   }, [visible, sheetY]);
+
+  useEffect(() => {
+    if (!visible) return;
+
+    let cancelled = false;
+    setLoadingPackages(true);
+    void getProPackages()
+      .then((nextPackages) => {
+        if (cancelled) return;
+        setPackages(nextPackages);
+        if (nextPackages?.yearly) {
+          setSelected("yearly");
+        } else if (nextPackages?.monthly) {
+          setSelected("monthly");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPackages(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPackages(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -63,7 +104,53 @@ export function PaywallSheet({
     })
   ).current;
 
-  const ctaPrice = selected === "yearly" ? t("paywall.priceYearly") : t("paywall.priceMonthly");
+  const monthlyPackage = packages?.monthly ?? null;
+  const yearlyPackage = packages?.yearly ?? null;
+  const selectedPackage = packages?.[selected] ?? null;
+  const selectedPrice = selectedPackage?.price ?? t("paywall.priceUnavailable");
+  const monthlyPrice = loadingPackages ? t("paywall.priceLoading") : monthlyPackage?.price ?? t("paywall.priceUnavailable");
+  const yearlyPrice = loadingPackages ? t("paywall.priceLoading") : yearlyPackage?.price ?? t("paywall.priceUnavailable");
+  const yearlyMeta = yearlyPackage?.pricePerMonth
+    ? t("paywall.perMonthEquiv", { price: yearlyPackage.pricePerMonth })
+    : t("paywall.perYear");
+  const discount = getAnnualDiscount(monthlyPackage?.rcPackage.product.price ?? null, yearlyPackage?.rcPackage.product.price ?? null);
+  const ctaDisabled = !selectedPackage || loadingPackages || purchasePending || restorePending;
+
+  async function handlePurchase() {
+    if (!selectedPackage || purchasePending) {
+      setError(t("paywall.offerUnavailable"));
+      return;
+    }
+
+    setError(null);
+    setPurchasePending(true);
+    try {
+      await purchaseRevenueCatPackage(selectedPackage.rcPackage);
+      onPurchase?.(selected);
+      close();
+    } catch (purchaseError) {
+      if (!isRevenueCatPurchaseCancelled(purchaseError)) {
+        setError(t("paywall.purchaseError"));
+      }
+    } finally {
+      setPurchasePending(false);
+    }
+  }
+
+  async function handleRestore() {
+    if (restorePending || purchasePending) return;
+    setError(null);
+    setRestorePending(true);
+    try {
+      await restoreRevenueCatPurchases();
+      onPurchase?.(selected);
+      close();
+    } catch {
+      setError(t("paywall.restoreError"));
+    } finally {
+      setRestorePending(false);
+    }
+  }
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={close} statusBarTranslucent>
@@ -103,20 +190,22 @@ export function PaywallSheet({
             <View style={styles.plansRow}>
               <PlanCard
                 label={t("paywall.month")}
-                price="99 Kč"
+                price={monthlyPrice}
                 meta={t("paywall.perMonth")}
                 selected={selected === "monthly"}
                 onPress={() => setSelected("monthly")}
+                disabled={!monthlyPackage || loadingPackages}
                 colors={colors}
                 styles={styles}
               />
               <PlanCard
                 label={t("paywall.year")}
-                price="799 Kč"
-                meta={t("paywall.perMonthEquiv")}
-                discount="−33%"
+                price={yearlyPrice}
+                meta={yearlyMeta}
+                discount={discount}
                 selected={selected === "yearly"}
                 onPress={() => setSelected("yearly")}
+                disabled={!yearlyPackage || loadingPackages}
                 colors={colors}
                 styles={styles}
               />
@@ -156,14 +245,21 @@ export function PaywallSheet({
               />
             </View>
 
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={t("paywall.cta", { price: ctaPrice })}
-              onPress={() => onPurchase?.(selected)}
-              style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
+              accessibilityLabel={t("paywall.cta", { price: selectedPrice })}
+              disabled={ctaDisabled}
+              onPress={() => void handlePurchase()}
+              style={({ pressed }) => [styles.cta, ctaDisabled && styles.ctaDisabled, pressed && !ctaDisabled && styles.ctaPressed]}
             >
-              <AppIcon name="star" size={18} color={colors.textOnAccent} strokeWidth={2.2} />
-              <Text style={styles.ctaText}>{t("paywall.cta", { price: ctaPrice })}</Text>
+              {purchasePending ? (
+                <ActivityIndicator size="small" color={colors.textOnAccent} />
+              ) : (
+                <AppIcon name="star" size={18} color={colors.textOnAccent} strokeWidth={2.2} />
+              )}
+              <Text style={styles.ctaText}>{t("paywall.cta", { price: selectedPrice })}</Text>
             </Pressable>
 
             <Text style={styles.footer}>{t("paywall.footer")}</Text>
@@ -171,9 +267,11 @@ export function PaywallSheet({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t("paywall.restore")}
+              disabled={restorePending || purchasePending}
+              onPress={() => void handleRestore()}
               style={({ pressed }) => [styles.restoreBtn, pressed && styles.pressed]}
             >
-              <Text style={styles.restoreText}>{t("paywall.restore")}</Text>
+              <Text style={styles.restoreText}>{restorePending ? t("paywall.restoring") : t("paywall.restore")}</Text>
             </Pressable>
           </ScrollView>
         </Animated.View>
@@ -189,6 +287,7 @@ function PlanCard({
   discount,
   selected,
   onPress,
+  disabled,
   colors,
   styles,
 }: {
@@ -198,16 +297,19 @@ function PlanCard({
   discount?: string;
   selected: boolean;
   onPress: () => void;
+  disabled?: boolean;
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
 }) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       style={({ pressed }) => [
         styles.planCard,
         selected && styles.planCardSelected,
-        pressed && styles.pressed,
+        disabled && styles.planCardDisabled,
+        pressed && !disabled && styles.pressed,
       ]}
     >
       {discount ? (
@@ -227,6 +329,15 @@ function PlanCard({
       <Text style={styles.planMeta}>{meta}</Text>
     </Pressable>
   );
+}
+
+function getAnnualDiscount(monthlyPrice: number | null, yearlyPrice: number | null) {
+  if (!monthlyPrice || !yearlyPrice) return undefined;
+  const monthlyForYear = monthlyPrice * 12;
+  if (yearlyPrice >= monthlyForYear) return undefined;
+
+  const discount = Math.round((1 - yearlyPrice / monthlyForYear) * 100);
+  return discount > 0 ? `−${discount}%` : undefined;
 }
 
 function FeatureRow({
@@ -343,6 +454,7 @@ function createStyles(colors: ColorPalette) {
       borderColor: colors.pro,
       backgroundColor: isDark ? "rgba(168,147,224,0.14)" : colors.proLight,
     },
+    planCardDisabled: { opacity: 0.56 },
     discountBadge: {
       position: "absolute",
       top: -12,
@@ -431,6 +543,7 @@ function createStyles(colors: ColorPalette) {
       paddingHorizontal: 16,
     },
     ctaPressed: { opacity: 0.85 },
+    ctaDisabled: { opacity: 0.55 },
     ctaStar: { color: colors.textOnAccent, fontSize: 16, fontWeight: "900" },
     ctaText: {
       color: colors.textOnAccent,
@@ -439,6 +552,14 @@ function createStyles(colors: ColorPalette) {
       fontWeight: "700",
       flexShrink: 1,
       textAlign: "center",
+    },
+    errorText: {
+      color: colors.danger,
+      fontFamily: fonts.bodySemiBold,
+      ...typeStyles.footnote,
+      fontWeight: "600",
+      textAlign: "center",
+      marginTop: -2,
     },
 
     footer: {

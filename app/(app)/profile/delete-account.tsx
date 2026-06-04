@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -20,11 +19,11 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import { getLimits } from "@/features/scans/scansApi";
 import { getPendingScanList, removePendingScanById } from "@/features/scans/pendingScanStore";
 import { apiFetch } from "@/lib/api";
+import { captureAppError, flushAnalytics, trackEvent } from "@/lib/analytics";
 import { t } from "@/lib/i18n";
+import { openSubscriptionManagement } from "@/lib/purchases";
 import type { UserPlan } from "@/lib/types";
 
-const SUBSCRIPTION_URL_IOS = "https://apps.apple.com/account/subscriptions";
-const SUBSCRIPTION_URL_ANDROID = "https://play.google.com/store/account/subscriptions";
 const PINNED_SCANS_KEY = "jasne.pinnedScans.v1";
 
 type ReasonKey = "alternative" | "expensive" | "not_working" | "not_needed" | "other";
@@ -70,26 +69,59 @@ export default function DeleteAccountScreen() {
   const canDelete = confirmValue.trim() === confirmWord && !deleting;
 
   const openSubscriptions = useCallback(() => {
-    const url = Platform.OS === "ios" ? SUBSCRIPTION_URL_IOS : SUBSCRIPTION_URL_ANDROID;
-    void Linking.openURL(url);
+    void openSubscriptionManagement();
   }, []);
+
+  const handleReasonPress = useCallback((key: ReasonKey) => {
+    const nextReason = selectedReason === key ? null : key;
+    setSelectedReason(nextReason);
+    trackEvent(nextReason ? "delete_account_reason_selected" : "delete_account_reason_cleared", {
+      reason: key,
+    });
+  }, [selectedReason]);
 
   const handleDelete = useCallback(async () => {
     if (!canDelete) return;
     setDeleting(true);
     setError(null);
+    const reason = selectedReason ?? "none";
+    const planValue = plan ?? "unknown";
     const qs = selectedReason ? `?reason=${encodeURIComponent(selectedReason)}` : "";
+    let deletionScheduled = false;
     try {
+      trackEvent("delete_account_confirmed", { reason, plan: planValue });
+      await Promise.race([
+        flushAnalytics(),
+        new Promise<void>((resolve) => setTimeout(resolve, 750)),
+      ]);
       await apiFetch<void>(`/profile${qs}`, { method: "DELETE" });
+      deletionScheduled = true;
+      trackEvent("delete_account_scheduled", { reason, plan: planValue });
+      await Promise.race([
+        flushAnalytics(),
+        new Promise<void>((resolve) => setTimeout(resolve, 750)),
+      ]);
       await AsyncStorage.removeItem(PINNED_SCANS_KEY).catch(() => {});
       getPendingScanList().forEach((s) => removePendingScanById(s.localId));
       await signOut();
-    } catch {
+    } catch (deleteError) {
+      captureAppError(deleteError, {
+        action: deletionScheduled ? "post_delete_cleanup" : "schedule_delete",
+        phase: deletionScheduled ? "cleanup" : "api",
+        plan: planValue,
+        reason,
+        screen: "delete_account",
+      });
+      trackEvent("delete_account_failed", {
+        phase: deletionScheduled ? "cleanup" : "api",
+        plan: planValue,
+        reason,
+      });
       if (!aliveRef.current) return;
       setError(t("deleteAccount.error.generic"));
       setDeleting(false);
     }
-  }, [canDelete, selectedReason, signOut]);
+  }, [canDelete, plan, selectedReason, signOut]);
 
   const reasonLabels: Record<ReasonKey, string> = useMemo(() => ({
     alternative: t("deleteAccount.reason.alternative"),
@@ -195,6 +227,10 @@ export default function DeleteAccountScreen() {
                     </View>
                   )}
                 </View>
+                <View style={styles.graceNote}>
+                  <Ionicons name="time-outline" size={18} color={colors.primary} />
+                  <Text style={styles.graceNoteText}>{t("deleteAccount.graceNote")}</Text>
+                </View>
               </View>
 
               {/* Block 2 — Reason */}
@@ -208,7 +244,7 @@ export default function DeleteAccountScreen() {
                     return (
                       <Pressable
                         key={key}
-                        onPress={() => setSelectedReason((prev) => (prev === key ? null : key))}
+                        onPress={() => handleReasonPress(key)}
                         style={[
                           styles.pill,
                           selected && {
@@ -388,6 +424,22 @@ function createStyles(colors: ColorPalette) {
     subWarningText: {
       flex: 1,
       color: colors.danger,
+      fontFamily: fonts.body,
+      ...typeStyles.subhead,
+    },
+    graceNote: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 10,
+      padding: 12,
+      borderRadius: 14,
+      backgroundColor: colors.blueSoft,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.blueMid,
+    },
+    graceNoteText: {
+      flex: 1,
+      color: colors.muted,
       fontFamily: fonts.body,
       ...typeStyles.subhead,
     },

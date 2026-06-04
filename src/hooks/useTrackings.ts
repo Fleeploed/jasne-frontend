@@ -17,6 +17,15 @@ export function useTrackings(trackingType?: TrackingType) {
     queryKey: trackingType ? [...TRACKINGS_QUERY_KEY, trackingType] : TRACKINGS_QUERY_KEY,
     queryFn: () => listTrackings(trackingType),
     staleTime: 60_000,
+    // Poll while any tracking is still waiting for its first background check
+    // (backend creates the row with last_checked_at=null and runs the probe
+    // asynchronously). 4s gives near-real-time updates without hammering the
+    // API once the first check has landed.
+    refetchInterval: (q) => {
+      const data = q.state.data as Tracking[] | undefined;
+      const anyPending = data?.some((item) => item.last_checked_at == null);
+      return anyPending ? 4000 : false;
+    },
   });
   const refetch = query.refetch;
 

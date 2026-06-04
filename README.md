@@ -15,7 +15,7 @@ Expo MVP for the Jasne mobile core loop:
 Create `.env` from `.env.example`:
 
 ```sh
-cp .env .env
+cp .env.example .env
 ```
 
 Set:
@@ -23,10 +23,50 @@ Set:
 ```sh
 EXPO_PUBLIC_SUPABASE_URL=<your Supabase project URL>
 EXPO_PUBLIC_SUPABASE_ANON_KEY=<your Supabase anon public key>
-EXPO_PUBLIC_API_BASE_URL=https://jasne-backend-production.up.railway.app
+EXPO_PUBLIC_API_BASE_URL=https://jasne-backend.onrender.com
 ```
 
 Do not use the backend `SUPABASE_SERVICE_KEY` in the app.
+
+`https://jasne-backend.onrender.com` is the current development/staging backend. Release production backend URL must be set later when production hosting is finalized.
+
+Optional analytics and crash reporting:
+
+```sh
+EXPO_PUBLIC_POSTHOG_KEY=<your PostHog project API key>
+EXPO_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
+EXPO_PUBLIC_SENTRY_DSN=<your Sentry mobile DSN>
+EXPO_PUBLIC_ANALYTICS_ENV=development
+```
+
+PostHog tracks product events and funnels; Sentry tracks crashes. Do not send document text, OCR, email, file URLs, scan IDs, or deadline IDs as analytics properties.
+
+For readable Sentry stack traces in production builds, set these as local/EAS build secrets, not as `EXPO_PUBLIC_*` values:
+
+```sh
+SENTRY_ORG=<your Sentry organization slug>
+SENTRY_PROJECT=<your Sentry project slug>
+SENTRY_AUTH_TOKEN=<your Sentry source-map upload token>
+```
+
+## Production Auth Checklist
+
+These settings are configured outside the frontend repo in Supabase and Google Cloud dashboards.
+
+Supabase Auth:
+
+- Email/password: enabled.
+- Custom SMTP: configure Resend SMTP (`smtp.resend.com`, port `587`, username `resend`, password = Resend API key).
+- Redirect URLs:
+  - `jasne://auth/callback`
+  - `jasne://auth/reset-password`
+
+Google OAuth:
+
+- Enable the Supabase Google provider.
+- Configure the Google Cloud OAuth consent screen for Jasne.
+- Create a Google Web OAuth Client ID/Secret and copy it into the Supabase Google provider.
+- Add Google authorized redirect URI: `https://ndestbxknbgaxxdjoqkv.supabase.co/auth/v1/callback`.
 
 ## Run
 

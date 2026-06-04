@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Linking, Modal, PanResponder, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Modal, PanResponder, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -10,6 +10,7 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import { getLimits } from "@/features/scans/scansApi";
 import { formatLocalizedDate, formatLocalizedMonthAfterIn, pluralScans, t } from "@/lib/i18n";
 import { useLocale } from "@/lib/LocaleContext";
+import { openSubscriptionManagement } from "@/lib/purchases";
 import type { LimitsResponse } from "@/lib/types";
 
 const LOCALE_OPTIONS = [
@@ -248,7 +249,7 @@ export function ProfileScreen() {
               icon="restore"
               label={t("profile.manageSubscription")}
               tone="neutral"
-              onPress={() => { void Linking.openURL("https://apps.apple.com/account/subscriptions"); }}
+              onPress={() => { void openSubscriptionManagement(); }}
               colors={colors}
               styles={styles}
             />
@@ -437,7 +438,7 @@ function ProfileRow({
         {detail ? <Text style={styles.rowDetail} numberOfLines={2}>{detail}</Text> : null}
       </View>
       {value ? <Text style={[styles.rowValue, valueTone === "pro" && styles.proValue]} numberOfLines={1}>{value}</Text> : null}
-      <AppIcon name="chevron-right" size={22} color={colors.muted3} />
+      {onPress ? <AppIcon name="chevron-right" size={22} color={colors.muted3} /> : null}
     </Pressable>
   );
 }

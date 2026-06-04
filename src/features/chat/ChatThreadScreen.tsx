@@ -10,6 +10,8 @@ import { AppBar, BackButton, ErrorText, Screen, fonts, typeStyles, useColors, ty
 import { Icon } from "@/components/Icon";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { listMessages, streamChat } from "@/features/chat/chatApi";
+import { extractOampIdentifier } from "@/features/chat/oampIdentifier";
+import { OampTrackingOffer } from "@/features/chat/OampTrackingOffer";
 import {
   type ChatCacheEntry,
   getChatCache,
@@ -542,6 +544,10 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
 
 function ResultCard({ scan, plan, existingDeadlines, onReminderCreated, colors, styles }: { scan: ScanResponse; plan: UserPlan; existingDeadlines: DeadlineResponse[]; onReminderCreated: (created: DeadlineResponse) => void; colors: ColorPalette; styles: ReturnType<typeof createStyles> }) {
   const result = scan.result;
+  // Detect a trackable OAMP číslo jednací in the document's OCR text so we can
+  // offer one-tap automatic status tracking. Hooks inside OampTrackingOffer
+  // only run when an identifier is found (component is conditionally mounted).
+  const oampIdentifier = useMemo(() => extractOampIdentifier(scan.ocr_text ?? ""), [scan.ocr_text]);
   if (!result) return null;
 
   return (
@@ -559,6 +565,7 @@ function ResultCard({ scan, plan, existingDeadlines, onReminderCreated, colors, 
       </View>
       <Text selectable style={styles.resultTitle}>{result.document_type_cz ?? result.document_type_localized ?? formatDocTitle(result.document_type ?? scan.doc_type)}</Text>
       <Text selectable style={styles.resultSummary}>{result.summary}</Text>
+      {oampIdentifier ? <OampTrackingOffer identifier={oampIdentifier} plan={plan} /> : null}
       {result.actions_required.length ? <Text style={styles.sectionTitle}>{t("chat.actions")}</Text> : null}
       {result.actions_required.map((action, index) => (
         <View key={`${action}-${index}`} style={styles.actionRow}>

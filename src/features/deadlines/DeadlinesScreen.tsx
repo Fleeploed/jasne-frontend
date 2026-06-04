@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppIcon } from "@/components/AppIcon";
 import { TrackingCard } from "@/components/tracking/TrackingCard";
 import { Button, EmptyState, ErrorText, Field, Screen, fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
-import { completeDeadline, createManualDeadline, deleteDeadline, listDeadlines, updateManualDeadline } from "@/features/deadlines/deadlinesApi";
+import { completeDeadline, createManualDeadline, deleteDeadline, listDeadlines, reactivateDeadline, updateManualDeadline } from "@/features/deadlines/deadlinesApi";
 import { getLimits } from "@/features/scans/scansApi";
 import { useTrackings } from "@/hooks/useTrackings";
 import { formatLocalizedDate, getLocale, pluralize, t, type PluralForms } from "@/lib/i18n";
@@ -84,9 +84,17 @@ export function DeadlinesScreen() {
   const [editingDeadline, setEditingDeadline] = useState<DeadlineResponse | null>(null);
   const [openDeadlineId, setOpenDeadlineId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [doneExpanded, setDoneExpanded] = useState(true);
+  // Collapsed by default — active items are the focus, completed are
+  // reference. Count badge stays visible so user knows they exist.
+  const [doneExpanded, setDoneExpanded] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<DeadlineResponse | null>(null);
   const [detailDeadline, setDetailDeadline] = useState<DeadlineResponse | null>(null);
+  // Pending action queued while detail modal finishes its iOS dismiss
+  // animation. iOS forbids presenting a second Modal while the first is
+  // still mid-dismiss, so we wait for onDismiss before opening edit/delete.
+  const [pendingAfterDetailDismiss, setPendingAfterDetailDismiss] = useState<
+    { kind: "edit" | "delete"; item: DeadlineResponse } | null
+  >(null);
   const [plan, setPlan] = useState<UserPlan>("free");
   // Long-press popover (iOS context-menu style) — full rect captured via
   // measureInWindow so we can render a lifted preview of the pressed card on
@@ -154,12 +162,53 @@ export function DeadlinesScreen() {
     }
   }
 
+  async function markActive(deadlineId: string) {
+    try {
+      const updated = await reactivateDeadline(deadlineId);
+      setDeadlines((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)).sort(compareDeadlines)
+      );
+    } catch (activeError) {
+      setError(activeError instanceof Error ? activeError.message : t("deadlines.completeError"));
+    }
+  }
+
   async function removeDeadline(deadlineId: string) {
     try {
       await deleteDeadline(deadlineId);
       setDeadlines((current) => current.filter((item) => item.id !== deadlineId));
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : t("deadlines.deleteError"));
+    }
+  }
+
+  function confirmClearCompleted() {
+    const completedItems = deadlines.filter((d) => d.status === "completed");
+    if (completedItems.length === 0) return;
+    Alert.alert(
+      t("deadlines.clearCompletedConfirmTitle"),
+      t("deadlines.clearCompletedConfirmBody", { count: completedItems.length }),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("common.delete"),
+          style: "destructive",
+          onPress: () => void clearAllCompleted(completedItems.map((d) => d.id)),
+        },
+      ],
+      { cancelable: true },
+    );
+  }
+
+  async function clearAllCompleted(ids: string[]) {
+    // Optimistic removal — restore on error.
+    const previous = deadlines;
+    setDeadlines((current) => current.filter((item) => !ids.includes(item.id)));
+    const results = await Promise.allSettled(ids.map((id) => deleteDeadline(id)));
+    const failed = results.filter((r) => r.status === "rejected");
+    if (failed.length > 0) {
+      setDeadlines(previous);
+      setError(t("deadlines.clearCompletedError"));
     }
   }
 
@@ -322,6 +371,14 @@ export function DeadlinesScreen() {
                         </View>
                       </View>
                     ))}
+                    <Pressable
+                      onPress={confirmClearCompleted}
+                      style={({ pressed }) => [styles.clearCompletedButton, pressed && styles.pressed]}
+                      accessibilityRole="button"
+                    >
+                      <AppIcon name="x" size={14} color={colors.danger} strokeWidth={2.2} />
+                      <Text style={styles.clearCompletedText}>{t("deadlines.clearCompleted")}</Text>
+                    </Pressable>
                   </View>
                 ) : null}
               </View>
@@ -359,6 +416,10 @@ export function DeadlinesScreen() {
           setContextMenu(null);
           void markDone(item.id);
         }}
+        onReactivate={(item) => {
+          setContextMenu(null);
+          void markActive(item.id);
+        }}
         onEdit={(item) => {
           setContextMenu(null);
           setEditingDeadline(item);
@@ -374,17 +435,25 @@ export function DeadlinesScreen() {
         colors={colors}
         styles={styles}
         onClose={() => setDetailDeadline(null)}
+        onDismissed={() => {
+          // Detail modal fully dismissed on iOS — safe to open the next one.
+          if (!pendingAfterDetailDismiss) return;
+          const { kind, item } = pendingAfterDetailDismiss;
+          setPendingAfterDetailDismiss(null);
+          if (kind === "edit") setEditingDeadline(item);
+          else confirmDelete(item);
+        }}
         onDone={(item) => {
           setDetailDeadline(null);
           void markDone(item.id);
         }}
         onEdit={(item) => {
+          setPendingAfterDetailDismiss({ kind: "edit", item });
           setDetailDeadline(null);
-          setEditingDeadline(item);
         }}
         onDelete={(item) => {
+          setPendingAfterDetailDismiss({ kind: "delete", item });
           setDetailDeadline(null);
-          confirmDelete(item);
         }}
       />
       <DeleteDeadlineModal
@@ -731,6 +800,7 @@ function ManualDeadlineModal({
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const scrollRef = useRef<ScrollView>(null);
 
   const [title, setTitle] = useState(editing?.title ?? "");
   const [description, setDescription] = useState(editing?.description ?? "");
@@ -805,14 +875,22 @@ function ManualDeadlineModal({
   );
   const availableReminderDays = useMemo(() => reminderDaysForPlan(plan, date), [date, plan]);
 
+  // Reset form state when the modal opens or switches between create/edit.
+  // Intentionally NOT depending on `date` — the user can change date freely
+  // via presets/calendar without their preset choice being reverted.
+  // Date-driven reminder updates are handled by the next effect.
   useEffect(() => {
     if (!open) return;
-    const initialReminderDays = editing ? filterUpcomingReminderDays(date, editing.reminder_days) : reminderDaysForPlan(plan, date);
+    const seedDate = editing ? new Date(`${editing.due_date}T12:00:00Z`) : date;
+    const initialReminderDays = editing
+      ? filterUpcomingReminderDays(seedDate, editing.reminder_days)
+      : reminderDaysForPlan(plan, seedDate);
     setRemindEnabled(editing ? initialReminderDays.length > 0 : true);
     setSelectedReminderDays(initialReminderDays);
     setDateMode(editing ? "custom" : "tomorrow");
     setReminderPickerOpen(false);
-  }, [date, editing, open, plan]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, open, plan]);
 
   useEffect(() => {
     if (!open) return;
@@ -864,6 +942,7 @@ function ManualDeadlineModal({
             <View style={styles.sheetHandle} />
 
             <ScrollView
+              ref={scrollRef}
               contentContainerStyle={styles.sheetScrollContent}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
@@ -959,6 +1038,15 @@ function ManualDeadlineModal({
                   placeholderTextColor={colors.muted3}
                   style={styles.sheetNoteInput}
                   multiline
+                  // The note sits at the bottom of the scrollable form. The
+                  // keyboard would otherwise cover it — scroll the field into
+                  // view on focus and again as the user types more lines.
+                  onFocus={() => {
+                    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+                  }}
+                  onContentSizeChange={() => {
+                    scrollRef.current?.scrollToEnd({ animated: true });
+                  }}
                 />
               </View>
 
@@ -1480,11 +1568,12 @@ function getUrgencyPillText(days: number, colors: ColorPalette) {
 }
 
 function ManualDeadlineDetailModal({
-  item,
+  item: itemProp,
   plan,
   colors,
   styles,
   onClose,
+  onDismissed,
   onDone,
   onEdit,
   onDelete,
@@ -1494,10 +1583,31 @@ function ManualDeadlineDetailModal({
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
   onClose: () => void;
+  onDismissed?: () => void;
   onDone: (item: DeadlineResponse) => void;
   onEdit: (item: DeadlineResponse) => void;
   onDelete: (item: DeadlineResponse) => void;
 }) {
+  // Keep the last item rendered during the Modal's fade-out so the sheet
+  // doesn't blank before iOS finishes dismissing its presented view
+  // controller. Unmounting the subtree mid-animation breaks the handoff and
+  // can leave the next Modal stuck (so its "Редактировать" button looks dead).
+  const [renderedItem, setRenderedItem] = useState<DeadlineResponse | null>(itemProp);
+  useEffect(() => {
+    if (itemProp) setRenderedItem(itemProp);
+  }, [itemProp]);
+
+  // On Android, RN Modal has no onDismiss callback, so fire after a delay
+  // that matches our fade animation (~250ms).
+  useEffect(() => {
+    if (itemProp !== null || !onDismissed) return;
+    if (Platform.OS === "ios") return;
+    const timer = setTimeout(() => onDismissed(), 260);
+    return () => clearTimeout(timer);
+  }, [itemProp, onDismissed]);
+
+  const visible = itemProp !== null;
+  const item = itemProp ?? renderedItem;
   if (!item) return null;
 
   const done = item.status === "completed";
@@ -1522,7 +1632,14 @@ function ManualDeadlineDetailModal({
   };
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+      onDismiss={onDismissed}
+    >
       <View style={styles.manualDetailBackdrop}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <View style={styles.manualDetailCard}>
@@ -1553,31 +1670,37 @@ function ManualDeadlineDetailModal({
 
           <View style={styles.manualDetailDivider} />
 
-          {/* Type is hidden in the manual detail sheet for now. */}
-          {description ? (
-            <ManualDetailField
-              label={t("deadlines.detailDescription")}
-              value={description}
-              styles={styles}
-            />
-          ) : null}
-          <View style={styles.manualDetailSection}>
-            <Text style={styles.manualDetailLabel}>{t("deadlines.detailReminders")}</Text>
-            <View style={styles.manualReminderRow}>
-              <View style={styles.manualReminderIcon}>
-                <AppIcon name="bell" size={16} color={colors.primary} strokeWidth={1.8} />
-              </View>
-              <View style={styles.manualReminderTextBlock}>
-                <Text style={styles.manualDetailValue}>{reminderText}</Text>
-                {reminderMeta ? <Text style={styles.manualDetailMuted}>{reminderMeta}</Text> : null}
+          <ScrollView
+            style={styles.manualDetailScroll}
+            contentContainerStyle={styles.manualDetailScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Type is hidden in the manual detail sheet for now. */}
+            {description ? (
+              <ManualDetailField
+                label={t("deadlines.detailDescription")}
+                value={description}
+                styles={styles}
+              />
+            ) : null}
+            <View style={styles.manualDetailSection}>
+              <Text style={styles.manualDetailLabel}>{t("deadlines.detailReminders")}</Text>
+              <View style={styles.manualReminderRow}>
+                <View style={styles.manualReminderIcon}>
+                  <AppIcon name="bell" size={16} color={colors.primary} strokeWidth={1.8} />
+                </View>
+                <View style={styles.manualReminderTextBlock}>
+                  <Text style={styles.manualDetailValue}>{reminderText}</Text>
+                  {reminderMeta ? <Text style={styles.manualDetailMuted}>{reminderMeta}</Text> : null}
+                </View>
               </View>
             </View>
-          </View>
 
-          <View style={styles.manualAddedRow}>
-            <AppIcon name="sliders" size={14} color={colors.muted3} strokeWidth={1.8} />
-            <Text style={styles.manualDetailMuted}>{t("deadlines.detailAddedManually")}</Text>
-          </View>
+            <View style={styles.manualAddedRow}>
+              <AppIcon name="sliders" size={14} color={colors.muted3} strokeWidth={1.8} />
+              <Text style={styles.manualDetailMuted}>{t("deadlines.detailAddedManually")}</Text>
+            </View>
+          </ScrollView>
 
           <View style={styles.manualDetailActionDivider} />
           <View style={styles.manualDetailActions}>
@@ -1664,6 +1787,7 @@ function DeadlineContextMenu({
   styles,
   onClose,
   onDone,
+  onReactivate,
   onEdit,
   onDelete,
 }: {
@@ -1675,6 +1799,7 @@ function DeadlineContextMenu({
   styles: ReturnType<typeof createStyles>;
   onClose: () => void;
   onDone: (item: DeadlineResponse) => void;
+  onReactivate: (item: DeadlineResponse) => void;
   onEdit: (item: DeadlineResponse) => void;
   onDelete: (item: DeadlineResponse) => void;
 }) {
@@ -1698,7 +1823,8 @@ function DeadlineContextMenu({
   const { item, rect } = anchor;
   const isDone = item.status === "completed";
 
-  const menuHeight = isDone ? 120 : 170;
+  // 3 rows in both states: (markDone | markActive) + edit + delete.
+  const menuHeight = 170;
   // The preview fades in and lifts instead of appearing already shifted with
   // a full shadow. That avoids a one-frame dark seam on long press.
   const cardLift = 6;
@@ -1755,7 +1881,17 @@ function DeadlineContextMenu({
           },
         ]}
       >
-        {!isDone ? (
+        {isDone ? (
+          <MenuRow
+            iconName="bell"
+            iconBg={colors.blueSoft}
+            iconColor={colors.primary}
+            label={t("deadlines.markActive")}
+            labelColor={colors.text}
+            onPress={() => onReactivate(item)}
+            styles={styles}
+          />
+        ) : (
           <MenuRow
             iconName="check"
             iconBg={colors.greenLight}
@@ -1765,7 +1901,7 @@ function DeadlineContextMenu({
             onPress={() => onDone(item)}
             styles={styles}
           />
-        ) : null}
+        )}
         <MenuRow
           iconName="sliders"
           iconBg={colors.blueSoft}
@@ -1859,7 +1995,7 @@ function MenuRow({
   styles,
   last,
 }: {
-  iconName: "check" | "sliders" | "x";
+  iconName: "check" | "sliders" | "x" | "bell";
   iconBg: string;
   iconColor: string;
   label: string;
@@ -2026,6 +2162,24 @@ function createStyles(colors: ColorPalette) {
       fontWeight: "700",
     },
     completedSection: { gap: 12 },
+    clearCompletedButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      alignSelf: "center",
+      marginTop: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      borderRadius: 999,
+      backgroundColor: colors.dangerLight,
+    },
+    clearCompletedText: {
+      color: colors.danger,
+      fontFamily: fonts.bodyBold,
+      ...typeStyles.callout,
+      fontWeight: "600",
+    },
     completedToggle: {
       flexDirection: "row",
       alignItems: "center",
@@ -2293,11 +2447,20 @@ function createStyles(colors: ColorPalette) {
       paddingTop: 14,
       paddingBottom: 18,
       gap: 16,
+      // Cap height so very long descriptions don't push the header (title +
+      // close button) off the top of the screen. Middle content scrolls.
+      maxHeight: "85%",
       shadowColor: "#000",
       shadowOffset: { width: 0, height: 14 },
       shadowOpacity: 0.42,
       shadowRadius: 28,
       elevation: 18,
+    },
+    manualDetailScroll: {
+      flexShrink: 1,
+    },
+    manualDetailScrollContent: {
+      gap: 16,
     },
     manualDetailHandle: {
       width: 42,

@@ -40,6 +40,13 @@ export async function completeDeadline(deadlineId: string) {
   });
 }
 
+export async function reactivateDeadline(deadlineId: string) {
+  return apiFetch<DeadlineResponse>(`/deadlines/${deadlineId}`, {
+    method: "PATCH",
+    json: { status: "active" }
+  });
+}
+
 export async function createManualDeadline(input: {
   title: string;
   description?: string | null;

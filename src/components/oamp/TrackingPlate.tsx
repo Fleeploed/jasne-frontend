@@ -8,12 +8,14 @@ import { t } from "@/lib/i18n";
 
 export function TrackingPlate({
   disabled,
+  intervalHint,
   isPro,
   isTracking,
   loading,
   onPress,
 }: {
   disabled?: boolean;
+  intervalHint?: string;
   isPro: boolean;
   isTracking: boolean;
   loading?: boolean;
@@ -52,7 +54,12 @@ export function TrackingPlate({
           color={isTracking ? colors.greenDark : isPro ? colors.primary : colors.pro}
         />
       </View>
-      <Text numberOfLines={2} style={[styles.label, isTracking && styles.activeLabel]}>{label}</Text>
+      <View style={styles.copy}>
+        <Text numberOfLines={2} style={[styles.label, isTracking && styles.activeLabel]}>{label}</Text>
+        {isTracking && intervalHint ? (
+          <Text style={[styles.intervalHint, { color: colors.muted2 }]}>{intervalHint}</Text>
+        ) : null}
+      </View>
       {loading ? (
         <ActivityIndicator size="small" color={colors.primary} />
       ) : (
@@ -95,14 +102,21 @@ function createStyles(colors: ColorPalette) {
     activeIconSlot: {
       backgroundColor: colors.surface,
     },
-    label: {
+    copy: {
       flex: 1,
+      gap: 2,
+    },
+    label: {
       color: colors.text,
       fontFamily: fonts.bodySemiBold,
       ...typeStyles.callout,
     },
     activeLabel: {
       color: colors.greenDark,
+    },
+    intervalHint: {
+      fontFamily: fonts.bodyMedium,
+      ...typeStyles.caption1,
     },
     pressed: {
       opacity: 0.72,

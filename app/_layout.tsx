@@ -1,16 +1,22 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
 import { QueryClientProvider } from "@tanstack/react-query";
+import * as Sentry from "@sentry/react-native";
 
+import { AccountDeletionScreen } from "@/features/auth/AccountDeletionScreen";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { AuthScreen } from "@/features/auth/AuthScreen";
 import { ResetPasswordScreen } from "@/features/auth/ResetPasswordScreen";
 import { ThemeProvider, lightColors, useColors } from "@/components/ui";
+import { AnalyticsRouteTracker } from "@/lib/AnalyticsRouteTracker";
 import { LocaleProvider } from "@/lib/LocaleContext";
+import { initializeAnalytics } from "@/lib/analytics";
+import { apiFetch } from "@/lib/api";
+import { t } from "@/lib/i18n";
 import { configurePurchases } from "@/lib/purchases";
 import {
   addNotificationReceivedListener,
@@ -18,8 +24,11 @@ import {
   syncPushTokenAfterSignIn,
 } from "@/lib/pushNotifications";
 import { queryClient } from "@/lib/queryClient";
+import type { ProfileResponse } from "@/lib/types";
 
-export default function RootLayout() {
+initializeAnalytics();
+
+function RootLayout() {
   // Initialize RevenueCat once for the whole app session. Safe to call
   // before sign-in — purchases start in anonymous mode and get re-aliased
   // to the Supabase UUID in AuthProvider once a session arrives.
@@ -52,6 +61,7 @@ export default function RootLayout() {
           <ThemedStatusBar />
           <LocaleProvider>
             <AuthProvider>
+              <AnalyticsRouteTracker />
               <RootNavigator />
             </AuthProvider>
           </LocaleProvider>
@@ -60,6 +70,8 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
+
+export default Sentry.wrap(RootLayout);
 
 function ThemedStatusBar() {
   const colors = useColors();
@@ -80,13 +92,6 @@ function RootNavigator() {
   const { initializing, passwordRecovery, session, hasHadAccount } = useAuth();
   const colors = useColors();
   const router = useRouter();
-
-  useEffect(() => {
-    if (!session) return;
-    void syncPushTokenAfterSignIn().catch((error) => {
-      console.warn("Push notification registration failed", error);
-    });
-  }, [session]);
 
   useEffect(() => {
     const subscription = addNotificationTapListener((data) => {
@@ -124,24 +129,99 @@ function RootNavigator() {
   if (!session) return <AuthScreen initialMode={hasHadAccount ? "login" : "register"} />;
 
   return (
-    <Stack
-      screenOptions={{
-        contentStyle: { backgroundColor: colors.bg },
-        headerShadowVisible: false,
-        headerStyle: { backgroundColor: colors.bg },
-        headerShown: false,
-        // iOS-style edge swipe-back, default on but explicit for clarity
-        gestureEnabled: true,
-        gestureDirection: "horizontal",
-        animation: "slide_from_right",
-      }}
-    >
-      <Stack.Screen name="(app)" />
-      <Stack.Screen name="scan/new" />
-      <Stack.Screen name="scan/[id]" />
-      <Stack.Screen name="paywall" />
-      <Stack.Screen name="oamp/status-result" />
-      <Stack.Screen name="oamp/odvolani-guide" />
-    </Stack>
+    <AccountGate userId={session.user.id}>
+      <Stack
+        screenOptions={{
+          contentStyle: { backgroundColor: colors.bg },
+          headerShadowVisible: false,
+          headerStyle: { backgroundColor: colors.bg },
+          headerShown: false,
+          // iOS-style edge swipe-back, default on but explicit for clarity
+          gestureEnabled: true,
+          gestureDirection: "horizontal",
+          animation: "slide_from_right",
+        }}
+      >
+        <Stack.Screen name="(app)" />
+        <Stack.Screen name="scan/new" />
+        <Stack.Screen name="scan/[id]" />
+        <Stack.Screen name="paywall" />
+        <Stack.Screen name="oamp/status-result" />
+        <Stack.Screen name="oamp/odvolani-guide" />
+      </Stack>
+    </AccountGate>
   );
+}
+
+function AccountGate({ userId, children }: { userId: string; children: ReactNode }) {
+  const colors = useColors();
+  const [profile, setProfile] = useState<ProfileResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadProfile = useCallback(() => {
+    let active = true;
+    setLoading(true);
+    setLoadError(null);
+
+    void apiFetch<ProfileResponse>("/profile")
+      .then((nextProfile) => {
+        if (!active) return;
+        setProfile(nextProfile);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setLoadError(error instanceof Error ? error.message : t("accountDeletion.loadErrorBody"));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  useEffect(() => loadProfile(), [loadProfile]);
+
+  useEffect(() => {
+    if (profile?.deletion_status !== "active") return;
+    void syncPushTokenAfterSignIn().catch((error) => {
+      console.warn("Push notification registration failed", error);
+    });
+  }, [profile?.deletion_status, userId]);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (loadError && !profile) {
+    return (
+      <AccountDeletionScreen
+        loadError={loadError}
+        onRetry={() => {
+          loadProfile();
+        }}
+        onRestored={setProfile}
+      />
+    );
+  }
+
+  if (profile?.deletion_status === "pending") {
+    return (
+      <AccountDeletionScreen
+        profile={profile}
+        onRetry={() => {
+          loadProfile();
+        }}
+        onRestored={setProfile}
+      />
+    );
+  }
+
+  return <>{children}</>;
 }
