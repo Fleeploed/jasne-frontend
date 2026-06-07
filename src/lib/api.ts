@@ -1,13 +1,10 @@
 import { supabase } from "@/lib/supabase";
 import { config } from "@/lib/config";
+import { parseErrorBody } from "@/lib/apiErrors";
 import { t } from "@/lib/i18n";
 import type { ApiError } from "@/lib/types";
 
 type JsonBody = Record<string, unknown> | unknown[];
-type NormalizedError = {
-  message: string;
-  code?: string;
-};
 
 async function getAccessToken() {
   const { data, error } = await supabase.auth.getSession();
@@ -57,46 +54,13 @@ function createApiError(status: number, message: string, code?: string): ApiErro
 }
 
 /**
- * Returns a user-facing error message. The backend returns FastAPI shape
- * (`{ "detail": "..." }`); everything else — Railway's "Application not found",
- * a 502 from the proxy, an HTML 503 page — should collapse to a single
- * localized "service is down" message instead of leaking the raw JSON to UI.
+ * Returns a user-facing error message for a non-OK JSON response. Delegates the
+ * shape parsing to the shared `parseErrorBody`; for the JSON API the catch-all
+ * fallback is the same localized "service is down" message.
  */
-async function normalizeErrorBody(response: Response): Promise<NormalizedError> {
-  if (response.status >= 500) return { message: t("common.serviceDown") };
-
-  const text = await response.text().catch(() => "");
-  if (!text) return { message: t("common.serviceDown") };
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return { message: t("common.serviceDown") };
-  }
-
-  if (!isRecord(parsed)) return { message: t("common.serviceDown") };
-
-  if (typeof parsed.detail === "string") return { message: parsed.detail };
-  if (isRecord(parsed.detail) && typeof parsed.detail.message === "string") {
-    return {
-      message: parsed.detail.message,
-      code: typeof parsed.detail.code === "string" ? parsed.detail.code : undefined,
-    };
-  }
-
-  // Platform proxies (Railway, fly.io) return `{ status, code, message, request_id }`
-  // when the upstream app is missing or asleep. From the user's perspective
-  // this is identical to "server down" — never surface the raw envelope.
-  if (parsed.status === "error" && "code" in parsed) {
-    return { message: t("common.serviceDown") };
-  }
-
-  return { message: t("common.serviceDown") };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+async function normalizeErrorBody(response: Response) {
+  const text = response.status >= 500 ? "" : await response.text().catch(() => "");
+  return parseErrorBody(response.status, text, t("common.serviceDown"));
 }
 
 export async function authHeaders() {

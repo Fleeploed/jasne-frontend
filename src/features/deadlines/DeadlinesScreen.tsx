@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, KeyboardAvoidingView, LayoutAnimation, Modal, PanResponder, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, UIManager, useWindowDimensions, Vibration, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useScrollToTop } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,16 +10,12 @@ import { Button, EmptyState, ErrorText, Field, Screen, fonts, typeStyles, useCol
 import { completeDeadline, createManualDeadline, deleteDeadline, listDeadlines, reactivateDeadline, updateManualDeadline } from "@/features/deadlines/deadlinesApi";
 import { getLimits } from "@/features/scans/scansApi";
 import { useTrackings } from "@/hooks/useTrackings";
+import { triggerLongPressHaptic, triggerSelectionHaptic } from "@/lib/haptics";
 import { formatLocalizedDate, getLocale, pluralize, t, type PluralForms } from "@/lib/i18n";
 import type { DeadlineResponse, Tracking, UserPlan } from "@/lib/types";
 
 const HORIZONTAL_PADDING = 24;
 
-// Enable LayoutAnimation on Android (iOS has it by default) — used when the
-// calendar expands/collapses inside the manual-deadline sheet.
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 // Slimmer than iOS Mail defaults — keeps the card title visible during
 // swipe and reduces accidental reveal. Buttons are still 64pt wide so the
 // 44pt iOS minimum tap target is comfortably exceeded.
@@ -27,8 +23,15 @@ const SWIPE_ACTION_WIDTH = 76;       // done (right swipe) — single button
 const SWIPE_LEFT_ACTION_WIDTH = 64;  // edit + delete each (left swipe)
 const SWIPE_LEFT_WIDTH = SWIPE_LEFT_ACTION_WIDTH * 2;
 const SWIPE_RIGHT_WIDTH = SWIPE_ACTION_WIDTH;
-const SWIPE_LEFT_THRESHOLD = SWIPE_LEFT_WIDTH * 0.45;
-const SWIPE_RIGHT_COMMIT_THRESHOLD = SWIPE_RIGHT_WIDTH * 0.75;
+const SWIPE_LEFT_THRESHOLD = SWIPE_LEFT_WIDTH * 0.34;
+const SWIPE_RIGHT_COMMIT_THRESHOLD = SWIPE_RIGHT_WIDTH * 0.86;
+const SWIPE_GESTURE_START_DISTANCE = 6;
+const SWIPE_DIRECTION_LOCK_RATIO = 1.15;
+const SWIPE_ACTION_OVERDRAG = 18;
+const SWIPE_FAST_VELOCITY = 0.45;
+const SHEET_DISMISS_DISTANCE = 96;
+const SHEET_DISMISS_VELOCITY = 0.9;
+const CALENDAR_ANIMATION_MAX_HEIGHT = 430;
 const DEADLINE_ROW_RADIUS = 18;
 const FREE_REMINDER_DAYS = [1] as const;
 const PRO_REMINDER_DAYS = [30, 14, 7, 1] as const;
@@ -314,7 +317,7 @@ export function DeadlinesScreen() {
                       onDelete={confirmDelete}
                       onOpenManual={setDetailDeadline}
                       onLongPress={(d, rect) => {
-                        Vibration.vibrate(12);
+                        triggerLongPressHaptic();
                         setContextMenu({ item: d, rect });
                       }}
                       onOpenScan={(scanId) => router.push(`/scan/${scanId}`)}
@@ -362,7 +365,7 @@ export function DeadlinesScreen() {
                               onDelete={confirmDelete}
                               onOpenManual={setDetailDeadline}
                               onLongPress={(d, rect) => {
-                                Vibration.vibrate(12);
+                                triggerLongPressHaptic();
                                 setContextMenu({ item: d, rect });
                               }}
                               onOpenScan={(scanId) => router.push(`/scan/${scanId}`)}
@@ -505,10 +508,13 @@ function DeadlineCard({
   // Completed cards only allow left-swipe for delete (no edit, no "mark done" right swipe).
   const leftWidth = done ? SWIPE_LEFT_ACTION_WIDTH : SWIPE_LEFT_WIDTH;
   const rightWidth = done ? 0 : SWIPE_RIGHT_WIDTH;
-  const leftThreshold = leftWidth * 0.45;
-  // Deep swipe past 50% of card width = instant delete for all cards.
-  const fullDeleteThreshold = cardWidth * 0.5;
-  const maxLeftDrag = cardWidth;
+  const leftRevealThreshold = done
+    ? Math.max(22, SWIPE_LEFT_ACTION_WIDTH * 0.38)
+    : SWIPE_LEFT_THRESHOLD;
+  const rightRevealThreshold = SWIPE_RIGHT_WIDTH * 0.32;
+  const rightCommitThreshold = SWIPE_RIGHT_COMMIT_THRESHOLD;
+  const minSwipeX = -(leftWidth + SWIPE_ACTION_OVERDRAG);
+  const maxSwipeX = rightWidth + SWIPE_ACTION_OVERDRAG;
   // Ref on the outer wrapper of the row — measureInWindow gives us absolute
   // screen coords for the long-press preview, independent of scroll offset.
   const wrapperRef = useRef<View>(null);
@@ -580,21 +586,6 @@ function DeadlineCard({
     onDelete(item);
   }, [closeRow, item, onDelete, setOpenDeadlineId]);
 
-  // Full-swipe auto-delete for completed cards — card flies off-screen left,
-  // then onDelete() is fired. confirmDelete() in parent skips the modal for
-  // completed items, so this lands directly as a deletion.
-  const commitDeleteSwipe = useCallback(() => {
-    setOpenDeadlineId(null);
-    Animated.timing(translateX, {
-      toValue: -cardWidth,
-      duration: 180,
-      useNativeDriver: true,
-    }).start(() => {
-      currentX.current = -cardWidth;
-      onDelete(item);
-    });
-  }, [cardWidth, item, onDelete, setOpenDeadlineId, translateX]);
-
   const commitDone = useCallback(() => {
     setOpenDeadlineId(null);
     Animated.spring(translateX, {
@@ -612,55 +603,50 @@ function DeadlineCard({
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        // Only claim the responder on clearly horizontal movement (>= 10pt
-        // and dx clearly bigger than dy). Smaller threshold ate tap/scroll
-        // gestures intermittently.
+        // Claim the responder once the user has clearly started a horizontal
+        // swipe, while still leaving mostly-vertical drags to the ScrollView.
         onMoveShouldSetPanResponder: (_, gesture) => {
-          if (Math.abs(gesture.dx) < 10) return false;
-          // Completed cards only respond to left-swipe (rightWidth === 0).
-          if (done && gesture.dx > 0) return false;
-          return Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5;
+          const absDx = Math.abs(gesture.dx);
+          const absDy = Math.abs(gesture.dy);
+          if (absDx < SWIPE_GESTURE_START_DISTANCE) return false;
+          if (absDx < absDy * SWIPE_DIRECTION_LOCK_RATIO) return false;
+          // Completed rows do not have a right-side action, unless the row is
+          // already open to the left and the user is swiping right to close it.
+          if (done && gesture.dx > 0 && currentX.current >= 0) return false;
+          return true;
         },
         onPanResponderGrant: () => {
-          if (openDeadlineId !== item.id) {
-            setOpenDeadlineId(item.id);
-          }
+          thresholdVibrated.current = false;
         },
         onPanResponderMove: (_, gesture) => {
-          const next = Math.max(-maxLeftDrag, Math.min(rightWidth, currentX.current + gesture.dx));
+          const next = Math.max(minSwipeX, Math.min(maxSwipeX, currentX.current + gesture.dx));
           translateX.setValue(next);
-          const rightCommit = rightWidth * 0.75;
 
-          // Vibrate on first crossing of either threshold (reveal OR full-delete).
-          const crossedLeft = next <= -leftThreshold || next <= -fullDeleteThreshold;
-          const crossedRight = rightWidth > 0 && next >= rightCommit;
+          // Haptic on first crossing of the reveal/commit threshold.
+          const crossedLeft = next <= -leftRevealThreshold;
+          const crossedRight = rightWidth > 0 && next >= rightRevealThreshold;
           if ((crossedLeft || crossedRight) && !thresholdVibrated.current) {
             thresholdVibrated.current = true;
-            Vibration.vibrate(8);
+            triggerSelectionHaptic();
           }
-          if (next > -leftThreshold && next < rightCommit) {
+          if (next > -leftRevealThreshold && next < rightRevealThreshold) {
             thresholdVibrated.current = false;
           }
         },
         onPanResponderRelease: (_, gesture) => {
-          const next = Math.max(-maxLeftDrag, Math.min(rightWidth, currentX.current + gesture.dx));
-          const fastLeft = gesture.vx < -0.35;
-          const fastRight = gesture.vx > 0.35;
-          const rightCommit = rightWidth * 0.75;
+          const next = Math.max(minSwipeX, Math.min(maxSwipeX, currentX.current + gesture.dx));
+          const fastLeft = gesture.vx < -SWIPE_FAST_VELOCITY && gesture.dx < -SWIPE_GESTURE_START_DISTANCE;
+          const fastRight = gesture.vx > SWIPE_FAST_VELOCITY && gesture.dx > SWIPE_GESTURE_START_DISTANCE;
 
-          if (rightWidth > 0 && next >= rightCommit) {
+          if (rightWidth > 0 && next >= rightCommitThreshold) {
             commitDone();
             return;
           }
-          if (next <= -fullDeleteThreshold) {
-            commitDeleteSwipe();
-            return;
-          }
-          if (next <= -leftThreshold || fastLeft) {
+          if (next <= -leftRevealThreshold || fastLeft) {
             openLeftActions();
             return;
           }
-          if (rightWidth > 0 && (next >= rightWidth * 0.45 || fastRight)) {
+          if (rightWidth > 0 && (next >= rightRevealThreshold || fastRight)) {
             openRightAction();
             return;
           }
@@ -672,7 +658,7 @@ function DeadlineCard({
           closeRow();
         },
       }),
-    [closeRow, commitDeleteSwipe, commitDone, done, fullDeleteThreshold, item.id, leftThreshold, maxLeftDrag, openDeadlineId, openLeftActions, openRightAction, rightWidth, setOpenDeadlineId, translateX]
+    [closeRow, commitDone, done, item.id, leftRevealThreshold, maxSwipeX, minSwipeX, openLeftActions, openRightAction, rightCommitThreshold, rightRevealThreshold, rightWidth, setOpenDeadlineId, translateX]
   );
 
   const sourceLabel = item.scan_id ? deadlineSourceLabel(item) : null;
@@ -717,12 +703,9 @@ function DeadlineCard({
             </Text>
           </View>
         ) : item.description ? (
-          <View style={styles.metaRow}>
-            <AppIcon name="zap" size={12} color={colors.muted3} strokeWidth={1.7} />
-            <Text style={[styles.metaText, done && styles.descriptionDone]} numberOfLines={1}>
-              {item.description.replace(/\n+/g, " ").trim()}
-            </Text>
-          </View>
+          <Text style={[styles.metaText, styles.metaTextManual, done && styles.descriptionDone]} numberOfLines={1}>
+            {item.description.replace(/\n+/g, " ").trim()}
+          </Text>
         ) : null}
       </View>
     </View>
@@ -801,6 +784,9 @@ function ManualDeadlineModal({
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const scrollRef = useRef<ScrollView>(null);
+  const sheetScrollYRef = useRef(0);
+  const sheetTranslateY = useRef(new Animated.Value(0)).current;
+  const calendarProgress = useRef(new Animated.Value(editing ? 1 : 0)).current;
 
   const [title, setTitle] = useState(editing?.title ?? "");
   const [description, setDescription] = useState(editing?.description ?? "");
@@ -811,6 +797,16 @@ function ManualDeadlineModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reminderPickerOpen, setReminderPickerOpen] = useState(false);
+  const [calendarMounted, setCalendarMounted] = useState(() => Boolean(editing));
+
+  useEffect(() => {
+    if (open) {
+      sheetScrollYRef.current = 0;
+      sheetTranslateY.setValue(0);
+      calendarProgress.setValue(editing ? 1 : 0);
+      setCalendarMounted(Boolean(editing));
+    }
+  }, [calendarProgress, editing, open, sheetTranslateY]);
 
   // Sync form state when the modal opens or switches to a different deadline.
   useEffect(() => {
@@ -910,6 +906,39 @@ function ManualDeadlineModal({
     ? formatManualReminderSubtitle(reminderDaysToSave, date)
     : t("deadlines.reminderOffSubtitle");
 
+  const calendarAnimatedStyle = useMemo(
+    () => ({
+      maxHeight: calendarProgress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, CALENDAR_ANIMATION_MAX_HEIGHT],
+      }),
+      opacity: calendarProgress,
+      transform: [
+        {
+          translateY: calendarProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [-8, 0],
+          }),
+        },
+      ],
+    }),
+    [calendarProgress]
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    const shouldShowCalendar = dateMode === "custom";
+    calendarProgress.stopAnimation();
+    if (shouldShowCalendar) setCalendarMounted(true);
+    Animated.timing(calendarProgress, {
+      toValue: shouldShowCalendar ? 1 : 0,
+      duration: shouldShowCalendar ? 220 : 170,
+      useNativeDriver: false,
+    }).start(({ finished }) => {
+      if (finished && !shouldShowCalendar) setCalendarMounted(false);
+    });
+  }, [calendarProgress, dateMode, open]);
+
   function setReminderEnabled(next: boolean) {
     setRemindEnabled(next);
     if (next) {
@@ -930,6 +959,53 @@ function ManualDeadlineModal({
     });
   }
 
+  const closeWithSheetDrag = useCallback(() => {
+    setReminderPickerOpen(false);
+    Animated.timing(sheetTranslateY, {
+      toValue: 620,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => {
+      sheetTranslateY.setValue(0);
+      onClose();
+    });
+  }, [onClose, sheetTranslateY]);
+
+  const sheetPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponderCapture: (_, gesture) => {
+          if (reminderPickerOpen) return false;
+          if (sheetScrollYRef.current > 0) return false;
+          return gesture.dy > 8 && gesture.dy > Math.abs(gesture.dx) * 1.2;
+        },
+        onPanResponderMove: (_, gesture) => {
+          if (gesture.dy > 0) sheetTranslateY.setValue(gesture.dy);
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (gesture.dy > SHEET_DISMISS_DISTANCE || gesture.vy > SHEET_DISMISS_VELOCITY) {
+            closeWithSheetDrag();
+            return;
+          }
+          Animated.spring(sheetTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 22,
+            stiffness: 260,
+          }).start();
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(sheetTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 22,
+            stiffness: 260,
+          }).start();
+        },
+      }),
+    [closeWithSheetDrag, reminderPickerOpen, sheetTranslateY]
+  );
+
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.sheetBackdrop}>
@@ -937,7 +1013,10 @@ function ManualDeadlineModal({
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
 
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.sheetKAV}>
-          <View style={styles.sheetContainer}>
+          <Animated.View
+            {...sheetPanResponder.panHandlers}
+            style={[styles.sheetContainer, { transform: [{ translateY: sheetTranslateY }] }]}
+          >
             {/* Drag handle */}
             <View style={styles.sheetHandle} />
 
@@ -946,6 +1025,10 @@ function ManualDeadlineModal({
               contentContainerStyle={styles.sheetScrollContent}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
+              onScroll={(event) => {
+                sheetScrollYRef.current = Math.max(0, event.nativeEvent.contentOffset.y);
+              }}
+              scrollEventThrottle={16}
             >
               {/* Header — title + X close */}
               <View style={styles.sheetHeaderRow}>
@@ -981,13 +1064,6 @@ function ManualDeadlineModal({
                 date={date}
                 mode={dateMode}
                 onPick={(nextMode, nextDate) => {
-                  // Animate the calendar opening/closing when switching to/from
-                  // the "custom" preset — the height change would otherwise jump.
-                  if (nextMode !== dateMode && (nextMode === "custom" || dateMode === "custom")) {
-                    LayoutAnimation.configureNext(
-                      LayoutAnimation.create(240, "easeInEaseOut", "opacity")
-                    );
-                  }
                   setDateMode(nextMode);
                   if (nextDate) setDate(nextDate);
                 }}
@@ -996,10 +1072,15 @@ function ManualDeadlineModal({
               />
 
               {/* Calendar — only shown when "Дата" preset is chosen */}
-              {dateMode === "custom" ? (
-                <View style={styles.sheetCalendarWrap}>
-                  <CalendarPicker value={date} onChange={setDate} colors={colors} styles={styles} />
-                </View>
+              {calendarMounted ? (
+                <Animated.View
+                  pointerEvents={dateMode === "custom" ? "auto" : "none"}
+                  style={[styles.sheetCalendarAnimated, calendarAnimatedStyle]}
+                >
+                  <View style={styles.sheetCalendarWrap}>
+                    <CalendarPicker value={date} onChange={setDate} colors={colors} styles={styles} />
+                  </View>
+                </Animated.View>
               ) : null}
 
               {/* Reminder toggle */}
@@ -1015,18 +1096,25 @@ function ManualDeadlineModal({
                     <AppIcon name="bell" size={18} color={remindEnabled ? colors.primary : colors.muted2} strokeWidth={1.8} />
                   </View>
                   <View style={styles.reminderTextBlock}>
-                    <Text style={styles.reminderTitle}>{t("deadlines.reminderTitle")}</Text>
-                    <Text style={styles.reminderSubtitle}>{reminderSubtitle}</Text>
+                    <Text style={styles.reminderTitle} numberOfLines={1}>
+                      {t("deadlines.reminderTitle")}
+                    </Text>
+                    <Text style={styles.reminderSubtitle} numberOfLines={2}>
+                      {reminderSubtitle}
+                    </Text>
                   </View>
                   {remindEnabled ? <AppIcon name="chevron-right" size={20} color={colors.muted3} strokeWidth={2} /> : null}
                 </Pressable>
-                <Switch
-                  value={remindEnabled}
-                  onValueChange={setReminderEnabled}
-                  trackColor={{ false: colors.surface3, true: colors.primary }}
-                  thumbColor={colors.textOnAccent}
-                  ios_backgroundColor={colors.surface3}
-                />
+                <View style={styles.reminderSwitchWrap}>
+                  <Switch
+                    value={remindEnabled}
+                    onValueChange={setReminderEnabled}
+                    trackColor={{ false: colors.surface3, true: colors.primary }}
+                    thumbColor={colors.textOnAccent}
+                    ios_backgroundColor={colors.surface3}
+                    style={styles.reminderSwitch}
+                  />
+                </View>
               </View>
 
               {/* Optional note field at the bottom */}
@@ -1075,7 +1163,7 @@ function ManualDeadlineModal({
                 )}
               </Pressable>
             </View>
-          </View>
+          </Animated.View>
         </KeyboardAvoidingView>
         <Modal
           visible={reminderPickerOpen && open}
@@ -1310,6 +1398,15 @@ function CalendarPicker({ value, onChange, colors, styles }: {
   const [view, setView] = useState(new Date(value.getFullYear(), value.getMonth(), 1));
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
 
+  useEffect(() => {
+    setView((current) => {
+      if (current.getFullYear() === value.getFullYear() && current.getMonth() === value.getMonth()) {
+        return current;
+      }
+      return new Date(value.getFullYear(), value.getMonth(), 1);
+    });
+  }, [value]);
+
   const year = view.getFullYear();
   const month = view.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -1319,6 +1416,10 @@ function CalendarPicker({ value, onChange, colors, styles }: {
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1)
   ];
   while (cells.length % 7) cells.push(null);
+  const weeks: (number | null)[][] = [];
+  for (let i = 0; i < cells.length; i += 7) {
+    weeks.push(cells.slice(i, i + 7));
+  }
 
   const monthLabel = formatLocalizedDate(view, { month: "long", year: "numeric" });
   const weekdays = useMemo(() => {
@@ -1360,33 +1461,38 @@ function CalendarPicker({ value, onChange, colors, styles }: {
         ))}
       </View>
       <View style={styles.calGrid}>
-        {cells.map((day, i) => {
-          if (day === null) return <View key={i} style={styles.calCell} />;
-          const cellDate = new Date(year, month, day);
-          const past = cellDate < today;
-          const selected = sameDay(cellDate, value);
-          const isToday = sameDay(cellDate, today);
-          return (
-            <Pressable
-              key={i}
-              disabled={past}
-              onPress={() => pick(day)}
-              style={({ pressed }) => [styles.calCell, pressed && !past && styles.pressed]}
-            >
-              <View style={[
-                styles.calDay,
-                selected && styles.calDaySelected,
-                isToday && !selected && styles.calDayToday
-              ]}>
-                <Text style={[
-                  styles.calDayText,
-                  past && styles.calDayPast,
-                  selected && styles.calDayTextSelected
-                ]}>{day}</Text>
-              </View>
-            </Pressable>
-          );
-        })}
+        {weeks.map((week, weekIndex) => (
+          <View key={weekIndex} style={styles.calGridRow}>
+            {week.map((day, dayIndex) => {
+              const key = `${weekIndex}-${dayIndex}`;
+              if (day === null) return <View key={key} style={styles.calCell} />;
+              const cellDate = new Date(year, month, day);
+              const past = cellDate < today;
+              const selected = sameDay(cellDate, value);
+              const isToday = sameDay(cellDate, today);
+              return (
+                <Pressable
+                  key={key}
+                  disabled={past}
+                  onPress={() => pick(day)}
+                  style={({ pressed }) => [styles.calCell, pressed && !past && styles.pressed]}
+                >
+                  <View style={[
+                    styles.calDay,
+                    selected && styles.calDaySelected,
+                    isToday && !selected && styles.calDayToday
+                  ]}>
+                    <Text style={[
+                      styles.calDayText,
+                      past && styles.calDayPast,
+                      selected && styles.calDayTextSelected
+                    ]}>{day}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        ))}
       </View>
     </View>
   );
@@ -1593,9 +1699,20 @@ function ManualDeadlineDetailModal({
   // controller. Unmounting the subtree mid-animation breaks the handoff and
   // can leave the next Modal stuck (so its "Редактировать" button looks dead).
   const [renderedItem, setRenderedItem] = useState<DeadlineResponse | null>(itemProp);
+  const detailScrollYRef = useRef(0);
+  const detailTranslateY = useRef(new Animated.Value(0)).current;
+  const visible = itemProp !== null;
+
   useEffect(() => {
     if (itemProp) setRenderedItem(itemProp);
   }, [itemProp]);
+
+  useEffect(() => {
+    if (visible) {
+      detailScrollYRef.current = 0;
+      detailTranslateY.setValue(0);
+    }
+  }, [detailTranslateY, visible]);
 
   // On Android, RN Modal has no onDismiss callback, so fire after a delay
   // that matches our fade animation (~250ms).
@@ -1606,7 +1723,51 @@ function ManualDeadlineDetailModal({
     return () => clearTimeout(timer);
   }, [itemProp, onDismissed]);
 
-  const visible = itemProp !== null;
+  const closeWithDetailDrag = useCallback(() => {
+    Animated.timing(detailTranslateY, {
+      toValue: 520,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => {
+      detailTranslateY.setValue(0);
+      onClose();
+    });
+  }, [detailTranslateY, onClose]);
+
+  const detailPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponderCapture: (_, gesture) => {
+          if (detailScrollYRef.current > 0) return false;
+          return gesture.dy > 8 && gesture.dy > Math.abs(gesture.dx) * 1.2;
+        },
+        onPanResponderMove: (_, gesture) => {
+          if (gesture.dy > 0) detailTranslateY.setValue(gesture.dy);
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (gesture.dy > SHEET_DISMISS_DISTANCE || gesture.vy > SHEET_DISMISS_VELOCITY) {
+            closeWithDetailDrag();
+            return;
+          }
+          Animated.spring(detailTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 22,
+            stiffness: 260,
+          }).start();
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(detailTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 22,
+            stiffness: 260,
+          }).start();
+        },
+      }),
+    [closeWithDetailDrag, detailTranslateY]
+  );
+
   const item = itemProp ?? renderedItem;
   if (!item) return null;
 
@@ -1642,7 +1803,10 @@ function ManualDeadlineDetailModal({
     >
       <View style={styles.manualDetailBackdrop}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={styles.manualDetailCard}>
+        <Animated.View
+          {...detailPanResponder.panHandlers}
+          style={[styles.manualDetailCard, { transform: [{ translateY: detailTranslateY }] }]}
+        >
           <View style={styles.manualDetailHandle} />
           <View style={styles.manualDetailTop}>
             <View style={[styles.manualDetailDateTile, { backgroundColor: tile.bg, borderColor: tile.fg }]}>
@@ -1674,6 +1838,10 @@ function ManualDeadlineDetailModal({
             style={styles.manualDetailScroll}
             contentContainerStyle={styles.manualDetailScrollContent}
             showsVerticalScrollIndicator={false}
+            onScroll={(event) => {
+              detailScrollYRef.current = Math.max(0, event.nativeEvent.contentOffset.y);
+            }}
+            scrollEventThrottle={16}
           >
             {/* Type is hidden in the manual detail sheet for now. */}
             {description ? (
@@ -1728,7 +1896,7 @@ function ManualDeadlineDetailModal({
               </Pressable>
             </View>
           </View>
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -1973,12 +2141,9 @@ function DeadlineRowVisual({
             </Text>
           </View>
         ) : item.description ? (
-          <View style={styles.metaRow}>
-            <AppIcon name="zap" size={12} color={colors.muted3} strokeWidth={1.7} />
-            <Text style={[styles.metaText, done && styles.descriptionDone]} numberOfLines={1}>
-              {item.description.replace(/\n+/g, " ").trim()}
-            </Text>
-          </View>
+          <Text style={[styles.metaText, styles.metaTextManual, done && styles.descriptionDone]} numberOfLines={1}>
+            {item.description.replace(/\n+/g, " ").trim()}
+          </Text>
         ) : null}
       </View>
     </View>
@@ -2090,7 +2255,7 @@ function createStyles(colors: ColorPalette) {
       alignItems: "center",
     },
     screenTitle: {
-      color: colors.primary,
+      color: colors.primaryDark,
       fontFamily: fonts.displayBold,
       ...typeStyles.largeScreenTitle,
       fontWeight: "800",
@@ -2368,9 +2533,8 @@ function createStyles(colors: ColorPalette) {
       letterSpacing: -0.1,
     },
     relativeText: {
-      fontFamily: fonts.bodyBold,
+      fontFamily: fonts.body,
       ...typeStyles.rowMeta,
-      fontWeight: "700",
       letterSpacing: -0.1,
     },
     title: {
@@ -2390,6 +2554,7 @@ function createStyles(colors: ColorPalette) {
       ...typeStyles.rowMeta,
       minWidth: 0,
     },
+    metaTextManual: { marginTop: 2 },
     descriptionDone: { color: colors.muted3 },
 
     // ── Long-press context menu (Screenshot 3 style) ─────────────────
@@ -2736,7 +2901,7 @@ function createStyles(colors: ColorPalette) {
       marginBottom: 8,
     },
     sheetScrollContent: {
-      paddingHorizontal: 20,
+      paddingHorizontal: 16,
       paddingTop: 4,
       paddingBottom: 8,
       gap: 18,
@@ -2816,20 +2981,22 @@ function createStyles(colors: ColorPalette) {
       fontWeight: "500",
     },
     chipSubLabelActive: { color: colors.primary, opacity: 0.85 },
-    sheetCalendarWrap: { marginTop: -4 },
+    sheetCalendarAnimated: { overflow: "hidden", marginTop: -4 },
+    sheetCalendarWrap: {},
 
     // Reminder toggle row
     reminderRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 12,
+      gap: 10,
       paddingVertical: 10,
       paddingLeft: 14,
-      paddingRight: 8,
+      paddingRight: 14,
       borderRadius: 14,
       backgroundColor: colors.surface2,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
+      overflow: "hidden",
     },
     reminderPickerTrigger: {
       flex: 1,
@@ -2859,6 +3026,13 @@ function createStyles(colors: ColorPalette) {
       fontFamily: fonts.body,
       ...typeStyles.rowMeta,
     },
+    reminderSwitchWrap: {
+      width: 58,
+      flexShrink: 0,
+      alignItems: "flex-end",
+      justifyContent: "center",
+    },
+    reminderSwitch: { flexShrink: 0 },
     reminderPickerBackdrop: {
       flex: 1,
       alignItems: "center",
@@ -2991,7 +3165,7 @@ function createStyles(colors: ColorPalette) {
 
     sheetPrimaryButton: { marginTop: 4 },
     sheetFooter: {
-      paddingHorizontal: 20,
+      paddingHorizontal: 16,
       paddingTop: 10,
       backgroundColor: colors.surface,
     },
@@ -3085,8 +3259,9 @@ function createStyles(colors: ColorPalette) {
     calMonth: { color: colors.text, fontFamily: fonts.bodyBold, ...typeStyles.callout, fontWeight: "700", textTransform: "capitalize" },
     calWeekRow: { flexDirection: "row" },
     calWeekday: { flex: 1, textAlign: "center", color: colors.muted2, fontFamily: fonts.bodySemiBold, ...typeStyles.caption1, fontWeight: "600", textTransform: "uppercase", paddingVertical: 6 },
-    calGrid: { flexDirection: "row", flexWrap: "wrap" },
-    calCell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: "center", justifyContent: "center", padding: 2 },
+    calGrid: { gap: 4 },
+    calGridRow: { flexDirection: "row" },
+    calCell: { flex: 1, height: 44, alignItems: "center", justifyContent: "center", padding: 2 },
     calDay: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
     calDaySelected: { backgroundColor: colors.primary },
     calDayToday: { borderWidth: 1.5, borderColor: colors.primary },

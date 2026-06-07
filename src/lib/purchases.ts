@@ -24,6 +24,7 @@ import type {
 
 const IOS_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY ?? "";
 const ANDROID_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY ?? "";
+const ENTITLEMENT_ID = process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID ?? "pro";
 const SUBSCRIPTION_URL_IOS = "https://apps.apple.com/account/subscriptions";
 const SUBSCRIPTION_URL_ANDROID = "https://play.google.com/store/account/subscriptions";
 
@@ -198,6 +199,20 @@ export async function openSubscriptionManagement(): Promise<void> {
 export function isRevenueCatPurchaseCancelled(error: unknown) {
   const candidate = error as { code?: unknown; userCancelled?: unknown } | null;
   return candidate?.userCancelled === true || candidate?.code === "1";
+}
+
+export function isRevenueCatTestStoreFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return message.includes("[Test Store]") && message.toLowerCase().includes("failure");
+}
+
+export function hasActiveRevenueCatPro(customerInfo: CustomerInfo | null | undefined) {
+  return Boolean(customerInfo?.entitlements.active?.[ENTITLEMENT_ID]);
+}
+
+export function isRevenueCatTestStoreConfigured() {
+  const apiKey = Platform.OS === "ios" ? IOS_KEY : ANDROID_KEY;
+  return apiKey.startsWith("test_");
 }
 
 /**

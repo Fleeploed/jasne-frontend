@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { Tabs } from "expo-router";
-import { getFocusedRouteNameFromRoute } from "@react-navigation/native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
@@ -108,11 +107,6 @@ function MockupTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   if (!currentRoute || !tabIconByRoute[currentRoute.name]) {
     return null;
   }
-  const nestedRoute = getFocusedRouteNameFromRoute(currentRoute);
-  if (currentRoute.name === "help" && nestedRoute && nestedRoute !== "index") {
-    return null;
-  }
-
   const visibleRoutes = state.routes.filter((route) => tabIconByRoute[route.name]);
 
   return (

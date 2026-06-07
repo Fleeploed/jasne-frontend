@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Easing, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View, type DimensionValue, type NativeScrollEvent, type NativeSyntheticEvent, type StyleProp, type TextStyle } from "react-native";
+import { ActivityIndicator, Animated, Easing, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View, type DimensionValue, type NativeScrollEvent, type NativeSyntheticEvent, type StyleProp, type TextStyle } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -48,31 +48,42 @@ const REMINDER_TEXT_SCALE = 1;
 
 type ReminderDay = typeof REMINDER_DAYS[number];
 
-async function syncAnalysisDeadlines(scan: ScanResponse) {
+function mergeDeadlineLists(current: DeadlineResponse[], incoming: DeadlineResponse[]) {
+  if (!incoming.length) return current;
+  const byId = new Map(current.map((deadline) => [deadline.id, deadline]));
+  incoming.forEach((deadline) => byId.set(deadline.id, deadline));
+  return Array.from(byId.values());
+}
+
+async function syncAnalysisDeadlines(scan: ScanResponse, knownDeadlines?: DeadlineResponse[]): Promise<DeadlineResponse[]> {
   // Only run once per scan per session, and only when the analysis actually
   // produced deadlines that the scans list grouping cares about.
-  if (deadlineSyncDone.has(scan.id)) return;
+  if (deadlineSyncDone.has(scan.id)) return [];
   const analysisDeadlines = scan.result?.deadlines ?? [];
-  if (!analysisDeadlines.length) return;
+  if (!analysisDeadlines.length) return [];
   deadlineSyncDone.add(scan.id);
   try {
-    const existing = await listAllDeadlines(false);
-    if (existing.some((d) => d.scan_id === scan.id)) return;
+    const existing = knownDeadlines ?? await listAllDeadlines(false);
+    if (existing.some((d) => d.scan_id === scan.id)) return [];
+    const created: DeadlineResponse[] = [];
     for (const d of analysisDeadlines) {
       try {
-        await createManualDeadline({
+        const deadline = await createManualDeadline({
           title: d.description,
           description: null,
           due_date: d.date,
           deadline_type: d.type,
           scan_id: scan.id,
         });
+        created.push(deadline);
       } catch {
         // Skip individual failures — other deadlines for the same scan still get created.
       }
     }
+    return created;
   } catch {
     deadlineSyncDone.delete(scan.id);
+    return [];
   }
 }
 
@@ -151,7 +162,8 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
   const [scan, setScan] = useState<ScanResponse | null>(cachedEntry?.scan ?? null);
   const [limits, setLimits] = useState<LimitsResponse | null>(cachedEntry?.limits ?? null);
   const [messages, setMessages] = useState<UiMessage[]>(cachedEntry?.messages ?? []);
-  const [existingDeadlines, setExistingDeadlines] = useState<DeadlineResponse[]>([]);
+  const [existingDeadlines, setExistingDeadlines] = useState<DeadlineResponse[]>(cachedEntry?.deadlines ?? []);
+  const [deadlinesReady, setDeadlinesReady] = useState(Boolean(cachedEntry?.deadlines));
   const [question, setQuestion] = useState("");
   // Pending mode is used when ChatThreadScreen is mounted with a localId
   // (either prop from NewScanScreen or ?pending=<localId> from the pending card).
@@ -203,6 +215,18 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
     }
   }, [scanId]);
 
+  const refreshCurrentLimits = useCallback(() => {
+    const targetId = scan?.id ?? (!initialPending ? params.id : undefined);
+    if (!targetId) return;
+    void getLimits(targetId)
+      .then((nextLimits) => {
+        setLimits(nextLimits);
+        const entry = getChatCacheSync(targetId);
+        if (entry) setChatCache(targetId, { ...entry, limits: nextLimits });
+      })
+      .catch(() => {});
+  }, [initialPending, params.id, scan?.id]);
+
   // Tracks whether the server fetch has populated state, so a slower disk
   // hydrate doesn't overwrite fresh data with stale.
   const serverHydratedRef = useRef(Boolean(cachedEntry));
@@ -226,8 +250,19 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
         setMessages(nextMessages);
         setLimits(nextLimits);
         setExistingDeadlines(nextDeadlines);
-        setChatCache(targetId, { scan: nextScan, messages: nextMessages, limits: nextLimits });
-        void syncAnalysisDeadlines(nextScan);
+        setDeadlinesReady(true);
+        setChatCache(targetId, { scan: nextScan, messages: nextMessages, limits: nextLimits, deadlines: nextDeadlines });
+        void syncAnalysisDeadlines(nextScan, nextDeadlines).then((created) => {
+          if (!alive || !created.length) return;
+          setExistingDeadlines((current) => mergeDeadlineLists(current, created));
+          const entry = getChatCacheSync(targetId);
+          if (entry) {
+            setChatCache(targetId, {
+              ...entry,
+              deadlines: mergeDeadlineLists(entry.deadlines ?? nextDeadlines, created),
+            });
+          }
+        });
       } catch (loadError) {
         if (!alive) return;
         setError(loadError instanceof Error ? loadError.message : t("chat.loadError"));
@@ -247,11 +282,20 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
     useCallback(() => {
       if (initialPending) return;
       let alive = true;
+      const targetId = params.id;
       listAllDeadlines(false)
-        .then((deadlines) => { if (alive) setExistingDeadlines(deadlines); })
+        .then((deadlines) => {
+          if (!alive) return;
+          setExistingDeadlines(deadlines);
+          setDeadlinesReady(true);
+          if (targetId) {
+            const entry = getChatCacheSync(targetId);
+            if (entry) setChatCache(targetId, { ...entry, deadlines });
+          }
+        })
         .catch(() => {});
       return () => { alive = false; };
-    }, [initialPending]),
+    }, [initialPending, params.id]),
   );
 
   // Cold-start hydrate: if there was no in-memory cache, try disk in parallel
@@ -267,6 +311,10 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
       setScan(entry.scan);
       setMessages(entry.messages);
       setLimits(entry.limits);
+      if (entry.deadlines) {
+        setExistingDeadlines(entry.deadlines);
+        setDeadlinesReady(true);
+      }
       setLoading(false);
     })();
     return () => {
@@ -293,16 +341,19 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
         pendingDoneHandledRef.current = true;
         const realId = state.scanId;
         try {
-          const [nextScan, nextMessages, nextLimits] = await Promise.all([
+          const [nextScan, nextMessages, nextLimits, nextDeadlines] = await Promise.all([
             getScan(realId),
             listMessages(realId),
             getLimits(realId),
+            listAllDeadlines(false),
           ]);
           if (!alive) return;
           setScan(nextScan);
           setMessages(nextMessages);
           setLimits(nextLimits);
-          setChatCache(realId, { scan: nextScan, messages: nextMessages, limits: nextLimits });
+          setExistingDeadlines(nextDeadlines);
+          setDeadlinesReady(true);
+          setChatCache(realId, { scan: nextScan, messages: nextMessages, limits: nextLimits, deadlines: nextDeadlines });
           removePendingScanById(pendingId);
           router.replace(`/scan/${realId}`);
         } catch (loadError) {
@@ -424,6 +475,20 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
     );
   }
 
+  const handleReminderCreated = useCallback((created: DeadlineResponse) => {
+    setExistingDeadlines((current) => mergeDeadlineLists(current, [created]));
+    setDeadlinesReady(true);
+    const targetId = created.scan_id ?? scan?.id ?? params.id ?? null;
+    if (!targetId) return;
+    const entry = getChatCacheSync(targetId);
+    if (entry) {
+      setChatCache(targetId, {
+        ...entry,
+        deadlines: mergeDeadlineLists(entry.deadlines ?? existingDeadlines, [created]),
+      });
+    }
+  }, [existingDeadlines, params.id, scan?.id]);
+
   if (loading) {
     return (
       <Screen>
@@ -481,7 +546,8 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
                 scan={scan}
                 plan={limits?.plan ?? "free"}
                 existingDeadlines={existingDeadlines}
-                onReminderCreated={(created) => setExistingDeadlines((prev) => [...prev, created])}
+                deadlinesReady={deadlinesReady}
+                onReminderCreated={handleReminderCreated}
                 colors={colors}
                 styles={styles}
                 onOpenViewer={(images, index) => { setViewerImages(images); setViewerIndex(index); }}
@@ -537,12 +603,16 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
         visible={viewerImages.length > 0}
         onClose={() => setViewerImages([])}
       />
-      <PaywallSheet visible={showPaywall} onClose={() => setShowPaywall(false)} />
+      <PaywallSheet
+        visible={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        onPurchase={refreshCurrentLimits}
+      />
     </Screen>
   );
 }
 
-function ResultCard({ scan, plan, existingDeadlines, onReminderCreated, colors, styles }: { scan: ScanResponse; plan: UserPlan; existingDeadlines: DeadlineResponse[]; onReminderCreated: (created: DeadlineResponse) => void; colors: ColorPalette; styles: ReturnType<typeof createStyles> }) {
+function ResultCard({ scan, plan, existingDeadlines, deadlinesReady, onReminderCreated, colors, styles }: { scan: ScanResponse; plan: UserPlan; existingDeadlines: DeadlineResponse[]; deadlinesReady: boolean; onReminderCreated: (created: DeadlineResponse) => void; colors: ColorPalette; styles: ReturnType<typeof createStyles> }) {
   const result = scan.result;
   // Detect a trackable OAMP číslo jednací in the document's OCR text so we can
   // offer one-tap automatic status tracking. Hooks inside OampTrackingOffer
@@ -584,6 +654,7 @@ function ResultCard({ scan, plan, existingDeadlines, onReminderCreated, colors, 
           whereToGo={result.where_to_go ?? null}
           plan={plan}
           existingDeadlines={existingDeadlines}
+          deadlinesReady={deadlinesReady}
           onReminderCreated={onReminderCreated}
           styles={styles}
           colors={colors}
@@ -631,6 +702,7 @@ function DeadlineReminderRow({
   whereToGo,
   plan,
   existingDeadlines,
+  deadlinesReady,
   onReminderCreated,
   styles,
   colors,
@@ -640,6 +712,7 @@ function DeadlineReminderRow({
   whereToGo: string | null;
   plan: UserPlan;
   existingDeadlines: DeadlineResponse[];
+  deadlinesReady: boolean;
   onReminderCreated: (created: DeadlineResponse) => void;
   styles: ReturnType<typeof createStyles>;
   colors: ColorPalette;
@@ -649,11 +722,11 @@ function DeadlineReminderRow({
   );
   const [saved, setSaved] = useState(alreadySaved);
 
-  // existingDeadlines arrives asynchronously after mount — sync saved if it
-  // arrives later or changes (e.g. after a refresh).
+  // existingDeadlines arrives asynchronously after mount. Once loaded, keep the
+  // button state aligned with the server so deleted/completed reminders unlock it.
   useEffect(() => {
-    if (alreadySaved) setSaved(true);
-  }, [alreadySaved]);
+    if (deadlinesReady) setSaved(alreadySaved);
+  }, [alreadySaved, deadlinesReady]);
   const [saving, setSaving] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [showReminderSheet, setShowReminderSheet] = useState(false);
@@ -711,9 +784,9 @@ function DeadlineReminderRow({
           onPress={handleAdd}
           style={[styles.deadlineCardBtn, saved && styles.deadlineCardBtnSaved]}
           accessibilityLabel={t(saved ? "chat.reminderSaved" : "chat.createReminder")}
-          disabled={saved || saving}
+          disabled={!deadlinesReady || saved || saving}
         >
-          {saving ? (
+          {!deadlinesReady || saving ? (
             <ActivityIndicator size="small" color={colors.textOnAccent} />
           ) : saved ? (
             <Text style={[styles.deadlineCardBtnText, styles.deadlineCardBtnTextSaved]}>
@@ -1144,11 +1217,12 @@ function LockedChatComposer({
   );
 }
 
-function MessageBubble({ message, scan, plan, existingDeadlines, onReminderCreated, colors, styles, onOpenViewer }: {
+function MessageBubble({ message, scan, plan, existingDeadlines, deadlinesReady, onReminderCreated, colors, styles, onOpenViewer }: {
   message: UiMessage;
   scan: ScanResponse | null;
   plan: UserPlan;
   existingDeadlines: DeadlineResponse[];
+  deadlinesReady: boolean;
   onReminderCreated: (created: DeadlineResponse) => void;
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
@@ -1156,7 +1230,7 @@ function MessageBubble({ message, scan, plan, existingDeadlines, onReminderCreat
 }) {
   const isUser = message.role === "user";
   if (message.message_type === "result_card") {
-    return scan ? <ResultCard scan={scan} plan={plan} existingDeadlines={existingDeadlines} onReminderCreated={onReminderCreated} colors={colors} styles={styles} /> : null;
+    return scan ? <ResultCard scan={scan} plan={plan} existingDeadlines={existingDeadlines} deadlinesReady={deadlinesReady} onReminderCreated={onReminderCreated} colors={colors} styles={styles} /> : null;
   }
   if (message.message_type === "image") {
     return <DocumentAttachmentBubble scanId={message.scan_id} content={message.content} colors={colors} styles={styles} onOpenViewer={onOpenViewer} />;
@@ -1784,26 +1858,72 @@ function ImageViewerModal({ images, initialIndex, visible, onClose }: {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const flatRef = useRef<FlatList<string>>(null);
+  const dismissY = useRef(new Animated.Value(0)).current;
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
 
   useEffect(() => {
     if (visible) {
+      dismissY.setValue(0);
       setCurrentIndex(initialIndex);
       setTimeout(() => {
         flatRef.current?.scrollToIndex({ index: initialIndex, animated: false });
       }, 50);
     }
-  }, [visible, initialIndex]);
+  }, [dismissY, visible, initialIndex]);
+
+  const closeWithSwipe = useCallback(() => {
+    Animated.timing(dismissY, {
+      toValue: -height,
+      duration: 170,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      dismissY.setValue(0);
+      onClose();
+    });
+  }, [dismissY, height, onClose]);
+
+  const swipeUpResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, { dx, dy }) =>
+          dy < -34 && Math.abs(dy) > Math.abs(dx) * 2.1,
+        onMoveShouldSetPanResponderCapture: (_, { dx, dy }) =>
+          dy < -42 && Math.abs(dy) > Math.abs(dx) * 2.1,
+        onPanResponderRelease: (_, { dy, vy }) => {
+          if (dy < -72 || (dy < -36 && vy < -0.95)) {
+            closeWithSwipe();
+          }
+        },
+      }),
+    [closeWithSwipe],
+  );
+
+  const backdropOpacity = dismissY.interpolate({
+    inputRange: [-height * 0.45, 0],
+    outputRange: [0.15, 1],
+    extrapolate: "clamp",
+  });
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <StatusBar hidden />
-      <View style={{ flex: 1, backgroundColor: "#000" }}>
+      <Animated.View
+        {...swipeUpResponder.panHandlers}
+        style={{
+          flex: 1,
+          backgroundColor: "#000",
+          opacity: backdropOpacity,
+          transform: [{ translateY: dismissY }],
+        }}
+      >
         <FlatList
           ref={flatRef}
           data={images}
           horizontal
           pagingEnabled
+          directionalLockEnabled
           showsHorizontalScrollIndicator={false}
           keyExtractor={(_, i) => String(i)}
           initialScrollIndex={initialIndex}
@@ -1858,7 +1978,7 @@ function ImageViewerModal({ images, initialIndex, visible, onClose }: {
             ))}
           </View>
         ) : null}
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

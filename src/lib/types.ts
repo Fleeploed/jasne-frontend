@@ -5,7 +5,7 @@ export type DeadlineStatus = "active" | "completed" | "missed";
 export type DeadlineType = "payment" | "action" | "response" | "expiration";
 export type MessageRole = "user" | "assistant";
 export type MessageType = "text" | "image" | "result_card";
-export type TrackingType = "oamp_status" | "tax_status" | "zp_refund" | "court_hearing" | string;
+export type TrackingType = "oamp_status" | "tax_status" | "zp_refund" | "court_hearing";
 
 export type AnalysisDeadline = {
   date: string;

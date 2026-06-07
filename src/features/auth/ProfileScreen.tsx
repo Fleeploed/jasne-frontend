@@ -323,7 +323,11 @@ export function ProfileScreen() {
         </View>
       </Modal>
 
-      <PaywallSheet visible={showPaywall} onClose={() => setShowPaywall(false)} />
+      <PaywallSheet
+        visible={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        onPurchase={() => { void loadLimits(); }}
+      />
     </Screen>
   );
 }
@@ -502,7 +506,7 @@ function createStyles(colors: ColorPalette) {
       borderBottomColor: colors.border,
       backgroundColor: colors.bg,
     },
-    title: { color: colors.primary, fontFamily: fonts.displayBold, ...typeStyles.screenTitle, fontWeight: "800", letterSpacing: -0.7 },
+    title: { color: colors.primaryDark, fontFamily: fonts.displayBold, ...typeStyles.screenTitle, fontWeight: "800", letterSpacing: -0.7 },
     identity: {
       alignItems: "center",
       paddingHorizontal: 22,

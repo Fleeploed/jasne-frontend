@@ -4,7 +4,6 @@ import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import PdfThumbnail from "react-native-pdf-thumbnail";
 import { PDFDocument } from "pdf-lib";
-import { TurboModuleRegistry } from "react-native";
 
 import { apiFetch } from "@/lib/api";
 import { getLocale, t } from "@/lib/i18n";
@@ -100,26 +99,6 @@ export async function pickImage(selectionLimit = 10): Promise<PickedUpload[] | n
   return result.assets.map((asset, index) =>
     normalizePickedUpload(asset.uri, asset.fileName ?? `page-${Date.now()}-${index + 1}.jpg`, asset.mimeType)
   );
-}
-
-export async function scanWithCamera(): Promise<PickedUpload[] | null> {
-  try {
-    if (!TurboModuleRegistry.get("DocumentScanner")) {
-      throw new Error(t("scanApi.scannerNoBuild"));
-    }
-
-    const module = await import("react-native-document-scanner-plugin");
-    const result = await module.default.scanDocument({ maxNumDocuments: 10 });
-    const images = result.scannedImages ?? [];
-    if (!images.length) return null;
-    return images.map((uri, index) => ({
-      uri,
-      name: `scan-${Date.now()}-${index + 1}.jpg`,
-      mimeType: "image/jpeg"
-    }));
-  } catch (error) {
-    throw new Error(error instanceof Error ? error.message : t("scanApi.scannerUnavailable"));
-  }
 }
 
 export async function uploadToStorage(files: PickedUpload[]) {

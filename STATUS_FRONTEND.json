@@ -24,8 +24,8 @@
       "expo_go_status": "partial only",
       "expo_go_notes": [
         "Core JS screens can run in Expo Go.",
-        "Native document scanner, custom URL schemes, OAuth redirects, and password reset links should be tested in a development build.",
-        "Document scanner uses lazy dynamic import + TurboModuleRegistry.get('DocumentScanner') guard so app loads cleanly in Expo Go and only the scanner button errors when pressed."
+        "In-app camera (expo-camera), custom URL schemes, OAuth redirects, and password reset links should be tested in a development build.",
+        "Camera capture uses expo-camera CameraView live preview inside the app UI; the native VisionKit document scanner was removed (no custom UI possible over it). Requires New Architecture + dev build."
       ],
       "added_packages_this_session": [
         "yaml ^2.9.0 (parse bundled terms.yaml for the Terms of Service screen)",
@@ -112,7 +112,7 @@
         "expo-document-picker",
         "expo-file-system"
       ],
-      "native_scanner": "react-native-document-scanner-plugin",
+      "camera": "expo-camera (CameraView live preview, in-app UI)",
       "styling": "React Native StyleSheet + shared color tokens in src/components/ui.tsx",
       "i18n": "local dictionary in src/lib/i18n.ts"
     },
@@ -260,7 +260,7 @@
           "new_scan_flow": true,
           "multi_image_selection": true,
           "document_pdf_selection": true,
-          "native_camera_scanner_hook": true,
+          "in_app_camera_capture": true,
           "supabase_storage_upload": true,
           "scan_stream_sse": true,
           "pending_chat_progress": true,
@@ -760,7 +760,7 @@
     {
       "area": "Expo Go",
       "status": "limited",
-      "detail": "Custom URL schemes and native scanner are not reliable in Expo Go.",
+      "detail": "Custom URL schemes and the in-app camera (expo-camera) are not reliable in Expo Go.",
       "mitigation": "Use npx expo run:ios or EAS development build."
     },
     {

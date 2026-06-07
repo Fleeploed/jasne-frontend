@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, FlatList, Image, Keyboard, LayoutAnimation, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, UIManager, useWindowDimensions, Vibration, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, FlatList, Image, Keyboard, LayoutAnimation, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, UIManager, useWindowDimensions, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useScrollToTop } from "@react-navigation/native";
 import { BrandWordmark } from "@/components/BrandMark";
@@ -14,6 +14,7 @@ import {
   getPendingScanList,
   subscribePendingScan,
 } from "@/features/scans/pendingScanStore";
+import { triggerLongPressHaptic } from "@/lib/haptics";
 import { formatCategoryLabel, formatLocalizedDate, getLocale, pluralize, t, type PluralForms } from "@/lib/i18n";
 import type { DeadlineResponse, LimitsResponse, ScanListItem } from "@/lib/types";
 
@@ -369,7 +370,7 @@ export function ScanListScreen() {
               styles={styles}
               categoryStyleList={categoryStyleList}
               onLongPress={(rect) => {
-                Vibration.vibrate(12);
+                triggerLongPressHaptic();
                 setDocumentMenu({
                   scan: item.scan,
                   deadline: item.deadline,
@@ -847,46 +848,6 @@ function DocumentCategoryFilterBar({
   );
 }
 
-function ListHeader({ limits, scanDisabled, onScan, styles, colors }: {
-  limits: LimitsResponse | null;
-  scanDisabled: boolean;
-  onScan: () => void;
-  styles: ReturnType<typeof createStyles>;
-  colors: ColorPalette;
-}) {
-  return <ScanCTACard limits={limits} scanDisabled={scanDisabled} onScan={onScan} styles={styles} colors={colors} />;
-}
-
-function ScanCTACard({ limits, scanDisabled, onScan, styles, colors }: {
-  limits: LimitsResponse | null;
-  scanDisabled: boolean;
-  onScan: () => void;
-  styles: ReturnType<typeof createStyles>;
-  colors: ColorPalette;
-}) {
-  const used = limits?.scans_used ?? 0;
-  const max = limits?.scans_max ?? 5;
-
-  return (
-    <View style={styles.ctaCard}>
-      <View style={styles.ctaHalo} />
-      <Text style={styles.ctaTitle}>{t("documents.ctaTitle")}</Text>
-      <Text style={styles.ctaSubtitle}>{t("documents.ctaSubtitle")}</Text>
-      <View style={styles.ctaRow}>
-        <Pressable
-          disabled={scanDisabled}
-          onPress={onScan}
-          style={({ pressed }) => [styles.ctaButton, scanDisabled && styles.ctaButtonDisabled, pressed && !scanDisabled && styles.pressed]}
-        >
-          <Icon name="camera" size={22} color={colors.text} />
-          <Text style={styles.ctaButtonText}>{t("documents.ctaButton")}</Text>
-        </Pressable>
-        <Text style={styles.ctaUsage}>{used} / {max} · {limits?.plan === "pro" ? t("documents.proPlan") : t("documents.freePlan")}</Text>
-      </View>
-    </View>
-  );
-}
-
 function DocumentRow({ item, deadline, pinned, query, colors, styles, categoryStyleList, onLongPress }: {
   item: ScanListItem;
   deadline?: DeadlineResponse;
@@ -1258,11 +1219,6 @@ function getDocMeta(item: ScanListItem) {
   return formatCategoryLabel(item.category ?? item.doc_type).toUpperCase();
 }
 
-function formatDocLabel(value?: string | null) {
-  if (!value) return t("common.document");
-  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 function getDocVisual(item: ScanListItem, colors: ColorPalette, categoryStyleList: ReturnType<typeof getCategoryStyles>): RowVisual {
   const category = normalizeCategoryKey(item.category);
   const categoryStyle = categoryStyleList.find((style) => style.category === category);
@@ -1407,48 +1363,6 @@ function createStyles(colors: ColorPalette) {
       color: colors.amberDark,
       fontWeight: "700",
     },
-    ctaCard: {
-      marginHorizontal: 16,
-      marginTop: 14,
-      borderRadius: 24,
-      backgroundColor: colors.primary,
-      padding: 24,
-      gap: 10,
-      overflow: "hidden"
-    },
-    ctaHalo: {
-      position: "absolute",
-      right: -20,
-      top: -20,
-      width: 160,
-      height: 160,
-      borderRadius: 999,
-      backgroundColor: "rgba(232,160,32,0.12)"
-    },
-    ctaTitle: {
-      color: colors.textOnAccent,
-      fontFamily: fonts.display,
-      ...typeStyles.compactTitle,
-      fontWeight: "700",
-    },
-    ctaSubtitle: {
-      color: "rgba(253,251,248,0.72)",
-      fontFamily: fonts.body,
-      ...typeStyles.rowSecondary,
-    },
-    ctaRow: { marginTop: 4, flexDirection: "row", alignItems: "center", gap: 16 },
-    ctaButton: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-      backgroundColor: colors.amber,
-      borderRadius: 10,
-      paddingHorizontal: 16,
-      paddingVertical: 10
-    },
-    ctaButtonDisabled: { opacity: 0.5 },
-    ctaButtonText: { color: colors.text, fontFamily: fonts.bodyBold, ...typeStyles.rowSecondary, fontWeight: "700" },
-    ctaUsage: { color: "rgba(253,251,248,0.60)", fontFamily: fonts.body, ...typeStyles.rowMeta },
     warning: {
       marginHorizontal: 16,
       marginTop: 10,

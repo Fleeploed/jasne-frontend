@@ -4,8 +4,10 @@ import { Linking } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Session, User } from "@supabase/supabase-js";
 
+import { syncProfileLanguage } from "@/features/auth/profileApi";
 import { supabase } from "@/lib/supabase";
 import { identifyAnalyticsUser, resetAnalyticsUser } from "@/lib/analytics";
+import { getLocale } from "@/lib/i18n";
 import { clearPurchasesIdentity, identifyPurchasesUser } from "@/lib/purchases";
 
 const HAS_HAD_ACCOUNT_KEY = "jasne_has_had_account";
@@ -46,6 +48,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === "SIGNED_IN" && nextSession) {
         setHasHadAccount(true);
         void AsyncStorage.setItem(HAS_HAD_ACCOUNT_KEY, "1");
+        // Push the locally-chosen language (e.g. picked during onboarding before
+        // the account existed) onto the now-created profile. Best-effort.
+        void syncProfileLanguage(getLocale()).catch(() => {});
       }
     });
 
