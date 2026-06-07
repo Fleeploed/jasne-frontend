@@ -3,10 +3,14 @@ import { ActivityIndicator, Animated, Modal, PanResponder, Pressable, ScrollView
 
 import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import { fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
+import { getLimits } from "@/features/scans/scansApi";
 import { t } from "@/lib/i18n";
 import {
   getProPackages,
+  hasActiveRevenueCatPro,
   isRevenueCatPurchaseCancelled,
+  isRevenueCatTestStoreFailure,
+  isRevenueCatTestStoreConfigured,
   purchaseRevenueCatPackage,
   restoreRevenueCatPurchases,
   type ProPackages,
@@ -14,6 +18,8 @@ import {
 } from "@/lib/purchases";
 
 const SHEET_HIDDEN = 900;
+const BACKEND_PLAN_SYNC_ATTEMPTS = 5;
+const BACKEND_PLAN_SYNC_DELAY_MS = 900;
 
 export function PaywallSheet({
   visible,
@@ -125,12 +131,24 @@ export function PaywallSheet({
     setError(null);
     setPurchasePending(true);
     try {
-      await purchaseRevenueCatPackage(selectedPackage.rcPackage);
+      const result = await purchaseRevenueCatPackage(selectedPackage.rcPackage);
+      if (!hasActiveRevenueCatPro(result.customerInfo)) {
+        setError(t("paywall.purchaseNoEntitlement"));
+        return;
+      }
+      const backendSynced = await waitForBackendProPlan();
+      if (!backendSynced) {
+        if (__DEV__ && isRevenueCatTestStoreConfigured()) {
+          console.warn("[purchases] RevenueCat Test Store purchase succeeded, but backend /limits still returned free.");
+        }
+        setError(t("paywall.purchaseSyncPending"));
+        return;
+      }
       onPurchase?.(selected);
       close();
     } catch (purchaseError) {
       if (!isRevenueCatPurchaseCancelled(purchaseError)) {
-        setError(t("paywall.purchaseError"));
+        setError(isRevenueCatTestStoreFailure(purchaseError) ? t("paywall.testStoreFailedPurchase") : t("paywall.purchaseError"));
       }
     } finally {
       setPurchasePending(false);
@@ -142,7 +160,16 @@ export function PaywallSheet({
     setError(null);
     setRestorePending(true);
     try {
-      await restoreRevenueCatPurchases();
+      const customerInfo = await restoreRevenueCatPurchases();
+      if (!hasActiveRevenueCatPro(customerInfo)) {
+        setError(t("paywall.restoreNoEntitlement"));
+        return;
+      }
+      const backendSynced = await waitForBackendProPlan();
+      if (!backendSynced) {
+        setError(t("paywall.purchaseSyncPending"));
+        return;
+      }
       onPurchase?.(selected);
       close();
     } catch {
@@ -278,6 +305,25 @@ export function PaywallSheet({
       </View>
     </Modal>
   );
+}
+
+async function waitForBackendProPlan() {
+  for (let attempt = 0; attempt < BACKEND_PLAN_SYNC_ATTEMPTS; attempt += 1) {
+    try {
+      const limits = await getLimits();
+      if (limits.plan === "pro") return true;
+    } catch {
+      // Keep polling briefly. The user-facing error is set by the caller.
+    }
+    if (attempt < BACKEND_PLAN_SYNC_ATTEMPTS - 1) {
+      await sleep(BACKEND_PLAN_SYNC_DELAY_MS);
+    }
+  }
+  return false;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function PlanCard({

@@ -14,7 +14,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import type { LimitsResponse, ScanMessage, ScanResponse } from "@/lib/types";
+import type { DeadlineResponse, LimitsResponse, ScanMessage, ScanResponse } from "@/lib/types";
 
 const KEY_PREFIX = "chat:v1:";
 const INDEX_KEY = "chat:v1:__index";
@@ -23,6 +23,7 @@ export type ChatCacheEntry = {
   scan: ScanResponse;
   messages: ScanMessage[];
   limits: LimitsResponse;
+  deadlines?: DeadlineResponse[];
 };
 
 const memory = new Map<string, ChatCacheEntry>();

@@ -3,6 +3,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, type StyleProp, type ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
+import { Icon, type IconName } from "@/components/Icon";
 import { fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { ProBlurSection } from "@/features/help/ProBlurSection";
 import { t } from "@/lib/i18n";
@@ -17,6 +18,7 @@ import type {
 import type { UserPlan } from "@/lib/types";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
+type HelpIconTone = "blue" | "amber" | "green" | "purple" | "red" | "neutral";
 const HELP_TEXT_SCALE = 1;
 
 export function HelpCard({
@@ -38,7 +40,7 @@ export function HelpCard({
   badge?: string | null;
   badgeTone?: "blue" | "green";
   icon?: IoniconName;
-  iconTone?: "blue" | "amber" | "green" | "purple" | "neutral";
+  iconTone?: HelpIconTone;
   onPress?: () => void;
   disabled?: boolean;
   children?: ReactNode;
@@ -111,6 +113,7 @@ export function HelpHomeCategoryRow({ category, onPress, position }: {
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const tone = toneForCategory(category.icon ?? category.slug);
+  const guideIcon = guideIconForCategory(category.icon ?? category.slug);
   const isLast = position === "last" || position === "single";
 
   return (
@@ -120,7 +123,7 @@ export function HelpHomeCategoryRow({ category, onPress, position }: {
       style={({ pressed }) => [styles.homeListItem, !isLast && styles.homeListDivider, pressed && styles.pressed]}
     >
       <View style={[styles.homeIconBox, iconToneStyle(tone, colors)]}>
-        <Ionicons name={iconForCategory(category.icon ?? category.slug)} size={22} color={iconColor(tone, colors)} />
+        <Icon name={guideIcon} size={22} color={iconColor(tone, colors)} />
       </View>
       <View style={styles.homeListBody}>
         <View style={styles.titleRow}>
@@ -521,7 +524,21 @@ function iconForCategory(value: string): IoniconName {
   return "folder-open-outline";
 }
 
-function toneForCategory(_value: string): "blue" | "amber" | "green" | "purple" | "neutral" {
+function guideIconForCategory(value: string): IconName {
+  if (value === "passport" || value === "visa-pobyt" || value === "cizinecka") return "globe";
+  if (value === "receipt" || value === "taxes" || value === "danove") return "doc-text";
+  if (value === "zap" || value === "bills" || value === "ucty") return "zap";
+  if (value === "briefcase" || value === "urad-prace" || value === "urad_prace") return "briefcase";
+  if (value === "shield" || value === "health-insurance" || value === "zdravotni") return "shield";
+  if (value === "doc" || value === "contracts" || value === "smlouvy") return "pages";
+  return "pages";
+}
+
+function toneForCategory(value: string): HelpIconTone {
+  if (value === "receipt" || value === "taxes" || value === "danove") return "amber";
+  if (value === "zap" || value === "bills" || value === "ucty") return "green";
+  if (value === "briefcase" || value === "urad-prace" || value === "urad_prace") return "purple";
+  if (value === "shield" || value === "health-insurance" || value === "zdravotni") return "red";
   return "blue";
 }
 
@@ -548,18 +565,20 @@ function labelForCtaAction(action: CtaAction) {
   return null;
 }
 
-function iconToneStyle(tone: "blue" | "amber" | "green" | "purple" | "neutral", colors: ColorPalette) {
+function iconToneStyle(tone: HelpIconTone, colors: ColorPalette) {
   if (tone === "amber") return { backgroundColor: colors.amberLight };
   if (tone === "green") return { backgroundColor: colors.greenLight };
   if (tone === "purple") return { backgroundColor: colors.proLight };
+  if (tone === "red") return { backgroundColor: colors.dangerLight };
   if (tone === "neutral") return { backgroundColor: colors.surface2 };
   return { backgroundColor: colors.blueSoft };
 }
 
-function iconColor(tone: "blue" | "amber" | "green" | "purple" | "neutral", colors: ColorPalette) {
+function iconColor(tone: HelpIconTone, colors: ColorPalette) {
   if (tone === "amber") return colors.amberDark;
   if (tone === "green") return colors.greenDark;
   if (tone === "purple") return colors.pro;
+  if (tone === "red") return colors.danger;
   if (tone === "neutral") return colors.muted2;
   return colors.primary;
 }

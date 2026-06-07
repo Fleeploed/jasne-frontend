@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { config } from "@/lib/config";
 import { authHeaders } from "@/lib/api";
+import { parseErrorBody } from "@/lib/apiErrors";
 import { t } from "@/lib/i18n";
 import type { ApiError } from "@/lib/types";
 
@@ -106,34 +107,9 @@ async function handleHttpError(status: number, responseText: string) {
     await supabase.auth.signOut();
   }
 
-  const detail = readErrorDetail(status, responseText);
+  const detail = parseErrorBody(status, responseText, t("common.networkStream", { status })).message;
   const error = new Error(detail) as ApiError;
   error.status = status;
   error.detail = detail;
   return error;
-}
-
-function readErrorDetail(status: number, responseText: string) {
-  if (status >= 500) return t("common.serviceDown");
-  if (!responseText) return t("common.serviceDown");
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(responseText);
-  } catch {
-    return t("common.serviceDown");
-  }
-
-  if (!isRecord(parsed)) return t("common.serviceDown");
-  if (typeof parsed.detail === "string") return parsed.detail;
-  if (isRecord(parsed.detail) && typeof parsed.detail.message === "string") {
-    return parsed.detail.message;
-  }
-  if (parsed.status === "error" && "code" in parsed) return t("common.serviceDown");
-
-  return t("common.networkStream", { status });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

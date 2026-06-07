@@ -7,6 +7,7 @@
     "icon": "./assets/icon.png",
     "scheme": "jasne",
     "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "app.jasne.mobile",
@@ -31,7 +32,7 @@
       "expo-document-picker",
       "expo-image-picker",
       [
-        "react-native-document-scanner-plugin",
+        "expo-camera",
         {
           "cameraPermission": "Jasne uses the camera to scan bureaucracy documents."
         }

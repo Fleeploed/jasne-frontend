@@ -4,7 +4,7 @@ Expo MVP for the Jasne mobile core loop:
 
 - Supabase Auth login/register with persisted session
 - scan thread list as the main screen
-- new scan flow: camera scanner, image picker, file/PDF picker
+- new scan flow: in-app live camera (expo-camera), image picker, file/PDF picker
 - direct upload to Supabase Storage bucket `documents`
 - backend `POST /scans/stream` SSE progress
 - thread view with result card and progressive chat streaming
@@ -76,7 +76,7 @@ npm run typecheck
 npm run start
 ```
 
-The document scanner native module requires a development build:
+The camera (expo-camera) requires a development build — it does not run in Expo Go:
 
 ```sh
 npm run ios

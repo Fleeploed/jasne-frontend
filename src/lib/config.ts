@@ -1,5 +1,9 @@
+// Fail-safe default points at PRODUCTION (Railway). Local dev and the EAS
+// development/preview profiles override this via EXPO_PUBLIC_API_BASE_URL
+// (see .env and eas.json). This way a misconfigured release build can never
+// silently talk to the develop backend.
 const apiBaseUrl =
-  process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://jasne-backend.onrender.com";
+  process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://jasne-backend-production.up.railway.app";
 
 export const config = {
   apiBaseUrl: apiBaseUrl.replace(/\/$/, ""),

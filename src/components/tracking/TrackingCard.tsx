@@ -8,6 +8,7 @@ import { TrackingTypeRenderer } from "@/components/tracking/TrackingTypeRenderer
 import { fonts, type ColorPalette, typeStyles, useColors } from "@/components/ui";
 import { trackingConfigFor, type TrackingTone } from "@/constants/trackings";
 import { useCheckTracking, useStopTracking } from "@/hooks/useTrackings";
+import { triggerLongPressHaptic } from "@/lib/haptics";
 import { formatLocalizedDate, getLocale, t } from "@/lib/i18n";
 import type { Tracking } from "@/lib/types";
 import { trackEvent } from "@/lib/analytics";
@@ -89,6 +90,11 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
     });
   }, [checkTracking, status, tracking]);
 
+  const openSheet = useCallback(() => {
+    triggerLongPressHaptic();
+    setSheetVisible(true);
+  }, []);
+
   return (
     <>
       <View style={styles.card}>
@@ -96,7 +102,7 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
           accessibilityRole="button"
           accessibilityLabel={`${t("tracking.section.title")}: ${tracking.identifier}`}
           onPress={open}
-          onLongPress={() => setSheetVisible(true)}
+          onLongPress={openSheet}
           delayLongPress={350}
           style={({ pressed }) => [styles.cardMain, pressed && styles.pressed]}
         >
@@ -233,7 +239,7 @@ function relativeTimestamp(value: string | null) {
       unit,
     );
   } catch {
-    return formatLocalizedDate(date, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    return formatLocalizedDate(date, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   }
 }
 

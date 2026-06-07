@@ -85,7 +85,8 @@ export function OampStatusResultBody({
     [createTracking.data, normalizedIdentifier, trackings.data]
   );
   const isTracking = Boolean(activeTracking) || optimisticTracking;
-  const trackingBusy = subscriptionLoading || stopTracking.isPending;
+  const trackingLookupBusy = trackings.isLoading && !trackings.data;
+  const trackingBusy = subscriptionLoading || trackingLookupBusy || stopTracking.isPending;
 
   useEffect(() => {
     trackEvent("oamp_result_viewed", { status });

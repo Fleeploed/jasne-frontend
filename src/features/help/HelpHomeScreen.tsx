@@ -204,12 +204,12 @@ function createStyles(colors: ColorPalette) {
     hero: {
       paddingHorizontal: 16,
       paddingTop: 16,
-      paddingBottom: 0,
+      paddingBottom: 10,
       gap: 16,
       backgroundColor: colors.bg,
     },
     title: {
-      color: colors.primary,
+      color: colors.primaryDark,
       fontFamily: fonts.displayBold,
       ...typeStyles.largeScreenTitle,
       fontWeight: "800",

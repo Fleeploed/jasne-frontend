@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -11,7 +12,10 @@ import { AccountDeletionScreen } from "@/features/auth/AccountDeletionScreen";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { AuthScreen } from "@/features/auth/AuthScreen";
 import { ResetPasswordScreen } from "@/features/auth/ResetPasswordScreen";
+import { OnboardingScreen } from "@/features/onboarding/OnboardingScreen";
 import { ThemeProvider, lightColors, useColors } from "@/components/ui";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import { AnalyticsRouteTracker } from "@/lib/AnalyticsRouteTracker";
 import { LocaleProvider } from "@/lib/LocaleContext";
 import { initializeAnalytics } from "@/lib/analytics";
@@ -27,6 +31,9 @@ import { queryClient } from "@/lib/queryClient";
 import type { ProfileResponse } from "@/lib/types";
 
 initializeAnalytics();
+
+const ONBOARDING_STORAGE_KEY = "jasne_onboarding_v2_seen";
+const ROOT_FALLBACK_BG = "#0F0D0B";
 
 function RootLayout() {
   // Initialize RevenueCat once for the whole app session. Safe to call
@@ -48,24 +55,29 @@ function RootLayout() {
 
   if (!fontsLoaded) {
     return (
-      <SafeAreaProvider>
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: ROOT_FALLBACK_BG }}>
         <FontLoadingScreen />
       </SafeAreaProvider>
     );
   }
 
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: ROOT_FALLBACK_BG }}>
       <ThemeProvider>
-        <QueryClientProvider client={queryClient}>
-          <ThemedStatusBar />
-          <LocaleProvider>
-            <AuthProvider>
-              <AnalyticsRouteTracker />
-              <RootNavigator />
-            </AuthProvider>
-          </LocaleProvider>
-        </QueryClientProvider>
+        <ErrorBoundary>
+          <ThemedAppRoot>
+            <QueryClientProvider client={queryClient}>
+              <ThemedStatusBar />
+              <LocaleProvider>
+                <AuthProvider>
+                  <AnalyticsRouteTracker />
+                  <OfflineBanner />
+                  <RootNavigator />
+                </AuthProvider>
+              </LocaleProvider>
+            </QueryClientProvider>
+          </ThemedAppRoot>
+        </ErrorBoundary>
       </ThemeProvider>
     </SafeAreaProvider>
   );
@@ -77,6 +89,11 @@ function ThemedStatusBar() {
   const colors = useColors();
   const isLight = colors.bg === lightColors.bg;
   return <StatusBar style={isLight ? "dark" : "light"} backgroundColor={colors.bg} />;
+}
+
+function ThemedAppRoot({ children }: { children: ReactNode }) {
+  const colors = useColors();
+  return <View style={{ flex: 1, backgroundColor: colors.bg }}>{children}</View>;
 }
 
 function FontLoadingScreen() {
@@ -92,6 +109,18 @@ function RootNavigator() {
   const { initializing, passwordRecovery, session, hasHadAccount } = useAuth();
   const colors = useColors();
   const router = useRouter();
+  const [onboardingSeen, setOnboardingSeen] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem(ONBOARDING_STORAGE_KEY)
+      .then((stored) => setOnboardingSeen(stored === "1"))
+      .catch(() => setOnboardingSeen(true));
+  }, []);
+
+  const completeOnboarding = useCallback(() => {
+    setOnboardingSeen(true);
+    void AsyncStorage.setItem(ONBOARDING_STORAGE_KEY, "1").catch(() => {});
+  }, []);
 
   useEffect(() => {
     const subscription = addNotificationTapListener((data) => {
@@ -126,6 +155,19 @@ function RootNavigator() {
   }
 
   if (passwordRecovery) return <ResetPasswordScreen />;
+
+  if (!session && !hasHadAccount && onboardingSeen === null) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (!session && !hasHadAccount && !onboardingSeen) {
+    return <OnboardingScreen onComplete={completeOnboarding} />;
+  }
+
   if (!session) return <AuthScreen initialMode={hasHadAccount ? "login" : "register"} />;
 
   return (

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { ReactNode } from "react";
 
+import { syncProfileLanguage } from "@/features/auth/profileApi";
 import { getLocale, normalizeLocale, setAppLocale } from "@/lib/i18n";
 
 const STORAGE_KEY = "app_locale";
@@ -42,13 +43,18 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
         setAppLocale(system);
         setLocale(normalizeLocale(system));
       }
-    }).catch(() => {});
+    }).catch((error) => {
+      if (__DEV__) console.warn("Failed to load stored locale", error);
+    });
   }, []);
 
   const changeLocale = useCallback(async (next: string) => {
+    const normalized = normalizeLocale(next);
     setAppLocale(next);
-    setLocale(normalizeLocale(next));
+    setLocale(normalized);
     await AsyncStorage.setItem(STORAGE_KEY, next);
+    // Mirror the choice to the backend profile (best-effort, no-op when signed out).
+    void syncProfileLanguage(normalized).catch(() => {});
   }, []);
 
   return (
