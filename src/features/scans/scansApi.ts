@@ -1,4 +1,3 @@
-import { decode } from "base64-arraybuffer";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
@@ -6,6 +5,7 @@ import PdfThumbnail from "react-native-pdf-thumbnail";
 import { PDFDocument } from "pdf-lib";
 
 import { apiFetch } from "@/lib/api";
+import { config } from "@/lib/config";
 import { getLocale, t } from "@/lib/i18n";
 import { streamPost } from "@/lib/sse";
 import { supabase } from "@/lib/supabase";
@@ -25,6 +25,9 @@ export type ScanProgressEvent =
 
 const allowedMimeTypes = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
 const supportedExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf"];
+
+const MAX_UPLOAD_MB = 20;
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 
 export const SCANS_PAGE_SIZE = 50;
 
@@ -105,15 +108,9 @@ export async function uploadToStorage(files: PickedUpload[]) {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError) throw sessionError;
 
-  const {
-    data: { user },
-    error: userError
-  } = await supabase.auth.getUser();
-
-  const userId = sessionData.session?.user.id ?? user?.id;
-
-  if (userError && !sessionData.session?.user) throw userError;
-  if (!userId) throw new Error(t("scanApi.authRequired"));
+  const session = sessionData.session;
+  const userId = session?.user.id;
+  if (!session || !userId) throw new Error(t("scanApi.authRequired"));
 
   const paths: string[] = [];
 
@@ -121,33 +118,59 @@ export async function uploadToStorage(files: PickedUpload[]) {
     const extension = extensionFor(file.name, file.mimeType, file.uri);
     const safeName = file.name.replace(/[^A-Za-z0-9_.-]/g, "_").replace(/\.[^.]+$/, "");
     const storagePath = `${userId}/${Date.now()}-${index + 1}-${safeName}${extension}`;
-    const fileInfo = await FileSystem.getInfoAsync(file.uri);
+    const fileInfo = await FileSystem.getInfoAsync(file.uri, { size: true });
     if (!fileInfo.exists) {
       throw new Error(t("scanApi.fileReadFailed"));
     }
+    if (fileInfo.size > MAX_UPLOAD_BYTES) {
+      throw new Error(t("scanApi.fileTooLarge", { max: MAX_UPLOAD_MB }));
+    }
 
-    const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
-    const { error } = await supabase.storage.from("documents").upload(storagePath, decode(base64), {
-      contentType: file.mimeType,
-      upsert: false
-    });
+    // Stream the file from disk via the native uploader instead of pulling a
+    // base64 copy through JS memory — multi-MB PDFs OOM low-end devices.
+    const result = await FileSystem.uploadAsync(
+      `${config.supabaseUrl}/storage/v1/object/documents/${storagePath}`,
+      file.uri,
+      {
+        httpMethod: "POST",
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: config.supabaseAnonKey,
+          "Content-Type": file.mimeType,
+          "x-upsert": "false",
+        },
+      }
+    );
 
-    if (error) {
+    if (result.status >= 400) {
+      const message = parseStorageErrorMessage(result.body) ?? `HTTP ${result.status}`;
       if (__DEV__) {
         console.warn("Supabase storage upload failed", {
           bucket: "documents",
           path: storagePath,
           mimeType: file.mimeType,
-          message: error.message,
-          name: error.name,
+          status: result.status,
+          message,
         });
       }
-      throw new Error(mapStorageUploadError(error.message));
+      throw new Error(mapStorageUploadError(message));
     }
     paths.push(storagePath);
   }
 
   return paths;
+}
+
+function parseStorageErrorMessage(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as { message?: unknown; error?: unknown };
+    if (typeof parsed.message === "string") return parsed.message;
+    if (typeof parsed.error === "string") return parsed.error;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function streamScan(imagePaths: string[], onEvent: (event: ScanProgressEvent) => void) {
