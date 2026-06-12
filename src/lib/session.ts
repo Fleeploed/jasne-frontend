@@ -20,6 +20,20 @@ import { supabase } from "@/lib/supabase";
 let signOutPromise: Promise<void> | null = null;
 let refreshPromise: Promise<boolean> | null = null;
 
+type SignOutTask = () => Promise<void> | void;
+
+const signOutTasks = new Set<SignOutTask>();
+
+/**
+ * Register extra cleanup to run during sign-out while the session is still
+ * valid (e.g. unregistering the push token on the backend). Keeps the module
+ * graph acyclic: features depend on session.ts, never the other way around.
+ */
+export function registerSignOutTask(task: SignOutTask): () => void {
+  signOutTasks.add(task);
+  return () => signOutTasks.delete(task);
+}
+
 export function performSignOut(): Promise<void> {
   // Concurrent failing requests may all decide to sign out — run it once.
   if (!signOutPromise) {
@@ -31,6 +45,18 @@ export function performSignOut(): Promise<void> {
 }
 
 async function signOutOnce() {
+  // Best-effort cleanup that needs the still-valid session (push token
+  // unregistration etc.) — run it first, never let it block the sign-out.
+  await Promise.all(
+    Array.from(signOutTasks, async (task) => {
+      try {
+        await task();
+      } catch {
+        // Sign-out must proceed regardless.
+      }
+    })
+  );
+
   // Reset local identities before Supabase sign-out so the next user on
   // this device doesn't inherit analytics or purchases.
   resetAnalyticsUser();

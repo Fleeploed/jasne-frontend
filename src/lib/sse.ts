@@ -160,7 +160,10 @@ async function handleHttpError(status: number, responseText: string) {
   // is unrecoverable. 403 means "no permission", not "no session" — never
   // sign out because of it.
   if (status === 401) {
-    await recoverSessionOrSignOut();
+    // Fire-and-forget for the same reason as api.ts: the stream rejects with
+    // the error below regardless, and awaiting could deadlock if a stream
+    // ever fails during a sign-out task.
+    void recoverSessionOrSignOut();
   }
 
   const detail = parseErrorBody(status, responseText, t("common.networkStream", { status })).message;

@@ -7,6 +7,8 @@
  * NewScanScreen, ChatThreadScreen, and ScanListScreen share the same live state.
  */
 
+import * as FileSystem from "expo-file-system";
+
 export type PendingPreview = {
   documentType?: string;
   summary?: string;
@@ -91,15 +93,34 @@ export function updatePendingPreviewById(localId: string, patch: Partial<Pending
 }
 
 export function removePendingScanById(localId: string) {
-  if (!_records.has(localId)) return;
+  const record = _records.get(localId);
+  if (!record) return;
   _records.delete(localId);
+  deleteLocalAttachmentFiles(record.attachments);
   notify();
 }
 
 export function clearPendingScans() {
   if (!_records.size) return;
+  const records = Array.from(_records.values());
   _records.clear();
+  records.forEach((record) => deleteLocalAttachmentFiles(record.attachments));
   notify();
+}
+
+/**
+ * Documents are sensitive — once a scan record is gone (the server has the
+ * images, or the user dismissed the scan) its camera/picker copies must not
+ * linger in the cache directory. Best-effort: only touches files inside the
+ * app's own cache, never the originals in the user's library.
+ */
+function deleteLocalAttachmentFiles(attachments: PendingAttachment[]) {
+  const cacheDir = FileSystem.cacheDirectory;
+  if (!cacheDir) return;
+  for (const attachment of attachments) {
+    if (!attachment.uri.startsWith(cacheDir)) continue;
+    void FileSystem.deleteAsync(attachment.uri, { idempotent: true }).catch(() => {});
+  }
 }
 
 export function subscribePendingScan(listener: Listener): () => void {

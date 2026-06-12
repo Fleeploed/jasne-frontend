@@ -35,7 +35,10 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
       response = await sendRequest(path, requestOptions, timeoutMs);
     }
     if (response.status === 401) {
-      await performSignOut();
+      // Fire-and-forget: the caller gets the 401 error below either way, and
+      // awaiting here could deadlock when the failing request itself runs
+      // inside a sign-out task.
+      void performSignOut();
     }
   }
 

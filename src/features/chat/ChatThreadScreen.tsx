@@ -447,16 +447,31 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
     const abortController = new AbortController();
     streamAbortRef.current = abortController;
 
+    // Tokens arrive far faster than the UI needs to update — re-rendering the
+    // whole message list per token causes visible jank on long threads.
+    // Buffer them and flush at most ~12 times per second.
+    let tokenBuffer = "";
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushTokens = () => {
+      flushTimer = null;
+      if (!tokenBuffer) return;
+      const text = tokenBuffer;
+      tokenBuffer = "";
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === localAssistant.id ? { ...message, content: message.content + text } : message
+        )
+      );
+    };
+
     try {
       await streamChat(scanId, trimmed, (event) => {
         if (event.type === "token") {
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === localAssistant.id ? { ...message, content: message.content + event.text } : message
-            )
-          );
+          tokenBuffer += event.text;
+          if (!flushTimer) flushTimer = setTimeout(flushTokens, 80);
         }
         if (event.type === "error") {
+          flushTokens();
           setError(event.detail);
           removeEmptyLocalAssistant(localAssistant.id);
         }
@@ -475,10 +490,13 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
     } catch (chatError) {
       // Deliberate cancellation (screen unmount) — nothing to surface.
       if (!abortController.signal.aborted) {
+        flushTokens();
         setError(chatError instanceof Error ? chatError.message : t("chat.answerError"));
         removeEmptyLocalAssistant(localAssistant.id);
       }
     } finally {
+      if (flushTimer) clearTimeout(flushTimer);
+      flushTokens();
       if (streamAbortRef.current === abortController) streamAbortRef.current = null;
       setStreaming(false);
     }
