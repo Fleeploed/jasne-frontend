@@ -12,10 +12,16 @@ export async function listMessages(scanId: string) {
   return apiFetch<ScanMessage[]>(`/scans/${scanId}/chat`);
 }
 
-export async function streamChat(scanId: string, question: string, onEvent: (event: ChatStreamEvent) => void) {
+export async function streamChat(
+  scanId: string,
+  question: string,
+  onEvent: (event: ChatStreamEvent) => void,
+  signal?: AbortSignal
+) {
   await streamPost({
     path: `/scans/${scanId}/chat/stream`,
     body: { question },
+    signal,
     onMessage: ({ event, data }) => {
       if (event === "token" && isRecord(data)) {
         onEvent({ type: "token", text: typeof data.text === "string" ? data.text : "" });

@@ -10,6 +10,7 @@ import * as Sentry from "@sentry/react-native";
 
 import { AccountDeletionScreen } from "@/features/auth/AccountDeletionScreen";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
+import { readCachedProfile, writeCachedProfile } from "@/features/auth/profileCache";
 import { AuthScreen } from "@/features/auth/AuthScreen";
 import { ResetPasswordScreen } from "@/features/auth/ResetPasswordScreen";
 import { OnboardingScreen } from "@/features/onboarding/OnboardingScreen";
@@ -206,10 +207,21 @@ function AccountGate({ userId, children }: { userId: string; children: ReactNode
     setLoading(true);
     setLoadError(null);
 
+    // Let the user straight in on the last known good profile while the
+    // network revalidation runs — the backend can take tens of seconds to
+    // cold-start and must not block the whole app behind a spinner.
+    void readCachedProfile(userId).then((cached) => {
+      if (!active || !cached) return;
+      setProfile((current) => current ?? cached);
+      setLoading(false);
+    });
+
     void apiFetch<ProfileResponse>("/profile")
       .then((nextProfile) => {
         if (!active) return;
         setProfile(nextProfile);
+        setLoadError(null);
+        writeCachedProfile(userId, nextProfile);
       })
       .catch((error) => {
         if (!active) return;
@@ -225,6 +237,14 @@ function AccountGate({ userId, children }: { userId: string; children: ReactNode
   }, [userId]);
 
   useEffect(() => loadProfile(), [loadProfile]);
+
+  const handleRestored = useCallback(
+    (restored: ProfileResponse) => {
+      setProfile(restored);
+      writeCachedProfile(userId, restored);
+    },
+    [userId]
+  );
 
   useEffect(() => {
     if (profile?.deletion_status !== "active") return;
@@ -248,7 +268,7 @@ function AccountGate({ userId, children }: { userId: string; children: ReactNode
         onRetry={() => {
           loadProfile();
         }}
-        onRestored={setProfile}
+        onRestored={handleRestored}
       />
     );
   }
@@ -260,7 +280,7 @@ function AccountGate({ userId, children }: { userId: string; children: ReactNode
         onRetry={() => {
           loadProfile();
         }}
-        onRestored={setProfile}
+        onRestored={handleRestored}
       />
     );
   }

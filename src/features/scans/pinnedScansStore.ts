@@ -25,3 +25,7 @@ export async function togglePinnedScan(id: string): Promise<string[]> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   return next;
 }
+
+export async function clearPinnedScans(): Promise<void> {
+  await AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+}

@@ -1,0 +1,71 @@
+/**
+ * Shared session lifecycle helpers.
+ *
+ * Every sign-out path — the explicit one in AuthProvider and the forced ones
+ * in api.ts / sse.ts after an unrecoverable 401 — must go through
+ * performSignOut() so the next user on this device never inherits the
+ * previous user's analytics identity, purchases, query cache, or the
+ * persisted chat threads (which contain scanned-document content).
+ */
+
+import { invalidateChatCache } from "@/features/chat/chatThreadCache";
+import { clearCachedProfile } from "@/features/auth/profileCache";
+import { clearPendingScans } from "@/features/scans/pendingScanStore";
+import { clearPinnedScans } from "@/features/scans/pinnedScansStore";
+import { resetAnalyticsUser } from "@/lib/analytics";
+import { clearPurchasesIdentity } from "@/lib/purchases";
+import { queryClient } from "@/lib/queryClient";
+import { supabase } from "@/lib/supabase";
+
+let signOutPromise: Promise<void> | null = null;
+let refreshPromise: Promise<boolean> | null = null;
+
+export function performSignOut(): Promise<void> {
+  // Concurrent failing requests may all decide to sign out — run it once.
+  if (!signOutPromise) {
+    signOutPromise = signOutOnce().finally(() => {
+      signOutPromise = null;
+    });
+  }
+  return signOutPromise;
+}
+
+async function signOutOnce() {
+  // Reset local identities before Supabase sign-out so the next user on
+  // this device doesn't inherit analytics or purchases.
+  resetAnalyticsUser();
+  await clearPurchasesIdentity();
+  queryClient.clear();
+  invalidateChatCache();
+  clearPendingScans();
+  await Promise.all([clearPinnedScans(), clearCachedProfile()]);
+  await supabase.auth.signOut();
+}
+
+/**
+ * Try to refresh the Supabase session once. Deduplicates concurrent callers
+ * (several requests hitting 401 at the same moment trigger a single refresh).
+ * Returns true when a fresh session is available.
+ */
+export function refreshSessionOnce(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = supabase.auth
+      .refreshSession()
+      .then(({ data, error }) => !error && Boolean(data.session))
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+/**
+ * Recovery path for a 401 on a request that won't be retried (SSE streams):
+ * refresh the session so the user's next attempt succeeds, and only sign
+ * out when the refresh itself fails (the session is truly gone).
+ */
+export async function recoverSessionOrSignOut(): Promise<void> {
+  const refreshed = await refreshSessionOnce();
+  if (!refreshed) await performSignOut();
+}

@@ -96,6 +96,12 @@ export function removePendingScanById(localId: string) {
   notify();
 }
 
+export function clearPendingScans() {
+  if (!_records.size) return;
+  _records.clear();
+  notify();
+}
+
 export function subscribePendingScan(listener: Listener): () => void {
   _listeners.add(listener);
   return () => _listeners.delete(listener);

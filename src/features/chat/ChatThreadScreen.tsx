@@ -187,6 +187,14 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
   // Whether the user is near the bottom of the chat — controls whether
   // a new streaming token should auto-scroll the view down.
   const isAtBottomRef = useRef(true);
+  // Cancels the in-flight answer stream when the user leaves the screen.
+  const streamAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      streamAbortRef.current?.abort();
+    };
+  }, []);
 
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -436,6 +444,9 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
 
     setMessages((current) => [...current, localUser, localAssistant]);
 
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
+
     try {
       await streamChat(scanId, trimmed, (event) => {
         if (event.type === "token") {
@@ -460,11 +471,15 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
               : current
           );
         }
-      });
+      }, abortController.signal);
     } catch (chatError) {
-      setError(chatError instanceof Error ? chatError.message : t("chat.answerError"));
-      removeEmptyLocalAssistant(localAssistant.id);
+      // Deliberate cancellation (screen unmount) — nothing to surface.
+      if (!abortController.signal.aborted) {
+        setError(chatError instanceof Error ? chatError.message : t("chat.answerError"));
+        removeEmptyLocalAssistant(localAssistant.id);
+      }
     } finally {
+      if (streamAbortRef.current === abortController) streamAbortRef.current = null;
       setStreaming(false);
     }
   }

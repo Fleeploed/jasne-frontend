@@ -1,39 +1,33 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { getLimits } from "@/features/scans/scansApi";
-import type { UserPlan } from "@/lib/types";
+import type { LimitsResponse, UserPlan } from "@/lib/types";
 
+export const LIMITS_QUERY_KEY = ["limits"] as const;
+
+/**
+ * Shared subscription state backed by React Query: all consumers reuse one
+ * cached /limits request, and a transient network failure keeps the last
+ * known plan instead of downgrading a paying user to "free".
+ */
 export function useSubscription() {
-  const aliveRef = useRef(true);
-  const [plan, setPlan] = useState<UserPlan>("free");
-  const [loading, setLoading] = useState(true);
+  const query = useQuery<LimitsResponse>({
+    queryKey: LIMITS_QUERY_KEY,
+    queryFn: () => getLimits(),
+    staleTime: 60_000,
+  });
 
-  useEffect(() => {
-    aliveRef.current = true;
-    return () => {
-      aliveRef.current = false;
-    };
-  }, []);
-
+  const refetch = query.refetch;
   const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const limits = await getLimits();
-      if (aliveRef.current) setPlan(limits.plan);
-    } catch {
-      if (aliveRef.current) setPlan("free");
-    } finally {
-      if (aliveRef.current) setLoading(false);
-    }
-  }, []);
+    await refetch();
+  }, [refetch]);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const plan: UserPlan = query.data?.plan ?? "free";
 
   return {
     isPro: plan === "pro",
-    loading,
+    loading: query.isPending,
     plan,
     refresh,
   };
