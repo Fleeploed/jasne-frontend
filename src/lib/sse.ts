@@ -1,7 +1,7 @@
-import { supabase } from "@/lib/supabase";
 import { config } from "@/lib/config";
 import { authHeaders } from "@/lib/api";
 import { parseErrorBody } from "@/lib/apiErrors";
+import { recoverSessionOrSignOut } from "@/lib/session";
 import { t } from "@/lib/i18n";
 import type { ApiError } from "@/lib/types";
 
@@ -14,23 +14,73 @@ type StreamOptions = {
   path: string;
   body: Record<string, unknown>;
   onMessage: (message: SseMessage) => void;
+  /** Aborts the underlying request; the promise rejects with an AbortError. */
+  signal?: AbortSignal;
 };
 
-export async function streamPost({ path, body, onMessage }: StreamOptions) {
+// A healthy stream emits at least keep-alive/status events well within this
+// window; if nothing arrives we assume the connection silently died.
+const STALL_TIMEOUT_MS = 60_000;
+
+export async function streamPost({ path, body, onMessage, signal }: StreamOptions) {
   const headers = await authHeaders();
-  await streamPostWithXhr(path, body, headers, onMessage);
+  await streamPostWithXhr(path, body, headers, onMessage, signal);
 }
 
 async function streamPostWithXhr(
   path: string,
   body: Record<string, unknown>,
   headers: Record<string, string>,
-  onMessage: (message: SseMessage) => void
+  onMessage: (message: SseMessage) => void,
+  signal?: AbortSignal
 ) {
   await new Promise<void>((resolve, reject) => {
     const request = new XMLHttpRequest();
     let seenLength = 0;
     let buffer = "";
+    let settled = false;
+    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = () => {
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = null;
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const settleResolve = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const settleReject = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const armStallTimer = () => {
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        request.abort();
+        settleReject(new Error(t("common.streamTimeout")));
+      }, STALL_TIMEOUT_MS);
+    };
+
+    function onAbort() {
+      request.abort();
+      const error = new Error("Aborted");
+      error.name = "AbortError";
+      settleReject(error);
+    }
+
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort);
+    }
 
     request.open("POST", `${config.apiBaseUrl}${path}`);
     Object.entries(headers).forEach(([key, value]) => request.setRequestHeader(key, value));
@@ -38,12 +88,13 @@ async function streamPostWithXhr(
     request.onreadystatechange = () => {
       if (request.readyState === XMLHttpRequest.HEADERS_RECEIVED && request.status >= 400) {
         request.abort();
-        void handleHttpError(request.status, request.responseText).then(reject);
+        void handleHttpError(request.status, request.responseText).then(settleReject);
       }
     };
 
     request.onprogress = () => {
       if (request.status >= 400) return;
+      armStallTimer();
       const nextText = request.responseText.slice(seenLength);
       seenLength = request.responseText.length;
       buffer = consumeSseText(buffer + nextText, onMessage);
@@ -51,11 +102,11 @@ async function streamPostWithXhr(
 
     request.onload = () => {
       if (request.status === 0) {
-        reject(new Error(t("common.networkStream", { status: 0 })));
+        settleReject(new Error(t("common.networkStream", { status: 0 })));
         return;
       }
       if (request.status >= 400) {
-        void handleHttpError(request.status, request.responseText).then(reject);
+        void handleHttpError(request.status, request.responseText).then(settleReject);
         return;
       }
 
@@ -63,11 +114,12 @@ async function streamPostWithXhr(
       buffer = consumeSseText(buffer + nextText, onMessage);
       const tail = parseSseChunk(buffer);
       if (tail) onMessage(tail);
-      resolve();
+      settleResolve();
     };
 
-    request.onerror = () => reject(new Error(t("common.networkError")));
-    request.ontimeout = () => reject(new Error(t("common.streamTimeout")));
+    request.onerror = () => settleReject(new Error(t("common.networkError")));
+    request.ontimeout = () => settleReject(new Error(t("common.streamTimeout")));
+    armStallTimer();
     request.send(JSON.stringify(body));
   });
 }
@@ -103,8 +155,12 @@ function parseSseChunk(chunk: string): SseMessage | null {
 }
 
 async function handleHttpError(status: number, responseText: string) {
-  if (status === 401 || status === 403) {
-    await supabase.auth.signOut();
+  // A stream can't be transparently retried mid-flight: refresh the session
+  // so the user's next attempt succeeds, and only sign out when the session
+  // is unrecoverable. 403 means "no permission", not "no session" — never
+  // sign out because of it.
+  if (status === 401) {
+    await recoverSessionOrSignOut();
   }
 
   const detail = parseErrorBody(status, responseText, t("common.networkStream", { status })).message;
