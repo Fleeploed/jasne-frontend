@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Easing, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View, type DimensionValue, type NativeScrollEvent, type NativeSyntheticEvent, type StyleProp, type TextStyle } from "react-native";
+import { ActivityIndicator, Animated, Easing, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View, type DimensionValue, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import * as Clipboard from "expo-clipboard";
 import * as WebBrowser from "expo-web-browser";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -27,6 +28,7 @@ import {
   removePendingScanById,
   subscribePendingScan,
 } from "@/features/scans/pendingScanStore";
+import { triggerSelectionHaptic } from "@/lib/haptics";
 import { formatCategoryLabel, formatLocalizedDate, t } from "@/lib/i18n";
 import { supabase } from "@/lib/supabase";
 import type { AnalysisDeadline, DeadlineResponse, LimitsResponse, ScanMessage, ScanResponse, UserPlan } from "@/lib/types";
@@ -660,22 +662,35 @@ function ResultCard({ scan, plan, existingDeadlines, deadlinesReady, onReminderC
           <Text style={styles.resultIconText}>DOC</Text>
         </View>
         <View style={styles.resultHeaderText}>
-          <Text selectable style={styles.docKind}>{result.document_type_cz ?? formatCategoryLabel(scan.category)}</Text>
-          {result.sender ? <Text selectable style={styles.docFrom}>{result.sender}</Text> : null}
+          <Text style={styles.docKind}>{result.document_type_cz ?? formatCategoryLabel(scan.category)}</Text>
+          {result.sender ? <Text style={styles.docFrom}>{result.sender}</Text> : null}
         </View>
         {result.deadlines[0] ? <Text style={[styles.urgencyPill, urgencyPillColors(result.deadlines[0].date, colors)]}>{deadlineDistance(result.deadlines[0].date)}</Text> : null}
 
       </View>
-      <Text selectable style={styles.resultTitle}>{result.document_type_cz ?? result.document_type_localized ?? formatDocTitle(result.document_type ?? scan.doc_type)}</Text>
-      <Text selectable style={styles.resultSummary}>{result.summary}</Text>
+      <Text style={styles.resultTitle}>{result.document_type_cz ?? result.document_type_localized ?? formatDocTitle(result.document_type ?? scan.doc_type)}</Text>
+      <View style={styles.summaryRow}>
+        <Text style={[styles.resultSummary, styles.flex1]}>{result.summary}</Text>
+        {result.summary ? <CopyButton text={result.summary} colors={colors} styles={styles} compact /> : null}
+      </View>
       {oampIdentifier ? <OampTrackingOffer identifier={oampIdentifier} plan={plan} /> : null}
-      {result.actions_required.length ? <Text style={styles.sectionTitle}>{t("chat.actions")}</Text> : null}
+      {result.actions_required.length ? (
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.sectionTitle}>{t("chat.actions")}</Text>
+          <CopyButton
+            text={result.actions_required.map((action, index) => `${index + 1}. ${action}`).join("\n")}
+            colors={colors}
+            styles={styles}
+            compact
+          />
+        </View>
+      ) : null}
       {result.actions_required.map((action, index) => (
         <View key={`${action}-${index}`} style={styles.actionRow}>
           <View style={styles.actionIndex}>
             <Text style={styles.actionIndexText}>{index + 1}</Text>
           </View>
-          <Text selectable style={styles.resultLine}>{action}</Text>
+          <Text style={styles.resultLine}>{action}</Text>
         </View>
       ))}
       {result.deadlines.length ? <Text style={styles.sectionTitle}>{t("chat.deadlines")}</Text> : null}
@@ -698,6 +713,7 @@ function ResultCard({ scan, plan, existingDeadlines, deadlinesReady, onReminderC
           tone="blue"
           title={t("chat.whereToGoLabel")}
           value={result.where_to_go}
+          colors={colors}
           styles={styles}
         />
       ) : null}
@@ -706,6 +722,7 @@ function ResultCard({ scan, plan, existingDeadlines, deadlinesReady, onReminderC
           tone="amber"
           title={t("chat.documentsNeededLabel")}
           value={result.documents_needed.join(", ")}
+          colors={colors}
           styles={styles}
         />
       ) : null}
@@ -714,6 +731,7 @@ function ResultCard({ scan, plan, existingDeadlines, deadlinesReady, onReminderC
           tone="danger"
           title={t("chat.penaltyLabel")}
           value={result.penalty}
+          colors={colors}
           styles={styles}
         />
       ) : null}
@@ -722,6 +740,7 @@ function ResultCard({ scan, plan, existingDeadlines, deadlinesReady, onReminderC
           tone="green"
           title={t("chat.tipLabel")}
           value={result.tips}
+          colors={colors}
           styles={styles}
         />
       ) : null}
@@ -768,6 +787,7 @@ function DeadlineReminderRow({
   const showAddress = (deadline.type === "action" || deadline.type === "response") && Boolean(whereToGo);
   const time = parseTimeFromDescription(deadline.description) ?? parseTimeFromDate(deadline.date);
   const dateLabel = time ? `${formatDeadlineDate(deadline.date)} · ${time}` : formatDeadlineDate(deadline.date);
+  const deadlineCopyText = [dateLabel, showAddress && whereToGo ? whereToGo : null].filter(Boolean).join("\n");
 
   async function handleAdd() {
     if (saved || saving) return;
@@ -805,12 +825,15 @@ function DeadlineReminderRow({
         colors={["rgba(111,160,230,0.16)", "rgba(111,160,230,0.06)"]}
         style={styles.deadlineCard}
       >
-        <Text style={styles.deadlineCardLabel}>{t(`deadlineType.${deadline.type}` as Parameters<typeof t>[0]).toUpperCase()}</Text>
-        <Text selectable style={styles.deadlineCardDate}>{dateLabel}</Text>
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.deadlineCardLabel}>{t(`deadlineType.${deadline.type}` as Parameters<typeof t>[0]).toUpperCase()}</Text>
+          <CopyButton text={deadlineCopyText} colors={colors} styles={styles} compact />
+        </View>
+        <Text style={styles.deadlineCardDate}>{dateLabel}</Text>
         {showAddress && whereToGo ? (
           <View style={styles.deadlineCardAddress}>
             <Text style={styles.deadlineCardPin}>⊙</Text>
-            <Text selectable style={styles.deadlineCardAddressText}>{whereToGo}</Text>
+            <Text style={styles.deadlineCardAddressText}>{whereToGo}</Text>
           </View>
         ) : null}
         <Pressable
@@ -1164,10 +1187,11 @@ function isReminderTriggerUpcoming(dueDate: string, daysBefore: number) {
   return triggerDate.getTime() >= today.getTime();
 }
 
-function ResultInfoBlock({ tone, title, value, styles }: {
+function ResultInfoBlock({ tone, title, value, colors, styles }: {
   tone: "blue" | "amber" | "neutral" | "danger" | "green";
   title: string;
   value: string;
+  colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
 }) {
   const toneStyle =
@@ -1193,8 +1217,11 @@ function ResultInfoBlock({ tone, title, value, styles }: {
 
   return (
     <View style={[styles.infoBlock, toneStyle]}>
-      <Text style={[styles.infoBlockTitle, titleStyle]}>{title}</Text>
-      <Text selectable style={styles.infoBlockText}>{value}</Text>
+      <View style={styles.sectionTitleRow}>
+        <Text style={[styles.infoBlockTitle, titleStyle]}>{title}</Text>
+        <CopyButton text={value} colors={colors} styles={styles} compact />
+      </View>
+      <Text style={styles.infoBlockText}>{value}</Text>
     </View>
   );
 }
@@ -1271,52 +1298,70 @@ function MessageBubble({ message, scan, plan, existingDeadlines, deadlinesReady,
   if (message.message_type === "local_image") {
     return <PendingAttachmentBubble attachments={message.attachments} styles={styles} onOpenViewer={onOpenViewer} />;
   }
+  const assistantText = markdownToPlainText(message.content || t("chat.thinking"));
   return (
-    <View style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}>
-      {isUser ? (
-        <SelectableBubbleText
-          value={message.content || t("chat.thinking")}
-          style={[styles.bubbleText, styles.userText]}
-        />
-      ) : (
-        <MarkdownText content={message.content || t("chat.thinking")} styles={styles} />
-      )}
+    <View style={isUser ? styles.messageColUser : styles.messageColAssistant}>
+      <View style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}>
+        <Text style={[styles.bubbleText, isUser && styles.userText]}>
+          {isUser ? message.content || t("chat.thinking") : assistantText}
+        </Text>
+      </View>
+      {!isUser && message.content ? (
+        <View style={styles.messageCopyRow}>
+          <CopyButton text={assistantText} colors={colors} styles={styles} />
+        </View>
+      ) : null}
     </View>
   );
 }
 
-function SelectableBubbleText({ value, style }: {
-  value: string;
-  style: StyleProp<TextStyle>;
+function CopyButton({ text, colors, styles, compact = false }: {
+  text: string;
+  colors: ColorPalette;
+  styles: ReturnType<typeof createStyles>;
+  compact?: boolean;
 }) {
+  const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+    },
+    [],
+  );
+
+  const handleCopy = useCallback(async () => {
+    const value = text.trim();
+    if (!value) return;
+    try {
+      await Clipboard.setStringAsync(value);
+    } catch {
+      return;
+    }
+    triggerSelectionHaptic();
+    setCopied(true);
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+    resetTimer.current = setTimeout(() => setCopied(false), 1500);
+  }, [text]);
+
+  const tint = copied ? colors.green : colors.muted2;
+
   return (
-    <TextInput
-      value={value}
-      editable={false}
-      multiline
-      scrollEnabled={false}
-      contextMenuHidden={false}
-      style={[stylesForSelectableTextInput.base, style]}
-    />
+    <Pressable
+      onPress={handleCopy}
+      hitSlop={10}
+      accessibilityRole="button"
+      accessibilityLabel={t(copied ? "chat.copied" : "chat.copy")}
+      style={({ pressed }) => [compact ? styles.copyIconBtn : styles.copyChip, pressed && styles.copyPressed]}
+    >
+      <Icon name={copied ? "check" : "copy"} size={14} color={tint} />
+      {compact ? null : (
+        <Text style={[styles.copyChipText, { color: tint }]}>{t(copied ? "chat.copied" : "chat.copy")}</Text>
+      )}
+    </Pressable>
   );
 }
-
-function MarkdownText({ content, styles }: {
-  content: string;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  return <SelectableBubbleText value={markdownToPlainText(content)} style={styles.bubbleText} />;
-}
-
-const stylesForSelectableTextInput = StyleSheet.create({
-  base: {
-    backgroundColor: "transparent",
-    borderWidth: 0,
-    margin: 0,
-    padding: 0,
-    textAlignVertical: "top",
-  },
-});
 
 type MarkdownPart = {
   text: string;
@@ -2267,8 +2312,7 @@ function createStyles(colors: ColorPalette) {
       ...typeStyles.caption2,
       fontWeight: "600",
       textTransform: "uppercase",
-      letterSpacing: 1.6,
-      marginTop: 6
+      letterSpacing: 1.6
     },
     actionRow: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
     actionIndex: {
@@ -2645,6 +2689,16 @@ function createStyles(colors: ColorPalette) {
     },
     bubbleText: { color: colors.text, fontFamily: fonts.body, fontSize: 13.5, lineHeight: 19 },
     userText: { color: colors.textOnAccent },
+    messageColAssistant: { alignItems: "flex-start" },
+    messageColUser: { alignItems: "flex-end" },
+    messageCopyRow: { marginTop: 2, marginLeft: 2 },
+    sectionTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+    summaryRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+    flex1: { flex: 1 },
+    copyChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingVertical: 4, paddingHorizontal: 7, borderRadius: 8 },
+    copyChipText: { fontFamily: fonts.bodyBold, fontSize: 11.5, fontWeight: "600", letterSpacing: 0.2 },
+    copyIconBtn: { padding: 5, borderRadius: 8 },
+    copyPressed: { opacity: 0.5 },
     markdownBold: { fontFamily: fonts.bodyBold },
     markdownItalic: { fontStyle: "italic" },
     markdownCode: {

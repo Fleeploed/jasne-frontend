@@ -59,6 +59,7 @@ export type IconName =
   | 'building'
   | 'zap'
   | 'phone-document'
+  | 'copy'
   | 'trash';
 
 export interface IconProps {
@@ -297,6 +298,11 @@ export function Icon({ name, size = 24, color = '#000000', style }: IconProps) {
     case 'trash': return (
       <Svg {...p}>
         <Path d="M4 7h16M9 7V4h6v3M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13M10 11v7M14 11v7" {...sp}/>
+      </Svg>
+    );
+    case 'copy': return (
+      <Svg {...p}>
+        <Rect x={9} y={9} width={11} height={11} rx={2.5} {...sp}/><Path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" {...sp}/>
       </Svg>
     );
     default: return null;
