@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "meta": {
     "project": "Jasne frontend",
-    "snapshot_date": "2026-06-04",
+    "snapshot_date": "2026-06-13",
     "repo_path": "/Users/alisheribrayev/Documents/Jasne/jasne-frontend",
     "app_name": "Jasne",
     "current_version": "0.1.0",
@@ -31,7 +31,9 @@
         "yaml ^2.9.0 (parse bundled terms.yaml for the Terms of Service screen)",
         "posthog-react-native ^4.46.10 (product analytics events, screen views, app lifecycle)",
         "@sentry/react-native ~6.10.0 (mobile crash/error reporting)",
-        "expo-application ~6.0.2, expo-device ~7.0.3, expo-localization ~16.0.1 (PostHog/Sentry peer dependencies and app/device metadata)"
+        "expo-application ~6.0.2, expo-device ~7.0.3, expo-localization ~16.0.1 (PostHog/Sentry peer dependencies and app/device metadata)",
+        "expo-secure-store ~14.0.0 (encrypted Supabase auth session storage — iOS Keychain / Android Keystore; requires native rebuild)",
+        "expo-clipboard ~7.0.1 (copy-to-clipboard for chat answers and scan result blocks; requires native rebuild)"
       ],
       "metro_config": "metro.config.js extends the default Expo config to add 'yaml' and 'yml' to resolver.assetExts so .yaml content can be bundled and loaded via expo-asset; src/types/assets.d.ts declares the matching '*.yaml' module so TS imports resolve. It also contains a targeted resolver for @posthog/core/surveys -> @posthog/core/dist/surveys/index.js because Expo SDK 52 Metro has package exports disabled and posthog-react-native imports that subpath."
     },
@@ -747,7 +749,18 @@
     { "id": "fe-fix-51", "area": "README + .env.example", "fix": "Documented PostHog/Sentry env variables, Sentry build secrets, Render staging backend URL, and corrected cp .env.example .env setup command." },
     { "id": "fe-fix-52", "area": "api.ts", "fix": "403 errors with backend detail.code=account_pending_deletion no longer force Supabase signOut; ApiError now carries code so account-restore UX can stay authenticated." },
     { "id": "fe-fix-53", "area": "app/_layout + AccountDeletionScreen", "fix": "Root auth gate now loads /profile after sign-in, blocks normal app UI when deletion_status=pending, shows the scheduled deletion date, and lets the user restore via POST /profile/restore or sign out." },
-    { "id": "fe-fix-54", "area": "delete-account + i18n", "fix": "Delete-account copy now says deletion is scheduled with a 7-day restore window; CTA changed from permanent deletion to scheduled deletion across cs/ru/uk/en." }
+    { "id": "fe-fix-54", "area": "delete-account + i18n", "fix": "Delete-account copy now says deletion is scheduled with a 7-day restore window; CTA changed from permanent deletion to scheduled deletion across cs/ru/uk/en." },
+    { "id": "fe-fix-55", "area": "session.ts (new)", "fix": "Added central src/lib/session.ts. performSignOut() deduplicates concurrent calls and runs all registerSignOutTask() cleanups, then resets analytics, clears RevenueCat identity, React Query cache, chat cache, pending + pinned scans and the cached profile before supabase.auth.signOut — fixes data bleeding between accounts on a shared device. Also exposes refreshSessionOnce() and recoverSessionOrSignOut()." },
+    { "id": "fe-fix-56", "area": "api.ts", "fix": "apiFetch gained a 30s AbortController timeout (could previously hang forever), merges an external signal, refreshes the session once and retries on 401, and only fire-and-forget signs out when the session is truly unrecoverable; avoids deadlock when the failing request runs inside a sign-out task. 403 no longer signs out." },
+    { "id": "fe-fix-57", "area": "sse.ts", "fix": "streamPost accepts an AbortSignal, arms a 60s stall watchdog re-armed on each onprogress (silently-dead streams now reject), waits for the body before rejecting on HTTP error, and fire-and-forget recovers the session on 401 instead of deadlocking." },
+    { "id": "fe-fix-58", "area": "useSubscription.ts", "fix": "Rewritten on React Query (queryKey ['limits'], staleTime 60s); a network failure keeps the last known plan instead of silently reverting Pro users to free." },
+    { "id": "fe-fix-59", "area": "app/_layout + profileCache.ts (new)", "fix": "AccountGate reads a per-user cached /profile from AsyncStorage to render the app instantly on cold start, then refreshes in the background; on error with a cached profile the user is let in with stale data instead of being blocked on a spinner." },
+    { "id": "fe-fix-60", "area": "pushNotifications.ts", "fix": "Cold-start notification taps handled via getLastNotificationResponseAsync with a handledResponseIds guard so the tap routes correctly and never double-fires; the Expo push token is stored and DELETEd from the backend on sign-out (registerSignOutTask) so a signed-out user stops receiving pushes." },
+    { "id": "fe-fix-61", "area": "ChatThreadScreen", "fix": "Streaming answer is aborted via AbortController when leaving the screen (deliberate aborts suppressed), and tokens are buffered ~80ms before flushing to state to stop the per-token re-render storm during fast generation." },
+    { "id": "fe-fix-62", "area": "scansApi + i18n", "fix": "Upload switched from base64 to ArrayBuffer to Supabase (OOM on multi-MB PDFs) to native FileSystem.uploadAsync streaming straight from disk; added a 20MB client guard with a localized scanApi.fileTooLarge message (cs/ru/uk/en)." },
+    { "id": "fe-fix-63", "area": "pendingScanStore + pinnedScansStore", "fix": "removePendingScanById/clearPendingScans now delete the local cached attachment files (only URIs under FileSystem.cacheDirectory) so processed scans stop accumulating on disk; added clearPinnedScans() for the sign-out cleanup path." },
+    { "id": "fe-fix-64", "area": "secureStorage.ts (new) + supabase.ts", "fix": "Supabase auth session moved from plain AsyncStorage to an encrypted expo-secure-store adapter (iOS Keychain / Android Keystore) with 1800-byte chunking for the iOS 2KB item cap and a one-time transparent migration from AsyncStorage so existing users are not signed out. Requires native rebuild." },
+    { "id": "fe-fix-65", "area": "ChatThreadScreen + Icon + i18n", "fix": "Replaced fragmented <Text selectable> (only one sentence could be selected, awkward native copy menu) with explicit per-block copy buttons via expo-clipboard: summary, what-to-do steps, deadline cards, info blocks and assistant chat answers each copy the whole block with haptic + 1.5s confirmation; added a copy icon and chat.copy/chat.copied strings. Requires native rebuild." }
   ],
 
   "known_issues_and_risks": [
@@ -820,11 +833,25 @@
       "status": "backend endpoint ready; external scheduler pending",
       "detail": "Backend now exposes /internal/accounts/purge-deleted, but Render/GitHub cron must call it with X-Cron-Secret after deployment so pending accounts are actually purged after 7 days.",
       "mitigation": "Add scheduled call to /internal/accounts/purge-deleted alongside the existing notification cron and monitor scanned_profiles/purged/failed in logs."
+    },
+    {
+      "area": "Push token unregister on sign-out",
+      "status": "frontend ready; backend endpoint pending",
+      "detail": "On sign-out the app calls DELETE /push-tokens with { expo_push_token } to stop pushes to a signed-out user. The jasne-backend must implement this endpoint for it to take effect end-to-end.",
+      "mitigation": "Implement DELETE /push-tokens in jasne-backend; until then the call fails silently and the token is only removed from device storage."
+    },
+    {
+      "area": "Native rebuild required",
+      "status": "action needed before testing",
+      "detail": "expo-secure-store (session storage) and expo-clipboard (copy buttons) are native modules added this session. A Metro/JS reload is not enough — the app must be rebuilt or the copy action and secure session will not work.",
+      "mitigation": "Run npx expo install (already in package.json) then npx expo run:ios / run:android, or trigger an EAS development build."
     }
   ],
 
   "next_steps": {
     "high_priority": [
+      "Rebuild the native app (npx expo run:ios / run:android or EAS) so expo-secure-store and expo-clipboard link — copy buttons and encrypted session need it.",
+      "Implement DELETE /push-tokens in jasne-backend so sign-out actually unregisters the device's push token.",
       "Fix Czech grammar 'Skeny v květen' → 'Skeny v květnu' in ProfileScreen usage label.",
       "Unify document/scan list timestamp format (pick relative or absolute).",
       "Verify password reset from iPhone simulator Mail/Gmail or real iPhone development build.",
