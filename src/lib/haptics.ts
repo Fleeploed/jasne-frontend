@@ -1,4 +1,5 @@
 import * as Haptics from "expo-haptics";
+import { logger } from "@/lib/logger";
 import { Platform, Vibration } from "react-native";
 
 function fallbackVibrate(durationMs: number) {
@@ -9,7 +10,7 @@ function fallbackVibrate(durationMs: number) {
 
 function reportUnavailable(error: unknown) {
   if (__DEV__) {
-    console.warn("[haptics] native module unavailable. Rebuild the development client.", error);
+    logger.warn("[haptics] native module unavailable. Rebuild the development client.", error);
   }
 }
 

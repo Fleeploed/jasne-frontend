@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { logger } from "@/lib/logger";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -58,7 +59,7 @@ export function HelpGuideScreen() {
       if (!aliveRef.current) return;
       setGuide(response);
     } catch (error) {
-      console.warn("Failed to load Help guide", error);
+      logger.warn("Failed to load Help guide", error);
       if (!aliveRef.current) return;
       if (isNotFound(error)) setNotFound(true);
       else setFailed(true);
@@ -76,7 +77,7 @@ export function HelpGuideScreen() {
       setFailed(false);
       setNotFound(false);
     } catch (error) {
-      console.warn("Failed to refresh Help guide", error);
+      logger.warn("Failed to refresh Help guide", error);
     } finally {
       if (aliveRef.current) setRefreshing(false);
     }
@@ -173,7 +174,7 @@ function handleCtaAction(action: CtaAction) {
     router.push("/help");
     return;
   }
-  console.warn("Unknown Help CTA action", action);
+  logger.warn("Unknown Help CTA action", action);
 }
 
 function fallbackLanguageNote(language: HelpLanguage) {

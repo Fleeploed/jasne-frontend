@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { logger } from "@/lib/logger";
 import type { ComponentProps, ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, type StyleProp, type ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -377,7 +378,7 @@ function CtaActionButton({ action, onPress }: { action: CtaAction; onPress: () =
   const styles = useMemo(() => createStyles(colors), [colors]);
   const label = labelForCtaAction(action);
   if (!label) {
-    console.warn("Unknown help CTA action", action);
+    logger.warn("Unknown help CTA action", action);
     return null;
   }
   return (
