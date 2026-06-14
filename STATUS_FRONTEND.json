@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "meta": {
     "project": "Jasne frontend",
-    "snapshot_date": "2026-06-13",
+    "snapshot_date": "2026-06-15",
     "repo_path": "/Users/alisheribrayev/Documents/Jasne/jasne-frontend",
     "app_name": "Jasne",
     "current_version": "0.1.0",
@@ -10,7 +10,6 @@
     "backend_live_url": "https://jasne-backend.onrender.com",
     "backend_repo_path": "/Users/alisheribrayev/Documents/Jasne/jasne-backend"
   },
-
   "infrastructure": {
     "mobile_runtime": {
       "framework": "Expo",
@@ -98,9 +97,22 @@
         "App Store/TestFlight distribution",
         "stable production signing"
       ]
+    },
+    "testing": {
+      "runner": "jest-expo@52.0.6 (must match Expo SDK)",
+      "jest_version": "29.7.0 (jest@30 incompatible with jest-expo@52 internal packages)",
+      "eslint_version": "8.57.1 (ESLint 10 requires flat config, incompatible with eslint-config-expo)",
+      "react_hooks_plugin": "4.6.x (v7 adds React Compiler rules that false-positive on non-Compiler projects)",
+      "test_suites": [
+        "src/lib/__tests__/sse.test.ts (21 tests — parseSseChunk, consumeSseText)",
+        "src/lib/__tests__/apiErrors.test.ts (16 tests — parseErrorBody, isRecord)",
+        "src/lib/__tests__/i18n.test.ts (33 tests — normalizeLocale, pluralize, Czech/Russian/English forms, formatLocalizedMonthAfterIn)",
+        "src/lib/__tests__/queryClient.test.ts (11 tests — shouldRetry: 4xx never, 5xx up to 3)",
+        "src/features/chat/__tests__/oampIdentifier.test.ts (10 tests — extractOampIdentifier, normalizeOampIdentifier)"
+      ],
+      "ci": ".github/workflows/ci.yml — 3 parallel jobs: typecheck, lint, test (coverage artifact)"
     }
   },
-
   "frontend": {
     "stack": {
       "navigation": "Expo Router file-based routing",
@@ -526,7 +538,6 @@
       ]
     }
   },
-
   "product_scope": {
     "mvp_core_loop": {
       "supabase_auth": "implemented",
@@ -559,7 +570,6 @@
       }
     }
   },
-
   "external_setup_required": {
     "supabase_auth": {
       "status": "code ready; dashboard configuration pending external verification",
@@ -659,7 +669,6 @@
       "error_seen": "No code signing certificates are available to use."
     }
   },
-
   "local_commands": {
     "install_dependencies": "npm install",
     "start_metro": "npm start",
@@ -670,7 +679,6 @@
     "typecheck": "npm run typecheck",
     "ios_export_smoke": "npx expo export --platform ios --output-dir /private/tmp/jasne-frontend-export"
   },
-
   "tested_locally": {
     "date": "2026-06-13",
     "environment": "MacBook Air Alisher, Expo SDK 52, iOS Simulator",
@@ -720,85 +728,428 @@
       "deadlines screen dark UI and swipe actions render"
     ]
   },
-
   "bug_fixes_applied": [
-    { "id": "fe-fix-1", "area": "AuthProvider", "fix": "Wrap new URL(url) in try/catch — malformed deep-link URLs no longer crash the app on startup" },
-    { "id": "fe-fix-2", "area": "AuthProvider", "fix": "signOut rewritten as proper async function (was .then() fire-and-forget)" },
-    { "id": "fe-fix-3", "area": "AuthScreen", "fix": "completeOAuthRedirect wraps new URL() in try/catch — returns error string instead of throwing" },
-    { "id": "fe-fix-4", "area": "DeadlinesScreen", "fix": "Extract compareDeadlines to module level so edit-modal sort matches load and markDone order" },
-    { "id": "fe-fix-5", "area": "DeadlinesScreen", "fix": "Add aliveRef + cleanup useEffect to prevent setState after unmount on slow network" },
-    { "id": "fe-fix-6", "area": "ChatThreadScreen", "fix": "Replace pendingDoneHandled state with useRef — eliminates stale closure bug in SSE event listener" },
-    { "id": "fe-fix-7", "area": "ChatThreadScreen", "fix": "Add alive flags in both useEffects to prevent setState after unmount" },
-    { "id": "fe-fix-8", "area": "ChatThreadScreen", "fix": "Make onOpenViewer optional on DocumentAttachmentBubble — crash with multiple images fixed" },
-    { "id": "fe-fix-9", "area": "ProfileScreen", "fix": "Move SHEET_HIDDEN constant to module level (was re-created on every render)" },
-    { "id": "fe-fix-10", "area": "ProfileScreen", "fix": "Add aliveRef + cleanup to prevent setState after unmount in loadLimits" },
-    { "id": "fe-fix-11", "area": "ScanListScreen", "fix": "Add aliveRef + bail-out in load callback to prevent setState after unmount" },
-    { "id": "fe-fix-12", "area": "ui.tsx", "fix": "Rewrote lightColors palette with v2 design tokens (warm paper bg, deeper amber/danger/green/pro) and added bgDeep / surface3 / borderSoft to both schemes for type parity" },
-    { "id": "fe-fix-13", "area": "ChatThreadScreen", "fix": "Footer background changed from hardcoded rgba(15,13,11,0.94) to colors.bg so light theme no longer shows a black chat bar" },
-    { "id": "fe-fix-14", "area": "ChatThreadScreen", "fix": "Urgency pill now uses three-tone helper (urgent < 7d red, soon ≤ 30d amber, later green) instead of always red" },
-    { "id": "fe-fix-15", "area": "ChatThreadScreen", "fix": "LockedChatComposer split into free (paywall CTA) vs pro-exhausted (counter) renderings; receives plan and real questionsUsed instead of duplicate displayQuestionLimit" },
-    { "id": "fe-fix-16", "area": "ChatThreadScreen", "fix": "KeyboardAvoidingView now wraps the full content area (FlatList + footer in normal flow) so messages compress and footer pins above the keyboard; previously absolute footer caused messages to hide under the keyboard" },
-    { "id": "fe-fix-17", "area": "ChatThreadScreen", "fix": "Keyboard listener resets footer paddingBottom when keyboard is open so the input pill sits flush against the keyboard with no safe-area gap" },
-    { "id": "fe-fix-18", "area": "ChatThreadScreen", "fix": "Platform-aware footer padding: iOS max(insets.bottom, 10) for home indicator, Android raw insets.bottom; KeyboardAvoidingView behavior undefined on Android to avoid double-resize with system adjustResize" },
-    { "id": "fe-fix-19", "area": "ChatThreadScreen", "fix": "Per-scan in-memory scrollOffset Map + onScroll/onContentSizeChange handlers restore scroll position when reopening a chat and only auto-scroll on new tokens when user is near bottom" },
-    { "id": "fe-fix-20", "area": "app/scan/[id]", "fix": "Route key={params.id} forces a fresh mount on scan change, eliminating the flash of the previous chat's data while the new one loads" },
-    { "id": "fe-fix-21", "area": "ui.tsx ThemeProvider", "fix": "Sync Android system navigation bar background and button style with current theme via expo-navigation-bar useEffect" },
-    { "id": "fe-fix-22", "area": "tabs/_layout", "fix": "Platform-aware tab bar paddingBottom — iOS uses safe area for home indicator, Android clamps to ≤8pt to avoid wasted space under gesture nav" },
-    { "id": "fe-fix-23", "area": "app/_layout", "fix": "Moved scan/[id] and scan/new from Tabs to root Stack so iOS edge swipe-back gesture works; animation slide_from_right" },
-    { "id": "fe-fix-24", "area": "ScanListScreen", "fix": "Replaced broken hand-drawn search/bell glyph Views with Ionicons; removed bell entirely; search now inline in AppBar with Cancel button and LayoutAnimation transition" },
-    { "id": "fe-fix-25", "area": "ScanListScreen", "fix": "Added SearchEmpty state, amber-highlight on matched substrings in title/sender/summary, and extended filterScans to match against linked deadline title/description" },
-    { "id": "fe-fix-26", "area": "ScanListScreen", "fix": "Restored FAB camera button (was missing from JSX though style existed); DocCard now shows sender line and uses v2 border + soft shadow" },
-    { "id": "fe-fix-27", "area": "DeadlinesScreen", "fix": "Card date split into day (Geist 24) + month (Inter 14) baseline-aligned; description hidden when done; new compact ux still pending" },
-    { "id": "fe-fix-28", "area": "DeadlinesScreen", "fix": "Long-press on card triggers shared ActionSheet (edit / delete destructive / mark-done) with 15ms haptic; PanResponder swipes retained as alternative" },
-    { "id": "fe-fix-29", "area": "i18n", "fix": "Added searchClearAria, searchEmptyTitle, searchEmptyDetail across cs/ru/uk/en; cleaned duplicate deadlines.markDone keys" },
-    { "id": "fe-fix-30", "area": "purchases", "fix": "Added src/lib/purchases.ts — RevenueCat wrapper with configure/identify/clear, all guarded by Expo Go + dynamic-import detection so missing native module never crashes JS bundle" },
-    { "id": "fe-fix-31", "area": "app/_layout", "fix": "configurePurchases() runs once on mount (idempotent) so RevenueCat is ready before sign-in screen renders" },
-    { "id": "fe-fix-32", "area": "AuthProvider", "fix": "On session arrival useEffect aliases RevenueCat to session.user.id; signOut calls clearPurchasesIdentity BEFORE supabase.auth.signOut so next user on device doesn't inherit purchases" },
-    { "id": "fe-fix-33", "area": "api.ts", "fix": "fetch() wrapped in try/catch — DNS/TLS/CORS failures now throw a localized common.networkError ApiError(status=0) instead of an opaque TypeError" },
-    { "id": "fe-fix-34", "area": "api.ts + sse.ts", "fix": "Error-body normalizer collapses 5xx, empty bodies, non-JSON bodies, and platform-proxy envelopes (Railway/fly.io `{ status, code, message, request_id }`) to localized common.serviceDown — UI no longer shows 'Application not found' or raw JSON" },
-    { "id": "fe-fix-35", "area": "AuthScreen + ResetPasswordScreen", "fix": "Password fields gained an eye toggle (auth.showPassword / auth.hidePassword) and a proper AppIcon `lock` glyph replacing the typographic `•`" },
-    { "id": "fe-fix-36", "area": "ProfileScreen", "fix": "'Podmínky používání' row and footer link now navigate to /profile/terms; footer Privacy link now also routes to /profile/privacy" },
-    { "id": "fe-fix-37", "area": "TermsScreen + terms.yaml + metro.config.js", "fix": "Added Terms of Service screen rendered from bundled terms.yaml (locales cs/ru/uk/en, fallback cs); metro.config.js extends assetExts with yaml/yml, src/types/assets.d.ts declares the *.yaml module shape" },
-    { "id": "fe-fix-38", "area": "PrivacyScreen", "fix": "invalidateChatCache() called after deleteAllScans so stale chat threads do not flash on next entry" },
-    { "id": "fe-fix-39", "area": "tabs/_layout", "fix": "Tab icon wrapped in fixed-height 26pt slot so Ionicons help-circle aligns on the same baseline as AppIcon docs/calendar/user glyphs" },
-    { "id": "fe-fix-40", "area": "HelpEmptyState / HelpErrorState", "fix": "Empty state gained an optional hero icon and a filled primary CTA; HelpErrorState now uses common.offlineTitle / common.offlineDetail / common.tryAgain with alert-circle-outline hero, matching the new offline UX language" },
-    { "id": "fe-fix-41", "area": "scansApi", "fix": "Added getScanCounts() helper for new GET /scans/counts endpoint (total + by_category)" },
-    { "id": "fe-fix-42", "area": "HelpStatusScreen", "fix": "KeyboardAvoidingView keeps the ŽOV visa-number input visible while typing; keyboardDismissMode is interactive on iOS" },
-    { "id": "fe-fix-43", "area": "ProfileScreen", "fix": "Static Jasně Pro subscription-status row no longer renders a chevron/action affordance; Manage Subscription remains the actionable row." },
-    { "id": "fe-fix-44", "area": "purchases", "fix": "Added RevenueCat customerInfo.managementURL based subscription-management helper with iOS App Store and Android Google Play fallbacks; Profile and Delete Account screens use it instead of hardcoded links." },
-    { "id": "fe-fix-45", "area": "delete-account + i18n", "fix": "Delete-account subscription copy clarified: account deletion does not cancel App Store / Google Play subscription; user must cancel subscription separately." },
-    { "id": "fe-fix-46", "area": "analytics", "fix": "Replaced dev-only analytics stub with PostHog + Sentry wrapper, sensitive-property filtering, screen tracking, app lifecycle events, user identify/reset, flush, and captureAppError helpers." },
-    { "id": "fe-fix-47", "area": "delete-account analytics", "fix": "Delete account screen now tracks reason selected/cleared, confirmed, scheduled, and failed events; final churn-intent dashboard should break down delete_account_scheduled or delete_account_confirmed by reason." },
-    { "id": "fe-fix-48", "area": "app/_layout + AuthProvider", "fix": "Analytics initializes at app root, Sentry wraps RootLayout, AnalyticsRouteTracker records route changes, and Supabase session UUID is synced to PostHog/Sentry then reset on signOut." },
-    { "id": "fe-fix-49", "area": "metro.config.js", "fix": "Added targeted resolver for @posthog/core/surveys to fix iOS bundling failure from posthog-react-native under Expo SDK 52 Metro package-exports defaults." },
-    { "id": "fe-fix-50", "area": "app.json", "fix": "Added @sentry/react-native Expo plugin with organization jasne-6q and project jasne-mobile; auth token remains env-only." },
-    { "id": "fe-fix-51", "area": "README + .env.example", "fix": "Documented PostHog/Sentry env variables, Sentry build secrets, Render staging backend URL, and corrected cp .env.example .env setup command." },
-    { "id": "fe-fix-52", "area": "api.ts", "fix": "403 errors with backend detail.code=account_pending_deletion no longer force Supabase signOut; ApiError now carries code so account-restore UX can stay authenticated." },
-    { "id": "fe-fix-53", "area": "app/_layout + AccountDeletionScreen", "fix": "Root auth gate now loads /profile after sign-in, blocks normal app UI when deletion_status=pending, shows the scheduled deletion date, and lets the user restore via POST /profile/restore or sign out." },
-    { "id": "fe-fix-54", "area": "delete-account + i18n", "fix": "Delete-account copy now says deletion is scheduled with a 7-day restore window; CTA changed from permanent deletion to scheduled deletion across cs/ru/uk/en." },
-    { "id": "fe-fix-55", "area": "session.ts (new)", "fix": "Added central src/lib/session.ts. performSignOut() deduplicates concurrent calls and runs all registerSignOutTask() cleanups, then resets analytics, clears RevenueCat identity, React Query cache, chat cache, pending + pinned scans and the cached profile before supabase.auth.signOut — fixes data bleeding between accounts on a shared device. Also exposes refreshSessionOnce() and recoverSessionOrSignOut()." },
-    { "id": "fe-fix-56", "area": "api.ts", "fix": "apiFetch gained a 30s AbortController timeout (could previously hang forever), merges an external signal, refreshes the session once and retries on 401, and only fire-and-forget signs out when the session is truly unrecoverable; avoids deadlock when the failing request runs inside a sign-out task. 403 no longer signs out." },
-    { "id": "fe-fix-57", "area": "sse.ts", "fix": "streamPost accepts an AbortSignal, arms a 60s stall watchdog re-armed on each onprogress (silently-dead streams now reject), waits for the body before rejecting on HTTP error, and fire-and-forget recovers the session on 401 instead of deadlocking." },
-    { "id": "fe-fix-58", "area": "useSubscription.ts", "fix": "Rewritten on React Query (queryKey ['limits'], staleTime 60s); a network failure keeps the last known plan instead of silently reverting Pro users to free." },
-    { "id": "fe-fix-59", "area": "app/_layout + profileCache.ts (new)", "fix": "AccountGate reads a per-user cached /profile from AsyncStorage to render the app instantly on cold start, then refreshes in the background; on error with a cached profile the user is let in with stale data instead of being blocked on a spinner." },
-    { "id": "fe-fix-60", "area": "pushNotifications.ts", "fix": "Cold-start notification taps handled via getLastNotificationResponseAsync with a handledResponseIds guard so the tap routes correctly and never double-fires; the Expo push token is stored and DELETEd from the backend on sign-out (registerSignOutTask) so a signed-out user stops receiving pushes." },
-    { "id": "fe-fix-61", "area": "ChatThreadScreen", "fix": "Streaming answer is aborted via AbortController when leaving the screen (deliberate aborts suppressed), and tokens are buffered ~80ms before flushing to state to stop the per-token re-render storm during fast generation." },
-    { "id": "fe-fix-62", "area": "scansApi + i18n", "fix": "Upload switched from base64 to ArrayBuffer to Supabase (OOM on multi-MB PDFs) to native FileSystem.uploadAsync streaming straight from disk; added a 20MB client guard with a localized scanApi.fileTooLarge message (cs/ru/uk/en)." },
-    { "id": "fe-fix-63", "area": "pendingScanStore + pinnedScansStore", "fix": "removePendingScanById/clearPendingScans now delete the local cached attachment files (only URIs under FileSystem.cacheDirectory) so processed scans stop accumulating on disk; added clearPinnedScans() for the sign-out cleanup path." },
-    { "id": "fe-fix-64", "area": "secureStorage.ts (new) + supabase.ts", "fix": "Supabase auth session moved from plain AsyncStorage to an encrypted expo-secure-store adapter (iOS Keychain / Android Keystore) with 1800-byte chunking for the iOS 2KB item cap and a one-time transparent migration from AsyncStorage so existing users are not signed out. Requires native rebuild." },
-    { "id": "fe-fix-65", "area": "ChatThreadScreen + Icon + i18n", "fix": "Replaced fragmented <Text selectable> (only one sentence could be selected, awkward native copy menu) with explicit per-block copy buttons via expo-clipboard: summary, what-to-do steps, deadline cards, info blocks and assistant chat answers each copy the whole block with haptic + 1.5s confirmation; added a copy icon and chat.copy/chat.copied strings. Requires native rebuild." },
-    { "id": "fe-fix-66", "area": "tracking + i18n", "fix": "OAMP tracking card now shows a dedicated first-check label while last_checked_at is null: 'Статус визы — проверяем' in ru, with matching cs/uk/en translations (tracking.types.oamp_status.checkingTitle = kontrolujeme/проверяем/перевіряємо/checking); completed statuses still use the backend status title such as 'В обработке'." },
-    { "id": "fe-fix-67", "area": "NewScanScreen PDF picker", "fix": "Free-user PDF picker Pro CTA is now an active primary button with accessibility role, pressed state, haptic feedback, and 'Перейти на Pro · до 10 страниц' copy. Opening paywall now temporarily hides the PDF picker (visible only when !showPaywall) to avoid stacked Modal issues, and after purchase the picker keeps the selected PDF while refreshing available page slots from /limits." },
-    { "id": "fe-fix-68", "area": "ChatThreadScreen", "fix": "Settled on a single copy mechanism (variant A): removed the duplicate long-press -> ActionSheet copy path (onCopyRequest prop chain through ResultCard/DeadlineReminderRow/MessageBubble, openCopySheet/copySelectedText, copySheetText/copyToastVisible state, the ActionSheet + copyToast render, resultCardToPlainText/deadlineToPlainText helpers, ActionSheet import, copyToast styles). Explicit per-block CopyButton icons remain. Also restored the deadline card background that disappeared after the merge — DeadlineReminderRow is wrapped in a View styled with blueSoft fill + blueMid border (was previously a LinearGradient) so the СРОКИ/ЗАДАЧА block reads as a card again." },
-    { "id": "fe-fix-69", "area": "ChatThreadScreen + SelectableText", "fix": "Re-enabled native text selection on result-card and chat content. First tried the <Text selectable> prop but on iOS it is unreliable inside FlatList/ScrollView (long-press is swallowed by the scroll responder), so switched to the existing TextInput-backed SelectableText component (editable=false on iOS, caretHidden, contextMenuHidden=false) for resultTitle, summary, action lines, deadline date + address, info-block text, and the assistant/user message bubble. docKind/docFrom header captions stay plain Text to avoid TextInput layout drift. User now has both: CopyButton icon for whole-block copy and reliable long-press selection for arbitrary spans." },
-    { "id": "fe-fix-70", "area": "ChatThreadScreen CopyButton", "fix": "CopyButton gained an optional title prop that is prepended (title + newline + body) when copying a whole block, so the clipboard text now carries the block name: summary -> document title, actions -> 'Co s tim udelat', each deadline -> its deadline-type label, info blocks (where to go / documents / penalty / tips) -> their section title. Also made the assistant chat-message CopyButton icon-only (compact) — dropped the 'Copy' text label so only the icon shows; result-card buttons were already compact." },
-    { "id": "fe-fix-71", "area": "ChatThreadScreen ChatComposer", "fix": "Telegram-style auto-growing message input. composerPill switched from fixed height:48 to minHeight:48 + paddingVertical:6 + alignItems:flex-end so the send button hugs the bottom as the field grows; composerInput marginBottom:7 keeps the single-line state vertically centered against the 36px send button. Removed returnKeyType=send/onSubmitEditing so Return inserts a newline (send is button-only), matching Telegram mobile. First attempt used a JS-controlled height via onContentSizeChange, but on iOS the inserted newline was clipped before the height state updated (looked like Enter did nothing); replaced with native multiline auto-grow — composerInput uses minHeight/maxHeight (22..120) and the TextInput has submitBehavior=newline, so Return reliably adds a line, the field grows to ~6 lines, then scrolls internally." },
-    { "id": "fe-fix-72", "area": "ChatThreadScreen ChatComposer + SendButton + i18n", "fix": "Two composer fixes. (1) Question counter (n/10) now vertically centered via alignSelf:center, overriding the pill's flex-end. (2) Working Stop button: the square shown during streaming was disabled (disabled || streaming) so it did nothing. SendButton now treats chat streaming (streaming && !muted) as stoppable — accent background, enabled, onPress -> new onStop handler; a still-processing scan (muted) keeps the non-interactive muted square. handleStopStreaming aborts streamAbortRef then refreshes /limits (backend may have counted the question before cancel). ask() catch now keeps the partial answer on a deliberate abort and only drops the bubble if empty. Added chat.stop string (cs/ru/uk/en)." },
-    { "id": "fe-fix-73", "area": "ChatThreadScreen + help/components", "fix": "Readability pass. Chat message bubbles were ~13.5px and unbounded width (the maxWidth:84% messageWrap style was dead/unused after the merge, so bubbles spanned nearly full width). Now bubbleText is 16/21 (callout) and the bubble style caps at maxWidth:82%; removed the unused messageWrap/userMessageWrap/assistantMessageWrap styles. Help guides bumped to match: contentText 15 -> 16/22, warningText 13 -> 15/21 (overridden per-style, shared typeStyles tokens untouched). Chose 16 over 17 to stay just above the 15px result-card subhead without inverting hierarchy." },
-    { "id": "fe-fix-74", "area": "ChatThreadScreen result card + help/components", "fix": "Finished the readability bump that fe-fix-73 missed: result-card body text was still small, so raised resultSummary and resultLine from rowSecondary(15) to 16/22, infoBlockText (where-to-go/documents/penalty/tip) from rowMeta(13) to 16/22, and deadline address from 13 to 15/21 — now consistent with the 16px chat bubbles. Also added per-block copy to Help guides: new GuideCopyButton (expo-clipboard + haptic + check confirmation, icon-only) placed on every guide section — text/steps/checklist get a blockHeader row (title left, copy right) and the warning card gets a top-aligned copy button. blockPlainText() builds the clipboard string as title + body/numbered-steps/bulleted-checklist. Pro-gated blurred sections intentionally get no copy button." },
-    { "id": "fe-fix-75", "area": "help/components guide section headers", "fix": "Unified guide section headers (variant B). After body text went to 16, headers were inconsistent and some smaller than body: text-section title used the eyebrow style (caption2 = 11px uppercase blue) and warningTitle used rowMeta (13px). Switched the text-section title to contentTitle (headline 17 bold, sentence case) to match steps/checklist, and bumped warningTitle from rowMeta(13) to headline(17) keeping the amber colour. All section headers are now 17 bold, clearly above the 16px body. Removed the now-unused eyebrow style." }
+    {
+      "id": "fe-fix-1",
+      "area": "AuthProvider",
+      "fix": "Wrap new URL(url) in try/catch — malformed deep-link URLs no longer crash the app on startup"
+    },
+    {
+      "id": "fe-fix-2",
+      "area": "AuthProvider",
+      "fix": "signOut rewritten as proper async function (was .then() fire-and-forget)"
+    },
+    {
+      "id": "fe-fix-3",
+      "area": "AuthScreen",
+      "fix": "completeOAuthRedirect wraps new URL() in try/catch — returns error string instead of throwing"
+    },
+    {
+      "id": "fe-fix-4",
+      "area": "DeadlinesScreen",
+      "fix": "Extract compareDeadlines to module level so edit-modal sort matches load and markDone order"
+    },
+    {
+      "id": "fe-fix-5",
+      "area": "DeadlinesScreen",
+      "fix": "Add aliveRef + cleanup useEffect to prevent setState after unmount on slow network"
+    },
+    {
+      "id": "fe-fix-6",
+      "area": "ChatThreadScreen",
+      "fix": "Replace pendingDoneHandled state with useRef — eliminates stale closure bug in SSE event listener"
+    },
+    {
+      "id": "fe-fix-7",
+      "area": "ChatThreadScreen",
+      "fix": "Add alive flags in both useEffects to prevent setState after unmount"
+    },
+    {
+      "id": "fe-fix-8",
+      "area": "ChatThreadScreen",
+      "fix": "Make onOpenViewer optional on DocumentAttachmentBubble — crash with multiple images fixed"
+    },
+    {
+      "id": "fe-fix-9",
+      "area": "ProfileScreen",
+      "fix": "Move SHEET_HIDDEN constant to module level (was re-created on every render)"
+    },
+    {
+      "id": "fe-fix-10",
+      "area": "ProfileScreen",
+      "fix": "Add aliveRef + cleanup to prevent setState after unmount in loadLimits"
+    },
+    {
+      "id": "fe-fix-11",
+      "area": "ScanListScreen",
+      "fix": "Add aliveRef + bail-out in load callback to prevent setState after unmount"
+    },
+    {
+      "id": "fe-fix-12",
+      "area": "ui.tsx",
+      "fix": "Rewrote lightColors palette with v2 design tokens (warm paper bg, deeper amber/danger/green/pro) and added bgDeep / surface3 / borderSoft to both schemes for type parity"
+    },
+    {
+      "id": "fe-fix-13",
+      "area": "ChatThreadScreen",
+      "fix": "Footer background changed from hardcoded rgba(15,13,11,0.94) to colors.bg so light theme no longer shows a black chat bar"
+    },
+    {
+      "id": "fe-fix-14",
+      "area": "ChatThreadScreen",
+      "fix": "Urgency pill now uses three-tone helper (urgent < 7d red, soon ≤ 30d amber, later green) instead of always red"
+    },
+    {
+      "id": "fe-fix-15",
+      "area": "ChatThreadScreen",
+      "fix": "LockedChatComposer split into free (paywall CTA) vs pro-exhausted (counter) renderings; receives plan and real questionsUsed instead of duplicate displayQuestionLimit"
+    },
+    {
+      "id": "fe-fix-16",
+      "area": "ChatThreadScreen",
+      "fix": "KeyboardAvoidingView now wraps the full content area (FlatList + footer in normal flow) so messages compress and footer pins above the keyboard; previously absolute footer caused messages to hide under the keyboard"
+    },
+    {
+      "id": "fe-fix-17",
+      "area": "ChatThreadScreen",
+      "fix": "Keyboard listener resets footer paddingBottom when keyboard is open so the input pill sits flush against the keyboard with no safe-area gap"
+    },
+    {
+      "id": "fe-fix-18",
+      "area": "ChatThreadScreen",
+      "fix": "Platform-aware footer padding: iOS max(insets.bottom, 10) for home indicator, Android raw insets.bottom; KeyboardAvoidingView behavior undefined on Android to avoid double-resize with system adjustResize"
+    },
+    {
+      "id": "fe-fix-19",
+      "area": "ChatThreadScreen",
+      "fix": "Per-scan in-memory scrollOffset Map + onScroll/onContentSizeChange handlers restore scroll position when reopening a chat and only auto-scroll on new tokens when user is near bottom"
+    },
+    {
+      "id": "fe-fix-20",
+      "area": "app/scan/[id]",
+      "fix": "Route key={params.id} forces a fresh mount on scan change, eliminating the flash of the previous chat's data while the new one loads"
+    },
+    {
+      "id": "fe-fix-21",
+      "area": "ui.tsx ThemeProvider",
+      "fix": "Sync Android system navigation bar background and button style with current theme via expo-navigation-bar useEffect"
+    },
+    {
+      "id": "fe-fix-22",
+      "area": "tabs/_layout",
+      "fix": "Platform-aware tab bar paddingBottom — iOS uses safe area for home indicator, Android clamps to ≤8pt to avoid wasted space under gesture nav"
+    },
+    {
+      "id": "fe-fix-23",
+      "area": "app/_layout",
+      "fix": "Moved scan/[id] and scan/new from Tabs to root Stack so iOS edge swipe-back gesture works; animation slide_from_right"
+    },
+    {
+      "id": "fe-fix-24",
+      "area": "ScanListScreen",
+      "fix": "Replaced broken hand-drawn search/bell glyph Views with Ionicons; removed bell entirely; search now inline in AppBar with Cancel button and LayoutAnimation transition"
+    },
+    {
+      "id": "fe-fix-25",
+      "area": "ScanListScreen",
+      "fix": "Added SearchEmpty state, amber-highlight on matched substrings in title/sender/summary, and extended filterScans to match against linked deadline title/description"
+    },
+    {
+      "id": "fe-fix-26",
+      "area": "ScanListScreen",
+      "fix": "Restored FAB camera button (was missing from JSX though style existed); DocCard now shows sender line and uses v2 border + soft shadow"
+    },
+    {
+      "id": "fe-fix-27",
+      "area": "DeadlinesScreen",
+      "fix": "Card date split into day (Geist 24) + month (Inter 14) baseline-aligned; description hidden when done; new compact ux still pending"
+    },
+    {
+      "id": "fe-fix-28",
+      "area": "DeadlinesScreen",
+      "fix": "Long-press on card triggers shared ActionSheet (edit / delete destructive / mark-done) with 15ms haptic; PanResponder swipes retained as alternative"
+    },
+    {
+      "id": "fe-fix-29",
+      "area": "i18n",
+      "fix": "Added searchClearAria, searchEmptyTitle, searchEmptyDetail across cs/ru/uk/en; cleaned duplicate deadlines.markDone keys"
+    },
+    {
+      "id": "fe-fix-30",
+      "area": "purchases",
+      "fix": "Added src/lib/purchases.ts — RevenueCat wrapper with configure/identify/clear, all guarded by Expo Go + dynamic-import detection so missing native module never crashes JS bundle"
+    },
+    {
+      "id": "fe-fix-31",
+      "area": "app/_layout",
+      "fix": "configurePurchases() runs once on mount (idempotent) so RevenueCat is ready before sign-in screen renders"
+    },
+    {
+      "id": "fe-fix-32",
+      "area": "AuthProvider",
+      "fix": "On session arrival useEffect aliases RevenueCat to session.user.id; signOut calls clearPurchasesIdentity BEFORE supabase.auth.signOut so next user on device doesn't inherit purchases"
+    },
+    {
+      "id": "fe-fix-33",
+      "area": "api.ts",
+      "fix": "fetch() wrapped in try/catch — DNS/TLS/CORS failures now throw a localized common.networkError ApiError(status=0) instead of an opaque TypeError"
+    },
+    {
+      "id": "fe-fix-34",
+      "area": "api.ts + sse.ts",
+      "fix": "Error-body normalizer collapses 5xx, empty bodies, non-JSON bodies, and platform-proxy envelopes (Railway/fly.io `{ status, code, message, request_id }`) to localized common.serviceDown — UI no longer shows 'Application not found' or raw JSON"
+    },
+    {
+      "id": "fe-fix-35",
+      "area": "AuthScreen + ResetPasswordScreen",
+      "fix": "Password fields gained an eye toggle (auth.showPassword / auth.hidePassword) and a proper AppIcon `lock` glyph replacing the typographic `•`"
+    },
+    {
+      "id": "fe-fix-36",
+      "area": "ProfileScreen",
+      "fix": "'Podmínky používání' row and footer link now navigate to /profile/terms; footer Privacy link now also routes to /profile/privacy"
+    },
+    {
+      "id": "fe-fix-37",
+      "area": "TermsScreen + terms.yaml + metro.config.js",
+      "fix": "Added Terms of Service screen rendered from bundled terms.yaml (locales cs/ru/uk/en, fallback cs); metro.config.js extends assetExts with yaml/yml, src/types/assets.d.ts declares the *.yaml module shape"
+    },
+    {
+      "id": "fe-fix-38",
+      "area": "PrivacyScreen",
+      "fix": "invalidateChatCache() called after deleteAllScans so stale chat threads do not flash on next entry"
+    },
+    {
+      "id": "fe-fix-39",
+      "area": "tabs/_layout",
+      "fix": "Tab icon wrapped in fixed-height 26pt slot so Ionicons help-circle aligns on the same baseline as AppIcon docs/calendar/user glyphs"
+    },
+    {
+      "id": "fe-fix-40",
+      "area": "HelpEmptyState / HelpErrorState",
+      "fix": "Empty state gained an optional hero icon and a filled primary CTA; HelpErrorState now uses common.offlineTitle / common.offlineDetail / common.tryAgain with alert-circle-outline hero, matching the new offline UX language"
+    },
+    {
+      "id": "fe-fix-41",
+      "area": "scansApi",
+      "fix": "Added getScanCounts() helper for new GET /scans/counts endpoint (total + by_category)"
+    },
+    {
+      "id": "fe-fix-42",
+      "area": "HelpStatusScreen",
+      "fix": "KeyboardAvoidingView keeps the ŽOV visa-number input visible while typing; keyboardDismissMode is interactive on iOS"
+    },
+    {
+      "id": "fe-fix-43",
+      "area": "ProfileScreen",
+      "fix": "Static Jasně Pro subscription-status row no longer renders a chevron/action affordance; Manage Subscription remains the actionable row."
+    },
+    {
+      "id": "fe-fix-44",
+      "area": "purchases",
+      "fix": "Added RevenueCat customerInfo.managementURL based subscription-management helper with iOS App Store and Android Google Play fallbacks; Profile and Delete Account screens use it instead of hardcoded links."
+    },
+    {
+      "id": "fe-fix-45",
+      "area": "delete-account + i18n",
+      "fix": "Delete-account subscription copy clarified: account deletion does not cancel App Store / Google Play subscription; user must cancel subscription separately."
+    },
+    {
+      "id": "fe-fix-46",
+      "area": "analytics",
+      "fix": "Replaced dev-only analytics stub with PostHog + Sentry wrapper, sensitive-property filtering, screen tracking, app lifecycle events, user identify/reset, flush, and captureAppError helpers."
+    },
+    {
+      "id": "fe-fix-47",
+      "area": "delete-account analytics",
+      "fix": "Delete account screen now tracks reason selected/cleared, confirmed, scheduled, and failed events; final churn-intent dashboard should break down delete_account_scheduled or delete_account_confirmed by reason."
+    },
+    {
+      "id": "fe-fix-48",
+      "area": "app/_layout + AuthProvider",
+      "fix": "Analytics initializes at app root, Sentry wraps RootLayout, AnalyticsRouteTracker records route changes, and Supabase session UUID is synced to PostHog/Sentry then reset on signOut."
+    },
+    {
+      "id": "fe-fix-49",
+      "area": "metro.config.js",
+      "fix": "Added targeted resolver for @posthog/core/surveys to fix iOS bundling failure from posthog-react-native under Expo SDK 52 Metro package-exports defaults."
+    },
+    {
+      "id": "fe-fix-50",
+      "area": "app.json",
+      "fix": "Added @sentry/react-native Expo plugin with organization jasne-6q and project jasne-mobile; auth token remains env-only."
+    },
+    {
+      "id": "fe-fix-51",
+      "area": "README + .env.example",
+      "fix": "Documented PostHog/Sentry env variables, Sentry build secrets, Render staging backend URL, and corrected cp .env.example .env setup command."
+    },
+    {
+      "id": "fe-fix-52",
+      "area": "api.ts",
+      "fix": "403 errors with backend detail.code=account_pending_deletion no longer force Supabase signOut; ApiError now carries code so account-restore UX can stay authenticated."
+    },
+    {
+      "id": "fe-fix-53",
+      "area": "app/_layout + AccountDeletionScreen",
+      "fix": "Root auth gate now loads /profile after sign-in, blocks normal app UI when deletion_status=pending, shows the scheduled deletion date, and lets the user restore via POST /profile/restore or sign out."
+    },
+    {
+      "id": "fe-fix-54",
+      "area": "delete-account + i18n",
+      "fix": "Delete-account copy now says deletion is scheduled with a 7-day restore window; CTA changed from permanent deletion to scheduled deletion across cs/ru/uk/en."
+    },
+    {
+      "id": "fe-fix-55",
+      "area": "session.ts (new)",
+      "fix": "Added central src/lib/session.ts. performSignOut() deduplicates concurrent calls and runs all registerSignOutTask() cleanups, then resets analytics, clears RevenueCat identity, React Query cache, chat cache, pending + pinned scans and the cached profile before supabase.auth.signOut — fixes data bleeding between accounts on a shared device. Also exposes refreshSessionOnce() and recoverSessionOrSignOut()."
+    },
+    {
+      "id": "fe-fix-56",
+      "area": "api.ts",
+      "fix": "apiFetch gained a 30s AbortController timeout (could previously hang forever), merges an external signal, refreshes the session once and retries on 401, and only fire-and-forget signs out when the session is truly unrecoverable; avoids deadlock when the failing request runs inside a sign-out task. 403 no longer signs out."
+    },
+    {
+      "id": "fe-fix-57",
+      "area": "sse.ts",
+      "fix": "streamPost accepts an AbortSignal, arms a 60s stall watchdog re-armed on each onprogress (silently-dead streams now reject), waits for the body before rejecting on HTTP error, and fire-and-forget recovers the session on 401 instead of deadlocking."
+    },
+    {
+      "id": "fe-fix-58",
+      "area": "useSubscription.ts",
+      "fix": "Rewritten on React Query (queryKey ['limits'], staleTime 60s); a network failure keeps the last known plan instead of silently reverting Pro users to free."
+    },
+    {
+      "id": "fe-fix-59",
+      "area": "app/_layout + profileCache.ts (new)",
+      "fix": "AccountGate reads a per-user cached /profile from AsyncStorage to render the app instantly on cold start, then refreshes in the background; on error with a cached profile the user is let in with stale data instead of being blocked on a spinner."
+    },
+    {
+      "id": "fe-fix-60",
+      "area": "pushNotifications.ts",
+      "fix": "Cold-start notification taps handled via getLastNotificationResponseAsync with a handledResponseIds guard so the tap routes correctly and never double-fires; the Expo push token is stored and DELETEd from the backend on sign-out (registerSignOutTask) so a signed-out user stops receiving pushes."
+    },
+    {
+      "id": "fe-fix-61",
+      "area": "ChatThreadScreen",
+      "fix": "Streaming answer is aborted via AbortController when leaving the screen (deliberate aborts suppressed), and tokens are buffered ~80ms before flushing to state to stop the per-token re-render storm during fast generation."
+    },
+    {
+      "id": "fe-fix-62",
+      "area": "scansApi + i18n",
+      "fix": "Upload switched from base64 to ArrayBuffer to Supabase (OOM on multi-MB PDFs) to native FileSystem.uploadAsync streaming straight from disk; added a 20MB client guard with a localized scanApi.fileTooLarge message (cs/ru/uk/en)."
+    },
+    {
+      "id": "fe-fix-63",
+      "area": "pendingScanStore + pinnedScansStore",
+      "fix": "removePendingScanById/clearPendingScans now delete the local cached attachment files (only URIs under FileSystem.cacheDirectory) so processed scans stop accumulating on disk; added clearPinnedScans() for the sign-out cleanup path."
+    },
+    {
+      "id": "fe-fix-64",
+      "area": "secureStorage.ts (new) + supabase.ts",
+      "fix": "Supabase auth session moved from plain AsyncStorage to an encrypted expo-secure-store adapter (iOS Keychain / Android Keystore) with 1800-byte chunking for the iOS 2KB item cap and a one-time transparent migration from AsyncStorage so existing users are not signed out. Requires native rebuild."
+    },
+    {
+      "id": "fe-fix-65",
+      "area": "ChatThreadScreen + Icon + i18n",
+      "fix": "Replaced fragmented <Text selectable> (only one sentence could be selected, awkward native copy menu) with explicit per-block copy buttons via expo-clipboard: summary, what-to-do steps, deadline cards, info blocks and assistant chat answers each copy the whole block with haptic + 1.5s confirmation; added a copy icon and chat.copy/chat.copied strings. Requires native rebuild."
+    },
+    {
+      "id": "fe-fix-66",
+      "area": "tracking + i18n",
+      "fix": "OAMP tracking card now shows a dedicated first-check label while last_checked_at is null: 'Статус визы — проверяем' in ru, with matching cs/uk/en translations (tracking.types.oamp_status.checkingTitle = kontrolujeme/проверяем/перевіряємо/checking); completed statuses still use the backend status title such as 'В обработке'."
+    },
+    {
+      "id": "fe-fix-67",
+      "area": "NewScanScreen PDF picker",
+      "fix": "Free-user PDF picker Pro CTA is now an active primary button with accessibility role, pressed state, haptic feedback, and 'Перейти на Pro · до 10 страниц' copy. Opening paywall now temporarily hides the PDF picker (visible only when !showPaywall) to avoid stacked Modal issues, and after purchase the picker keeps the selected PDF while refreshing available page slots from /limits."
+    },
+    {
+      "id": "fe-fix-68",
+      "area": "ChatThreadScreen",
+      "fix": "Settled on a single copy mechanism (variant A): removed the duplicate long-press -> ActionSheet copy path (onCopyRequest prop chain through ResultCard/DeadlineReminderRow/MessageBubble, openCopySheet/copySelectedText, copySheetText/copyToastVisible state, the ActionSheet + copyToast render, resultCardToPlainText/deadlineToPlainText helpers, ActionSheet import, copyToast styles). Explicit per-block CopyButton icons remain. Also restored the deadline card background that disappeared after the merge — DeadlineReminderRow is wrapped in a View styled with blueSoft fill + blueMid border (was previously a LinearGradient) so the СРОКИ/ЗАДАЧА block reads as a card again."
+    },
+    {
+      "id": "fe-fix-69",
+      "area": "ChatThreadScreen + SelectableText",
+      "fix": "Re-enabled native text selection on result-card and chat content. First tried the <Text selectable> prop but on iOS it is unreliable inside FlatList/ScrollView (long-press is swallowed by the scroll responder), so switched to the existing TextInput-backed SelectableText component (editable=false on iOS, caretHidden, contextMenuHidden=false) for resultTitle, summary, action lines, deadline date + address, info-block text, and the assistant/user message bubble. docKind/docFrom header captions stay plain Text to avoid TextInput layout drift. User now has both: CopyButton icon for whole-block copy and reliable long-press selection for arbitrary spans."
+    },
+    {
+      "id": "fe-fix-70",
+      "area": "ChatThreadScreen CopyButton",
+      "fix": "CopyButton gained an optional title prop that is prepended (title + newline + body) when copying a whole block, so the clipboard text now carries the block name: summary -> document title, actions -> 'Co s tim udelat', each deadline -> its deadline-type label, info blocks (where to go / documents / penalty / tips) -> their section title. Also made the assistant chat-message CopyButton icon-only (compact) — dropped the 'Copy' text label so only the icon shows; result-card buttons were already compact."
+    },
+    {
+      "id": "fe-fix-71",
+      "area": "ChatThreadScreen ChatComposer",
+      "fix": "Telegram-style auto-growing message input. composerPill switched from fixed height:48 to minHeight:48 + paddingVertical:6 + alignItems:flex-end so the send button hugs the bottom as the field grows; composerInput marginBottom:7 keeps the single-line state vertically centered against the 36px send button. Removed returnKeyType=send/onSubmitEditing so Return inserts a newline (send is button-only), matching Telegram mobile. First attempt used a JS-controlled height via onContentSizeChange, but on iOS the inserted newline was clipped before the height state updated (looked like Enter did nothing); replaced with native multiline auto-grow — composerInput uses minHeight/maxHeight (22..120) and the TextInput has submitBehavior=newline, so Return reliably adds a line, the field grows to ~6 lines, then scrolls internally."
+    },
+    {
+      "id": "fe-fix-72",
+      "area": "ChatThreadScreen ChatComposer + SendButton + i18n",
+      "fix": "Two composer fixes. (1) Question counter (n/10) now vertically centered via alignSelf:center, overriding the pill's flex-end. (2) Working Stop button: the square shown during streaming was disabled (disabled || streaming) so it did nothing. SendButton now treats chat streaming (streaming && !muted) as stoppable — accent background, enabled, onPress -> new onStop handler; a still-processing scan (muted) keeps the non-interactive muted square. handleStopStreaming aborts streamAbortRef then refreshes /limits (backend may have counted the question before cancel). ask() catch now keeps the partial answer on a deliberate abort and only drops the bubble if empty. Added chat.stop string (cs/ru/uk/en)."
+    },
+    {
+      "id": "fe-fix-73",
+      "area": "ChatThreadScreen + help/components",
+      "fix": "Readability pass. Chat message bubbles were ~13.5px and unbounded width (the maxWidth:84% messageWrap style was dead/unused after the merge, so bubbles spanned nearly full width). Now bubbleText is 16/21 (callout) and the bubble style caps at maxWidth:82%; removed the unused messageWrap/userMessageWrap/assistantMessageWrap styles. Help guides bumped to match: contentText 15 -> 16/22, warningText 13 -> 15/21 (overridden per-style, shared typeStyles tokens untouched). Chose 16 over 17 to stay just above the 15px result-card subhead without inverting hierarchy."
+    },
+    {
+      "id": "fe-fix-74",
+      "area": "ChatThreadScreen result card + help/components",
+      "fix": "Finished the readability bump that fe-fix-73 missed: result-card body text was still small, so raised resultSummary and resultLine from rowSecondary(15) to 16/22, infoBlockText (where-to-go/documents/penalty/tip) from rowMeta(13) to 16/22, and deadline address from 13 to 15/21 — now consistent with the 16px chat bubbles. Also added per-block copy to Help guides: new GuideCopyButton (expo-clipboard + haptic + check confirmation, icon-only) placed on every guide section — text/steps/checklist get a blockHeader row (title left, copy right) and the warning card gets a top-aligned copy button. blockPlainText() builds the clipboard string as title + body/numbered-steps/bulleted-checklist. Pro-gated blurred sections intentionally get no copy button."
+    },
+    {
+      "id": "fe-fix-75",
+      "area": "help/components guide section headers",
+      "fix": "Unified guide section headers (variant B). After body text went to 16, headers were inconsistent and some smaller than body: text-section title used the eyebrow style (caption2 = 11px uppercase blue) and warningTitle used rowMeta (13px). Switched the text-section title to contentTitle (headline 17 bold, sentence case) to match steps/checklist, and bumped warningTitle from rowMeta(13) to headline(17) keeping the amber colour. All section headers are now 17 bold, clearly above the 16px body. Removed the now-unused eyebrow style."
+    },
+    {
+      "id": "fe-fix-76",
+      "area": "Testing infrastructure",
+      "fix": "Installed jest@^29.7.0 + jest-expo@^52.0.6 (matching Expo SDK 52) + @testing-library/react-native@^14.0.0 + @react-native/jest-preset@^0.86.0; created jest.config.js (preset jest-expo, moduleNameMapper for @/ alias, setupFilesAfterEnv) and jest.setup.js (global.__DEV__ = true); 91 tests across 5 suites: sse.test.ts (21), apiErrors.test.ts (16), i18n.test.ts (33), queryClient.test.ts (11), oampIdentifier.test.ts (10)"
+    },
+    {
+      "id": "fe-fix-77",
+      "area": "ESLint + Prettier",
+      "fix": "Added eslint@^8.57.1 (not v10 — flat-config incompatible with eslint-config-expo), eslint-config-expo@^56.0.4, eslint-plugin-react-hooks@^4.6.x (not v7 — avoids false-positive React Compiler rules), @tanstack/eslint-plugin-query@^5.101.0, @typescript-eslint/*, prettier@^3.8.4, eslint-config-prettier; created .eslintrc.json, .prettierrc.json, .prettierignore; scripts: lint, lint:fix, format. 0 ESLint errors, 31 warnings."
+    },
+    {
+      "id": "fe-fix-78",
+      "area": "GitHub Actions CI",
+      "fix": "Created .github/workflows/ci.yml: 3 parallel jobs on push/PR to main — typecheck (tsc --noEmit), lint (eslint), test (jest --coverage + artifact upload); uses actions/checkout@v4, setup-node@v4 (Node 20, npm cache), npm ci --legacy-peer-deps"
+    },
+    {
+      "id": "fe-fix-79",
+      "area": "SSE / queryClient exports",
+      "fix": "consumeSseText and parseSseChunk in src/lib/sse.ts and shouldRetry in src/lib/queryClient.ts changed from unexported functions to export function so test files can import them directly"
+    },
+    {
+      "id": "fe-fix-80",
+      "area": "Branch consolidation",
+      "fix": "Merged all outstanding PRs and local branches into origin/main: PR#1 (SSE/copy buttons), PR#2 (secure store), PR#3 (decompose ScanListScreen into scanListData.ts, scanListStyles.ts, DocumentRow, DocumentContextMenu, PendingScanCard, ScanListEmptyStates, ScanListHeader), PR#4 (CI/tests). Resolved 7 merge conflicts; app.json merged both extra/eas block and locales block. HEAD at 52b25ac."
+    },
+    {
+      "id": "fe-fix-81",
+      "area": "scanListData.ts — ListRow export + array guards",
+      "fix": "Exported SectionRow, ScanRow, ListRow types (were private) so ScanListScreen.tsx can import them instead of referencing undefined identifier. Added Array.isArray guard at the top of filterScans (returns []) and buildDocumentCategoryFilters (returns 'all' stub) to prevent forEach crash when the API delivers a non-array shape"
+    },
+    {
+      "id": "fe-fix-82",
+      "area": "ScanListScreen — ListRow import",
+      "fix": "Added type ListRow to the import from @/features/scans/components/scanListData, fixing the dangling FlatList<ListRow> type reference that caused tsc --noEmit to error"
+    },
+    {
+      "id": "fe-fix-83",
+      "area": "@types/jest install",
+      "fix": "ran npm install --legacy-peer-deps to sync package-lock.json after @types/jest was added to devDependencies — test files now pass tsc --noEmit cleanly"
+    },
+    {
+      "id": "fe-fix-84",
+      "area": "scansApi — GET /scans envelope",
+      "fix": "Root cause of empty document list: backend wraps GET /scans in ScanListResponse { scans, plan, archive_limit, hidden_count } for Free-tier archive gating; frontend still called apiFetch<ScanListItem[]> and received the whole envelope object, so scans state was set to {} and forEach crashed. Fixed by adding listScansResponse() that unwraps the envelope (tolerates legacy bare-array shape) and making listScans() call it and return .scans. Exposes full envelope via listScansResponse() for future hidden-count paywall row."
+    }
   ],
-
   "known_issues_and_risks": [
     {
       "area": "password reset",
@@ -832,7 +1183,7 @@
     {
       "area": "RevenueCat",
       "status": "sdk wired, paywall pending",
-      "detail": "Purchases.configure() runs at app start, logIn/logOut tied to Supabase session. PaywallSheet still shows local mock — needs Purchases.getOfferings() integration to render real product prices and purchase buttons.",
+      "detail": "Purchases.configure() runs at app start, logIn/logOut tied to Supabase session. PaywallSheet still shows local mock — needs Purchases.getOfferings() integration to render real product prices and purchase buttons. TrackingCard POST /trackings/{id}/check fails with common.networkError when Render backend is sleeping (free tier cold start). Resolves on next tap after backend wakes.",
       "mitigation": "Set EXPO_PUBLIC_REVENUECAT_IOS_KEY / EXPO_PUBLIC_REVENUECAT_ANDROID_KEY in env. Then wire offerings inside PaywallSheet."
     },
     {
@@ -883,10 +1234,10 @@
       "mitigation": "Run npx expo install (already in package.json) then npx expo run:ios / run:android, or trigger an EAS development build."
     }
   ],
-
   "next_steps": {
     "high_priority": [
-      "Rebuild the native app (npx expo run:ios / run:android or EAS) so expo-secure-store and expo-clipboard link — copy buttons and encrypted session need it.",
+      "EAS Update (Phase 4): install expo-updates, run eas init + eas update:configure, add GitHub Actions eas-update job for OTA on main push",
+      "Wire hidden-count paywall row in ScanListScreen: listScansResponse() already returns archive_limit and hidden_count — render '+N скрытых, перейти на Pro' row at bottom of list for Free users",
       "Implement DELETE /push-tokens in jasne-backend so sign-out actually unregisters the device's push token.",
       "Fix Czech grammar 'Skeny v květen' → 'Skeny v květnu' in ProfileScreen usage label.",
       "Unify document/scan list timestamp format (pick relative or absolute).",
