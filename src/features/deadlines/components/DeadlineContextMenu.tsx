@@ -21,6 +21,7 @@ export function DeadlineContextMenu({
   onDone,
   onReactivate,
   onEdit,
+  onAddToCalendar,
   onDelete,
 }: {
   anchor: {
@@ -33,6 +34,7 @@ export function DeadlineContextMenu({
   onDone: (item: DeadlineResponse) => void;
   onReactivate: (item: DeadlineResponse) => void;
   onEdit: (item: DeadlineResponse) => void;
+  onAddToCalendar: (item: DeadlineResponse) => void;
   onDelete: (item: DeadlineResponse) => void;
 }) {
   const { height: screenH } = useWindowDimensions();
@@ -55,8 +57,8 @@ export function DeadlineContextMenu({
   const { item, rect } = anchor;
   const isDone = item.status === "completed";
 
-  // 3 rows in both states: (markDone | markActive) + edit + delete.
-  const menuHeight = 170;
+  // 4 rows in both states: (markDone | markActive) + edit + add-to-calendar + delete.
+  const menuHeight = 226;
   // The preview fades in and lifts instead of appearing already shifted with
   // a full shadow. That avoids a one-frame dark seam on long press.
   const cardLift = 6;
@@ -144,6 +146,15 @@ export function DeadlineContextMenu({
           styles={styles}
         />
         <MenuRow
+          iconName="calendar-plus"
+          iconBg={colors.blueSoft}
+          iconColor={colors.primary}
+          label={t("deadlines.addToCalendar")}
+          labelColor={colors.text}
+          onPress={() => onAddToCalendar(item)}
+          styles={styles}
+        />
+        <MenuRow
           iconName="x"
           iconBg={colors.dangerLight}
           iconColor={colors.danger}
@@ -224,7 +235,7 @@ export function MenuRow({
   styles,
   last,
 }: {
-  iconName: "check" | "sliders" | "x" | "bell";
+  iconName: "check" | "sliders" | "x" | "bell" | "calendar-plus";
   iconBg: string;
   iconColor: string;
   label: string;

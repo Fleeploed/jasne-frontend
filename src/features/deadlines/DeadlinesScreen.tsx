@@ -6,10 +6,12 @@ import { AppIcon } from "@/components/AppIcon";
 import { TrackingCard } from "@/components/tracking/TrackingCard";
 import { EmptyState, ErrorText, Screen, useColors } from "@/components/ui";
 import { completeDeadline, deleteDeadline, listDeadlines, reactivateDeadline } from "@/features/deadlines/deadlinesApi";
+import { exportDeadlineToCalendar } from "@/features/deadlines/calendarExport";
 import { getLimits } from "@/features/scans/scansApi";
 import { useTrackings } from "@/hooks/useTrackings";
 import { triggerLongPressHaptic } from "@/lib/haptics";
 import { t } from "@/lib/i18n";
+import { logger } from "@/lib/logger";
 import type { DeadlineResponse, Tracking, UserPlan } from "@/lib/types";
 import { createStyles } from "@/features/deadlines/components/deadlinesStyles";
 import { HORIZONTAL_PADDING, compareDeadlines, groupDeadlines, tallyUrgency } from "@/features/deadlines/components/deadlinesData";
@@ -131,6 +133,16 @@ export function DeadlinesScreen() {
       setDeadlines((current) => current.filter((item) => item.id !== deadlineId));
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : t("deadlines.deleteError"));
+    }
+  }
+
+  async function addDeadlineToCalendar(item: DeadlineResponse) {
+    try {
+      await exportDeadlineToCalendar(item);
+    } catch (exportError) {
+      logger.warn("exportDeadlineToCalendar failed", exportError);
+      const detail = exportError instanceof Error ? exportError.message : t("deadlines.calendarExportError");
+      Alert.alert(t("deadlines.calendarExportError"), detail);
     }
   }
 
@@ -377,6 +389,10 @@ export function DeadlinesScreen() {
         onEdit={(item) => {
           setContextMenu(null);
           setEditingDeadline(item);
+        }}
+        onAddToCalendar={(item) => {
+          setContextMenu(null);
+          void addDeadlineToCalendar(item);
         }}
         onDelete={(item) => {
           setContextMenu(null);
