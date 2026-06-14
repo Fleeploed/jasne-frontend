@@ -3,6 +3,7 @@ import { Animated, PanResponder, Pressable, Text, View } from "react-native";
 import { AppIcon } from "@/components/AppIcon";
 import type { ColorPalette } from "@/components/ui";
 import { triggerSelectionHaptic } from "@/lib/haptics";
+import { t } from "@/lib/i18n";
 import type { DeadlineResponse } from "@/lib/types";
 import type { DeadlinesStyles } from "@/features/deadlines/components/deadlinesStyles";
 import { SWIPE_ACTION_OVERDRAG, SWIPE_DIRECTION_LOCK_RATIO, SWIPE_FAST_VELOCITY, SWIPE_GESTURE_START_DISTANCE, SWIPE_LEFT_ACTION_WIDTH, SWIPE_LEFT_THRESHOLD, SWIPE_LEFT_WIDTH, SWIPE_RIGHT_COMMIT_THRESHOLD, SWIPE_RIGHT_WIDTH, completedDateLabel, daysUntil, deadlineSourceLabel, parseDayMonthAbbr, relativeTime, tileColors, urgencyTone } from "@/features/deadlines/components/deadlinesData";
@@ -253,17 +254,17 @@ export function DeadlineCard({
           // group still sits flush against the right edge for completed rows.
           <View style={styles.swipeDonePlaceholder} pointerEvents="none" />
         ) : (
-          <Pressable onPress={commitDone} style={({ pressed }) => [styles.swipeDoneArea, pressed && styles.pressed]}>
+          <Pressable onPress={commitDone} accessibilityRole="button" accessibilityLabel={t("deadlines.markDone")} style={({ pressed }) => [styles.swipeDoneArea, pressed && styles.pressed]}>
             <AppIcon name="check" size={24} color={colors.greenDark} strokeWidth={2.4} />
           </Pressable>
         )}
         <View style={[styles.swipeLeftActions, done && styles.swipeLeftActionsCompact]}>
           {!done ? (
-            <Pressable onPress={commitEdit} style={({ pressed }) => [styles.swipeEditArea, pressed && styles.pressed]}>
+            <Pressable onPress={commitEdit} accessibilityRole="button" accessibilityLabel={t("common.edit")} style={({ pressed }) => [styles.swipeEditArea, pressed && styles.pressed]}>
               <AppIcon name="sliders" size={22} color={colors.primary} strokeWidth={1.9} />
             </Pressable>
           ) : null}
-          <Pressable onPress={commitDelete} style={({ pressed }) => [styles.swipeDeleteArea, pressed && styles.pressed]}>
+          <Pressable onPress={commitDelete} accessibilityRole="button" accessibilityLabel={t("common.delete")} style={({ pressed }) => [styles.swipeDeleteArea, pressed && styles.pressed]}>
             <AppIcon name="x" size={22} color={colors.dangerDark} strokeWidth={2.2} />
           </Pressable>
         </View>

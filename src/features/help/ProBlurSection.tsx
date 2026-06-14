@@ -9,7 +9,7 @@ import { fonts, typeStyles, useColors, useThemePreference, type ColorPalette } f
 import { t } from "@/lib/i18n";
 import { getProPackages } from "@/lib/purchases";
 
-const HELP_TEXT_SCALE = 1;
+import { HELP_TEXT_SCALE } from "@/features/help/constants";
 
 /**
  * Pro-only Help section, rendered for FREE users only. Pro users should

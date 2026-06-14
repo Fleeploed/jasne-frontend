@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Icon, type IconName } from "@/components/Icon";
 import { fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { ProBlurSection } from "@/features/help/ProBlurSection";
+import { HELP_TEXT_SCALE } from "@/features/help/constants";
 import { t } from "@/lib/i18n";
 import type {
   CtaAction,
@@ -20,7 +21,6 @@ import type { UserPlan } from "@/lib/types";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 type HelpIconTone = "blue" | "amber" | "green" | "purple" | "red" | "neutral";
-const HELP_TEXT_SCALE = 1;
 
 export function HelpCard({
   title,
@@ -412,7 +412,7 @@ export function HelpSearchInput({ value, placeholder, onChangeText, onClear }: {
         style={styles.searchInput}
       />
       {value.length > 0 ? (
-        <Pressable accessibilityRole="button" onPress={onClear} style={styles.clearButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel={t("documents.searchClearAria")} onPress={onClear} style={styles.clearButton}>
           <Ionicons name="close-circle" size={22} color={colors.muted2} />
         </Pressable>
       ) : null}

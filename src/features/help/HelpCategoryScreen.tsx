@@ -10,7 +10,7 @@ import { helpLanguageForLocale, type HelpCategoryDetailResponse, type HelpLangua
 import { normalizeLocale, t } from "@/lib/i18n";
 import { useLocale } from "@/lib/LocaleContext";
 
-const HELP_TEXT_SCALE = 1;
+import { HELP_TEXT_SCALE } from "@/features/help/constants";
 
 export function HelpCategoryScreen() {
   const params = useLocalSearchParams<{ slug?: string }>();

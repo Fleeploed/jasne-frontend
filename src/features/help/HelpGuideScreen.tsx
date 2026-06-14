@@ -15,7 +15,7 @@ import { normalizeLocale, t } from "@/lib/i18n";
 import { useLocale } from "@/lib/LocaleContext";
 import type { UserPlan } from "@/lib/types";
 
-const HELP_TEXT_SCALE = 1;
+import { HELP_TEXT_SCALE } from "@/features/help/constants";
 
 export function HelpGuideScreen() {
   const params = useLocalSearchParams<{ slug?: string }>();
