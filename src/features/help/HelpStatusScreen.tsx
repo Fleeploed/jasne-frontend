@@ -20,9 +20,9 @@ import { getLocale, normalizeLocale, t } from "@/lib/i18n";
 import { useLocale } from "@/lib/LocaleContext";
 import { checkOampStatus, type OampStatusResponse } from "@/features/help/statusApi";
 import { OampStatusResultBody } from "@/features/oamp/OampStatusResultScreen";
+import { HELP_TEXT_SCALE } from "@/features/help/constants";
 import type { OampStatus } from "@/constants/oamp";
 
-const HELP_TEXT_SCALE = 1;
 const CASE_TYPES = ["ZM","ST", "CC", "CD", "DO", "DP", "DV", "MK", "PP", "TP", "VP", "ZK"] as const;
 const CASE_YEARS = Array.from({ length: 8 }, (_, index) => String(new Date().getFullYear() + 1 - index));
 

@@ -204,6 +204,8 @@ export function DeadlinesScreen() {
             onPress={() => setModalOpen(true)}
             style={({ pressed }) => [styles.headerIcon, pressed && styles.pressed]}
             hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t("deadlines.addAria")}
           >
             <AppIcon name="plus" size={22} color={colors.muted2} strokeWidth={1.9} />
           </Pressable>

@@ -641,11 +641,11 @@ export function CalendarPicker({ value, onChange, colors, styles }: {
   return (
     <View style={styles.calWrap}>
       <View style={styles.calHeader}>
-        <Pressable onPress={() => shiftMonth(-1)} style={({ pressed }) => [styles.calNav, pressed && styles.pressed]}>
+        <Pressable onPress={() => shiftMonth(-1)} accessibilityRole="button" accessibilityLabel={t("deadlines.calPrevMonth")} style={({ pressed }) => [styles.calNav, pressed && styles.pressed]}>
           <AppIcon name="chevron-left" size={23} color={colors.text} />
         </Pressable>
         <Text style={styles.calMonth}>{monthLabel}</Text>
-        <Pressable onPress={() => shiftMonth(1)} style={({ pressed }) => [styles.calNav, pressed && styles.pressed]}>
+        <Pressable onPress={() => shiftMonth(1)} accessibilityRole="button" accessibilityLabel={t("deadlines.calNextMonth")} style={({ pressed }) => [styles.calNav, pressed && styles.pressed]}>
           <AppIcon name="chevron-right" size={23} color={colors.text} />
         </Pressable>
       </View>
