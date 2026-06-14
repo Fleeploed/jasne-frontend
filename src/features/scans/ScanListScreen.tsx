@@ -91,7 +91,7 @@ export function ScanListScreen() {
   } | null>(null);
   const [pendingScans, setPendingScans] = useState<PendingScanRecord[]>(() => getPendingScanList());
   const searchInputRef = useRef<TextInput>(null);
-  const listRef = useRef<FlatList<any>>(null);
+  const listRef = useRef<FlatList<ListRow>>(null);
   useScrollToTop(listRef);
 
   useEffect(() => {
