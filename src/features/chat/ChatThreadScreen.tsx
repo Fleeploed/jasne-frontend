@@ -2,14 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View, type DimensionValue, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as Clipboard from "expo-clipboard";
+import * as FileSystem from "expo-file-system";
 import * as WebBrowser from "expo-web-browser";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { GestureViewer } from "react-native-gesture-image-viewer";
 
 import { LinearGradient } from "expo-linear-gradient";
 
 import { AppBar, BackButton, ErrorText, Screen, fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { Icon } from "@/components/Icon";
 import { PaywallSheet } from "@/components/PaywallSheet";
+import { SelectableText } from "@/components/SelectableText";
 import { listMessages, streamChat } from "@/features/chat/chatApi";
 import { extractOampIdentifier } from "@/features/chat/oampIdentifier";
 import { OampTrackingOffer } from "@/features/chat/OampTrackingOffer";
@@ -40,6 +43,9 @@ const chatScrollOffsets = new Map<string, number>();
 // Signed URLs expire in 1h; cache for 50 min to keep a safety margin.
 const ATTACHMENT_URL_TTL_MS = 50 * 60 * 1000;
 const attachmentUrlCache = new Map<string, { urls: string[]; cachedAt: number }>();
+const CHAT_IMAGE_CACHE_DIR = FileSystem.cacheDirectory ? `${FileSystem.cacheDirectory}chat-images/` : null;
+const chatImageFileCache = new Map<string, string>();
+const chatImageCachePromises = new Map<string, Promise<string | null>>();
 
 // Scans whose analysis deadlines we already synced into the deadlines table
 // this session. Prevents recreating deadlines the user has intentionally deleted.
@@ -47,6 +53,10 @@ const deadlineSyncDone = new Set<string>();
 const REMINDER_DAYS = [30, 14, 7, 1] as const;
 const REMINDER_SHEET_HIDDEN = 900;
 const REMINDER_TEXT_SCALE = 1;
+const CHAT_IMAGE_VIEWER_ID = "chat-image-viewer";
+// Telegram-style auto-growing composer input bounds.
+const COMPOSER_MIN_INPUT_HEIGHT = 22;
+const COMPOSER_MAX_INPUT_HEIGHT = 120;
 
 type ReminderDay = typeof REMINDER_DAYS[number];
 
@@ -97,6 +107,90 @@ function getCachedAttachmentUrls(key: string): string[] | null {
     return null;
   }
   return hit.urls;
+}
+
+function isRemoteImageUri(uri: string) {
+  return /^https?:\/\//i.test(uri);
+}
+
+function cachedImageSource(uri: string) {
+  return isRemoteImageUri(uri) ? { uri, cache: "force-cache" as const } : { uri };
+}
+
+function chatImageCacheExtension(uri: string) {
+  const clean = uri.split("?", 1)[0].toLowerCase();
+  if (clean.endsWith(".png")) return ".png";
+  if (clean.endsWith(".gif")) return ".gif";
+  if (clean.endsWith(".webp")) return ".webp";
+  if (clean.endsWith(".jpeg")) return ".jpg";
+  return ".jpg";
+}
+
+function hashCacheKey(input: string) {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+async function ensureChatImageCacheDir() {
+  if (!CHAT_IMAGE_CACHE_DIR) return null;
+  const info = await FileSystem.getInfoAsync(CHAT_IMAGE_CACHE_DIR);
+  if (!info.exists) {
+    await FileSystem.makeDirectoryAsync(CHAT_IMAGE_CACHE_DIR, { intermediates: true });
+  }
+  return CHAT_IMAGE_CACHE_DIR;
+}
+
+async function cacheChatImage(cacheKey: string, uri: string, index: number) {
+  if (!isRemoteImageUri(uri)) return uri;
+
+  const imageCacheKey = `${cacheKey}::${index}`;
+  const memoryHit = chatImageFileCache.get(imageCacheKey);
+  if (memoryHit) return memoryHit;
+
+  const pending = chatImageCachePromises.get(imageCacheKey);
+  if (pending) return pending;
+
+  const promise = (async () => {
+    try {
+      const dir = await ensureChatImageCacheDir();
+      if (!dir) return null;
+
+      const fileUri = `${dir}${hashCacheKey(imageCacheKey)}${chatImageCacheExtension(uri)}`;
+      const info = await FileSystem.getInfoAsync(fileUri);
+      if (info.exists) {
+        chatImageFileCache.set(imageCacheKey, fileUri);
+        return fileUri;
+      }
+
+      const result = await FileSystem.downloadAsync(uri, fileUri);
+      chatImageFileCache.set(imageCacheKey, result.uri);
+      return result.uri;
+    } catch {
+      return null;
+    } finally {
+      chatImageCachePromises.delete(imageCacheKey);
+    }
+  })();
+
+  chatImageCachePromises.set(imageCacheKey, promise);
+  return promise;
+}
+
+async function cacheChatImages(cacheKey: string, uris: string[]) {
+  const cached = await Promise.all(uris.map((uri, index) => cacheChatImage(cacheKey, uri, index)));
+  return uris.map((uri, index) => cached[index] ?? uri);
+}
+
+function prefetchImageUris(uris: string[]) {
+  uris.forEach((uri) => {
+    if (isRemoteImageUri(uri)) {
+      void Image.prefetch(uri).catch(() => undefined);
+    }
+  });
 }
 
 type UiMessage = ScanMessage | {
@@ -236,6 +330,14 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
       })
       .catch(() => {});
   }, [initialPending, params.id, scan?.id]);
+
+  // Manual stop of an in-flight answer stream. Aborting unwinds ask()'s
+  // catch/finally (keeps the partial answer, clears streaming). The backend may
+  // have already counted the question before we cancelled, so resync limits.
+  const handleStopStreaming = useCallback(() => {
+    streamAbortRef.current?.abort();
+    refreshCurrentLimits();
+  }, [refreshCurrentLimits]);
 
   // Tracks whether the server fetch has populated state, so a slower disk
   // hydrate doesn't overwrite fresh data with stale.
@@ -490,8 +592,12 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
         }
       }, abortController.signal);
     } catch (chatError) {
-      // Deliberate cancellation (screen unmount) — nothing to surface.
-      if (!abortController.signal.aborted) {
+      // Deliberate cancellation (manual stop or screen unmount): keep whatever
+      // tokens already arrived, just drop the bubble if nothing came through.
+      if (abortController.signal.aborted) {
+        flushTokens();
+        removeEmptyLocalAssistant(localAssistant.id);
+      } else {
         flushTokens();
         setError(chatError instanceof Error ? chatError.message : t("chat.answerError"));
         removeEmptyLocalAssistant(localAssistant.id);
@@ -625,6 +731,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
                 questionsUsed={questionsUsed}
                 questionsMax={questionsMax}
                 onSend={ask}
+                onStop={handleStopStreaming}
                 colors={colors}
                 styles={styles}
               />
@@ -666,12 +773,19 @@ function ResultCard({ scan, plan, existingDeadlines, deadlinesReady, onReminderC
           {result.sender ? <Text style={styles.docFrom}>{result.sender}</Text> : null}
         </View>
         {result.deadlines[0] ? <Text style={[styles.urgencyPill, urgencyPillColors(result.deadlines[0].date, colors)]}>{deadlineDistance(result.deadlines[0].date)}</Text> : null}
-
       </View>
-      <Text style={styles.resultTitle}>{result.document_type_cz ?? result.document_type_localized ?? formatDocTitle(result.document_type ?? scan.doc_type)}</Text>
+      <SelectableText style={styles.resultTitle}>{result.document_type_cz ?? result.document_type_localized ?? formatDocTitle(result.document_type ?? scan.doc_type)}</SelectableText>
       <View style={styles.summaryRow}>
-        <Text style={[styles.resultSummary, styles.flex1]}>{result.summary}</Text>
-        {result.summary ? <CopyButton text={result.summary} colors={colors} styles={styles} compact /> : null}
+        <SelectableText style={[styles.resultSummary, styles.flex1]}>{result.summary}</SelectableText>
+        {result.summary ? (
+          <CopyButton
+            text={result.summary}
+            title={result.document_type_cz ?? result.document_type_localized ?? formatDocTitle(result.document_type ?? scan.doc_type)}
+            colors={colors}
+            styles={styles}
+            compact
+          />
+        ) : null}
       </View>
       {oampIdentifier ? <OampTrackingOffer identifier={oampIdentifier} plan={plan} /> : null}
       {result.actions_required.length ? (
@@ -679,6 +793,7 @@ function ResultCard({ scan, plan, existingDeadlines, deadlinesReady, onReminderC
           <Text style={styles.sectionTitle}>{t("chat.actions")}</Text>
           <CopyButton
             text={result.actions_required.map((action, index) => `${index + 1}. ${action}`).join("\n")}
+            title={t("chat.actions")}
             colors={colors}
             styles={styles}
             compact
@@ -690,7 +805,7 @@ function ResultCard({ scan, plan, existingDeadlines, deadlinesReady, onReminderC
           <View style={styles.actionIndex}>
             <Text style={styles.actionIndexText}>{index + 1}</Text>
           </View>
-          <Text style={styles.resultLine}>{action}</Text>
+          <SelectableText style={styles.resultLine}>{action}</SelectableText>
         </View>
       ))}
       {result.deadlines.length ? <Text style={styles.sectionTitle}>{t("chat.deadlines")}</Text> : null}
@@ -821,19 +936,22 @@ function DeadlineReminderRow({
 
   return (
     <>
-      <LinearGradient
-        colors={["rgba(111,160,230,0.16)", "rgba(111,160,230,0.06)"]}
-        style={styles.deadlineCard}
-      >
+      <View style={styles.deadlineCard}>
         <View style={styles.sectionTitleRow}>
           <Text style={styles.deadlineCardLabel}>{t(`deadlineType.${deadline.type}` as Parameters<typeof t>[0]).toUpperCase()}</Text>
-          <CopyButton text={deadlineCopyText} colors={colors} styles={styles} compact />
+          <CopyButton
+            text={deadlineCopyText}
+            title={t(`deadlineType.${deadline.type}` as Parameters<typeof t>[0]).toUpperCase()}
+            colors={colors}
+            styles={styles}
+            compact
+          />
         </View>
-        <Text style={styles.deadlineCardDate}>{dateLabel}</Text>
+        <SelectableText style={styles.deadlineCardDate}>{dateLabel}</SelectableText>
         {showAddress && whereToGo ? (
           <View style={styles.deadlineCardAddress}>
             <Text style={styles.deadlineCardPin}>⊙</Text>
-            <Text style={styles.deadlineCardAddressText}>{whereToGo}</Text>
+            <SelectableText style={styles.deadlineCardAddressText}>{whereToGo}</SelectableText>
           </View>
         ) : null}
         <Pressable
@@ -855,7 +973,7 @@ function DeadlineReminderRow({
             </>
           )}
         </Pressable>
-      </LinearGradient>
+      </View>
       <ReminderSheet
         visible={showReminderSheet}
         plan={plan}
@@ -976,7 +1094,7 @@ function ReminderSheet({
                   {t(`deadlineType.${deadline.type}` as Parameters<typeof t>[0]).toUpperCase()}
                 </Text>
               </View>
-              <Text maxFontSizeMultiplier={REMINDER_TEXT_SCALE} selectable style={styles.reminderDueDate}>
+              <Text maxFontSizeMultiplier={REMINDER_TEXT_SCALE} style={styles.reminderDueDate}>
                 {formatDeadlineDate(deadline.date)}
               </Text>
             </View>
@@ -1219,9 +1337,9 @@ function ResultInfoBlock({ tone, title, value, colors, styles }: {
     <View style={[styles.infoBlock, toneStyle]}>
       <View style={styles.sectionTitleRow}>
         <Text style={[styles.infoBlockTitle, titleStyle]}>{title}</Text>
-        <CopyButton text={value} colors={colors} styles={styles} compact />
+        <CopyButton text={value} title={title} colors={colors} styles={styles} compact />
       </View>
-      <Text style={styles.infoBlockText}>{value}</Text>
+      <SelectableText style={styles.infoBlockText}>{value}</SelectableText>
     </View>
   );
 }
@@ -1302,21 +1420,22 @@ function MessageBubble({ message, scan, plan, existingDeadlines, deadlinesReady,
   return (
     <View style={isUser ? styles.messageColUser : styles.messageColAssistant}>
       <View style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}>
-        <Text style={[styles.bubbleText, isUser && styles.userText]}>
+        <SelectableText style={[styles.bubbleText, isUser && styles.userText]}>
           {isUser ? message.content || t("chat.thinking") : assistantText}
-        </Text>
+        </SelectableText>
       </View>
       {!isUser && message.content ? (
         <View style={styles.messageCopyRow}>
-          <CopyButton text={assistantText} colors={colors} styles={styles} />
+          <CopyButton text={assistantText} colors={colors} styles={styles} compact />
         </View>
       ) : null}
     </View>
   );
 }
 
-function CopyButton({ text, colors, styles, compact = false }: {
+function CopyButton({ text, title, colors, styles, compact = false }: {
   text: string;
+  title?: string;
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
   compact?: boolean;
@@ -1332,8 +1451,10 @@ function CopyButton({ text, colors, styles, compact = false }: {
   );
 
   const handleCopy = useCallback(async () => {
-    const value = text.trim();
-    if (!value) return;
+    const body = text.trim();
+    if (!body) return;
+    const heading = title?.trim();
+    const value = heading ? `${heading}\n${body}` : body;
     try {
       await Clipboard.setStringAsync(value);
     } catch {
@@ -1343,7 +1464,7 @@ function CopyButton({ text, colors, styles, compact = false }: {
     setCopied(true);
     if (resetTimer.current) clearTimeout(resetTimer.current);
     resetTimer.current = setTimeout(() => setCopied(false), 1500);
-  }, [text]);
+  }, [text, title]);
 
   const tint = copied ? colors.green : colors.muted2;
 
@@ -1362,7 +1483,6 @@ function CopyButton({ text, colors, styles, compact = false }: {
     </Pressable>
   );
 }
-
 type MarkdownPart = {
   text: string;
   bold?: boolean;
@@ -1503,6 +1623,7 @@ function DocumentAttachmentBubble({ scanId, content, colors, styles, onOpenViewe
   const cacheKey = `${scanId}::${pathsKey}`;
   const cachedUrls = getCachedAttachmentUrls(cacheKey);
   const [signedUrls, setSignedUrls] = useState<string[]>(cachedUrls ?? []);
+  const [cachedImageUrls, setCachedImageUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(paths.length > 0 && !cachedUrls);
   const [failed, setFailed] = useState(false);
 
@@ -1553,8 +1674,24 @@ function DocumentAttachmentBubble({ scanId, content, colors, styles, onOpenViewe
     };
   }, [pathsKey, scanId, cacheKey]);
 
+  useEffect(() => {
+    let alive = true;
+    setCachedImageUrls([]);
+    if (!signedUrls.length) return undefined;
+
+    prefetchImageUris(signedUrls);
+    cacheChatImages(cacheKey, signedUrls).then((cached) => {
+      if (alive) setCachedImageUrls(cached);
+    });
+
+    return () => {
+      alive = false;
+    };
+  }, [cacheKey, signedUrls]);
+
   const firstPath = paths[0] ?? "";
-  const firstUrl = signedUrls[0];
+  const viewerUrls = cachedImageUrls.length === signedUrls.length ? cachedImageUrls : signedUrls;
+  const firstUrl = viewerUrls[0];
   const firstIsPdf = isPdfPath(firstPath);
   const firstUrlIsImage = !firstIsPdf || isPreviewableImage(firstUrl ?? "") || firstUrl?.startsWith("data:image/");
 
@@ -1570,11 +1707,11 @@ function DocumentAttachmentBubble({ scanId, content, colors, styles, onOpenViewe
 
   if (firstUrl && !failed && firstUrlIsImage) {
     return (
-      <Pressable style={styles.imageBubble} onPress={onOpenViewer ? () => onOpenViewer(signedUrls, 0) : undefined}>
-        <Image source={{ uri: firstUrl }} style={styles.sentImage} resizeMode="cover" />
-        {signedUrls.length > 1 ? (
+      <Pressable style={styles.imageBubble} onPress={onOpenViewer ? () => onOpenViewer(viewerUrls, 0) : undefined}>
+        <Image source={cachedImageSource(firstUrl)} style={styles.sentImage} resizeMode="cover" />
+        {viewerUrls.length > 1 ? (
           <View style={styles.imageCountBadge}>
-            <Text style={styles.imageCountText}>+{signedUrls.length - 1}</Text>
+            <Text style={styles.imageCountText}>+{viewerUrls.length - 1}</Text>
           </View>
         ) : null}
       </Pressable>
@@ -1599,14 +1736,19 @@ function PendingAttachmentBubble({ attachments, styles, onOpenViewer }: {
   styles: ReturnType<typeof createStyles>;
   onOpenViewer?: (images: string[], index: number) => void;
 }) {
+  const uris = useMemo(() => attachments.map((a) => a.uri), [attachments]);
+
+  useEffect(() => {
+    prefetchImageUris(uris);
+  }, [uris]);
+
   const first = attachments[0];
   if (!first) return null;
 
   if (isPreviewableImage(first.name) || isPreviewableImage(first.uri) || first.mimeType?.startsWith("image/")) {
-    const uris = attachments.map((a) => a.uri);
     return (
       <Pressable style={styles.imageBubble} onPress={onOpenViewer ? () => onOpenViewer(uris, 0) : undefined}>
-        <Image source={{ uri: first.uri }} style={styles.sentImage} resizeMode="cover" />
+        <Image source={cachedImageSource(first.uri)} style={styles.sentImage} resizeMode="cover" />
         {attachments.length > 1 ? (
           <View style={styles.imageCountBadge}>
             <Text style={styles.imageCountText}>+{attachments.length - 1}</Text>
@@ -1664,6 +1806,7 @@ function ChatComposer({
   questionsUsed,
   questionsMax,
   onSend,
+  onStop,
   colors,
   styles,
 }: {
@@ -1677,6 +1820,7 @@ function ChatComposer({
   questionsUsed: number;
   questionsMax: number;
   onSend: () => void;
+  onStop?: () => void;
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
 }) {
@@ -1691,10 +1835,9 @@ function ChatComposer({
         placeholderTextColor={colors.muted2}
         editable={editable}
         autoCapitalize="sentences"
-        returnKeyType="send"
-        onSubmitEditing={() => {
-          if (!disabled && !streaming) onSend();
-        }}
+        multiline
+        submitBehavior="newline"
+        textAlignVertical="top"
         style={styles.composerInput}
       />
       {showCounter ? (
@@ -1705,26 +1848,35 @@ function ChatComposer({
         disabled={disabled}
         muted={muted}
         onPress={onSend}
+        onStop={onStop}
         colors={colors}
       />
     </View>
   );
 }
 
-function SendButton({ streaming, disabled, muted = false, onPress, colors }: {
+function SendButton({ streaming, disabled, muted = false, onPress, onStop, colors }: {
   streaming: boolean;
   disabled: boolean;
   muted?: boolean;
   onPress: () => void;
+  onStop?: () => void;
   colors: ColorPalette;
 }) {
-  const backgroundColor = streaming && muted ? colors.surface2 : disabled ? colors.surface2 : colors.primary;
-  const iconColor = streaming && muted ? colors.muted3 : disabled ? colors.muted3 : colors.textOnAccent;
+  // Chat answer is streaming and can be cancelled → active stop button.
+  // A scan still processing (muted) shows a non-interactive muted square.
+  const stoppable = streaming && !muted && Boolean(onStop);
+  const accent = stoppable || (!streaming && !disabled);
+  const backgroundColor = accent ? colors.primary : colors.surface2;
+  const iconColor = accent ? colors.textOnAccent : colors.muted3;
+  const pressDisabled = stoppable ? false : disabled || streaming;
 
   return (
     <Pressable
-      onPress={onPress}
-      disabled={disabled || streaming}
+      onPress={stoppable ? onStop : onPress}
+      disabled={pressDisabled}
+      accessibilityRole="button"
+      accessibilityLabel={stoppable ? t("chat.stop") : t("chat.send")}
       style={({ pressed }) => ({
         width: 36,
         height: 36,
@@ -1935,92 +2087,73 @@ function ImageViewerModal({ images, initialIndex, visible, onClose }: {
 }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const flatRef = useRef<FlatList<string>>(null);
-  const dismissY = useRef(new Animated.Value(0)).current;
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const safeInitialIndex = images.length > 0 ? Math.max(0, Math.min(initialIndex, images.length - 1)) : 0;
 
   useEffect(() => {
     if (visible) {
-      dismissY.setValue(0);
-      setCurrentIndex(initialIndex);
-      setTimeout(() => {
-        flatRef.current?.scrollToIndex({ index: initialIndex, animated: false });
-      }, 50);
+      setCurrentIndex(safeInitialIndex);
+      prefetchImageUris(images);
     }
-  }, [dismissY, visible, initialIndex]);
+  }, [visible, safeInitialIndex, images]);
 
-  const closeWithSwipe = useCallback(() => {
-    Animated.timing(dismissY, {
-      toValue: -height,
-      duration: 170,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start(() => {
-      dismissY.setValue(0);
-      onClose();
-    });
-  }, [dismissY, height, onClose]);
+  useEffect(() => {
+    if (!visible) return;
+    prefetchImageUris([
+      images[currentIndex - 1],
+      images[currentIndex],
+      images[currentIndex + 1],
+    ].filter((uri): uri is string => Boolean(uri)));
+  }, [visible, images, currentIndex]);
 
-  const swipeUpResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_, { dx, dy }) =>
-          dy < -34 && Math.abs(dy) > Math.abs(dx) * 2.1,
-        onMoveShouldSetPanResponderCapture: (_, { dx, dy }) =>
-          dy < -42 && Math.abs(dy) > Math.abs(dx) * 2.1,
-        onPanResponderRelease: (_, { dy, vy }) => {
-          if (dy < -72 || (dy < -36 && vy < -0.95)) {
-            closeWithSwipe();
-          }
-        },
-      }),
-    [closeWithSwipe],
-  );
-
-  const backdropOpacity = dismissY.interpolate({
-    inputRange: [-height * 0.45, 0],
-    outputRange: [0.15, 1],
-    extrapolate: "clamp",
-  });
+  if (!visible || images.length === 0) return null;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <StatusBar hidden />
-      <Animated.View
-        {...swipeUpResponder.panHandlers}
-        style={{
-          flex: 1,
-          backgroundColor: "#000",
-          opacity: backdropOpacity,
-          transform: [{ translateY: dismissY }],
-        }}
-      >
-        <FlatList
-          ref={flatRef}
+      <View style={{ flex: 1, backgroundColor: "#000" }}>
+        <GestureViewer
+          id={CHAT_IMAGE_VIEWER_ID}
           data={images}
-          horizontal
-          pagingEnabled
-          directionalLockEnabled
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={(_, i) => String(i)}
-          initialScrollIndex={initialIndex}
-          getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
-          onMomentumScrollEnd={(e) => {
-            setCurrentIndex(Math.round(e.nativeEvent.contentOffset.x / width));
+          initialIndex={safeInitialIndex}
+          ListComponent={ScrollView}
+          width={width}
+          height={height}
+          onIndexChange={setCurrentIndex}
+          onDismiss={onClose}
+          enableDismissGesture
+          enableSwipeGesture={images.length > 1}
+          enableZoomGesture
+          enableDoubleTapGesture
+          enableZoomPanGesture
+          dismissThreshold={80}
+          resistance={2}
+          maxZoomScale={4}
+          animateBackdrop
+          backdropStyle={{ backgroundColor: "#000" }}
+          containerStyle={{ flex: 1, backgroundColor: "#000" }}
+          listProps={{
+            directionalLockEnabled: true,
+            bounces: false,
+            alwaysBounceHorizontal: false,
+            alwaysBounceVertical: false,
           }}
-          renderItem={({ item }) => (
-            <ZoomableViewerImage uri={item} width={width} height={height} />
+          renderItem={(item: string) => (
+            <View style={{ width, height, alignItems: "center", justifyContent: "center", backgroundColor: "#000" }}>
+              <Image source={cachedImageSource(item)} style={{ width, height }} resizeMode="contain" />
+            </View>
           )}
         />
 
-        {/* Close button */}
         <Pressable
           onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel={t("common.close")}
           style={{
             position: "absolute",
             top: insets.top + 12,
             right: 16,
+            zIndex: 2,
             width: 36,
             height: 36,
             borderRadius: 18,
@@ -2029,16 +2162,16 @@ function ImageViewerModal({ images, initialIndex, visible, onClose }: {
             justifyContent: "center",
           }}
         >
-          <Text style={{ color: "#fff", fontSize: 20, lineHeight: 22, fontWeight: "300" }}>✕</Text>
+          <Icon name="x" size={20} color="#fff" />
         </Pressable>
 
-        {/* Page indicator */}
         {images.length > 1 ? (
           <View style={{
             position: "absolute",
             bottom: insets.bottom + 20,
             left: 0,
             right: 0,
+            zIndex: 2,
             flexDirection: "row",
             justifyContent: "center",
             gap: 6,
@@ -2056,78 +2189,8 @@ function ImageViewerModal({ images, initialIndex, visible, onClose }: {
             ))}
           </View>
         ) : null}
-      </Animated.View>
+      </View>
     </Modal>
-  );
-}
-
-type ZoomRect = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  animated?: boolean;
-};
-
-type ZoomableScrollViewHandle = ScrollView & {
-  getScrollResponder?: () => {
-    scrollResponderZoomTo?: (rect: ZoomRect, animated?: boolean) => void;
-  };
-  scrollResponderZoomTo?: (rect: ZoomRect, animated?: boolean) => void;
-};
-
-function ZoomableViewerImage({ uri, width, height }: { uri: string; width: number; height: number }) {
-  const scrollRef = useRef<ZoomableScrollViewHandle>(null);
-  const lastTapRef = useRef(0);
-  const [zoomed, setZoomed] = useState(false);
-
-  function zoomTo(rect: ZoomRect) {
-    const responder = scrollRef.current?.getScrollResponder?.();
-    const zoom = responder?.scrollResponderZoomTo ?? scrollRef.current?.scrollResponderZoomTo;
-    zoom?.({ ...rect, animated: true }, true);
-  }
-
-  function handlePress(locationX: number, locationY: number) {
-    const now = Date.now();
-    if (now - lastTapRef.current > 280) {
-      lastTapRef.current = now;
-      return;
-    }
-
-    lastTapRef.current = 0;
-    if (zoomed) {
-      zoomTo({ x: 0, y: 0, width, height });
-      setZoomed(false);
-      return;
-    }
-
-    const zoomScale = 2.6;
-    const zoomWidth = width / zoomScale;
-    const zoomHeight = height / zoomScale;
-    zoomTo({
-      x: Math.max(locationX - zoomWidth / 2, 0),
-      y: Math.max(locationY - zoomHeight / 2, 0),
-      width: zoomWidth,
-      height: zoomHeight,
-    });
-    setZoomed(true);
-  }
-
-  return (
-    <ScrollView
-      ref={scrollRef}
-      style={{ width, height }}
-      contentContainerStyle={{ width, height }}
-      maximumZoomScale={4}
-      minimumZoomScale={1}
-      centerContent
-      showsHorizontalScrollIndicator={false}
-      showsVerticalScrollIndicator={false}
-    >
-      <Pressable onPress={(event) => handlePress(event.nativeEvent.locationX, event.nativeEvent.locationY)}>
-        <Image source={{ uri }} style={{ width, height }} resizeMode="contain" />
-      </Pressable>
-    </ScrollView>
   );
 }
 
@@ -2305,7 +2368,7 @@ function createStyles(colors: ColorPalette) {
       fontWeight: "800"
     },
     resultTitle: { color: colors.text, fontFamily: fonts.displayBold, ...typeStyles.compactTitle, fontWeight: "700" },
-    resultSummary: { color: colors.muted2, fontFamily: fonts.body, ...typeStyles.rowSecondary },
+    resultSummary: { color: colors.muted2, fontFamily: fonts.body, ...typeStyles.rowSecondary, fontSize: 16, lineHeight: 22 },
     sectionTitle: {
       color: colors.muted2,
       fontFamily: fonts.bodyExtraBold,
@@ -2325,12 +2388,14 @@ function createStyles(colors: ColorPalette) {
       marginTop: 1
     },
     actionIndexText: { color: colors.primary, fontFamily: fonts.bodyBold, ...typeStyles.caption1, fontWeight: "700" },
-    resultLine: { flex: 1, color: colors.text, fontFamily: fonts.body, ...typeStyles.rowSecondary },
+    resultLine: { flex: 1, color: colors.text, fontFamily: fonts.body, ...typeStyles.rowSecondary, fontSize: 16, lineHeight: 22 },
     deadlineCard: {
       borderRadius: 14,
       borderWidth: 1,
       borderColor: colors.blueMid,
+      backgroundColor: colors.blueSoft,
       padding: 14,
+      marginTop: 8,
     },
     deadlineCardLabel: {
       color: colors.primary,
@@ -2364,6 +2429,8 @@ function createStyles(colors: ColorPalette) {
       color: colors.muted,
       fontFamily: fonts.body,
       ...typeStyles.rowMeta,
+      fontSize: 15,
+      lineHeight: 21,
     },
     deadlineCardBtn: {
       marginTop: 12,
@@ -2669,10 +2736,11 @@ function createStyles(colors: ColorPalette) {
       color: colors.text,
       fontFamily: fonts.body,
       ...typeStyles.rowMeta,
+      fontSize: 16,
+      lineHeight: 22,
     },
-    bubble: { maxWidth: "84%", paddingHorizontal: 12, paddingVertical: 10 },
+    bubble: { paddingHorizontal: 12, paddingVertical: 10, maxWidth: "82%" },
     userBubble: {
-      alignSelf: "flex-end",
       backgroundColor: colors.primary,
       borderTopLeftRadius: 18,
       borderTopRightRadius: 18,
@@ -2680,14 +2748,13 @@ function createStyles(colors: ColorPalette) {
       borderBottomRightRadius: 4
     },
     assistantBubble: {
-      alignSelf: "flex-start",
       backgroundColor: colors.surface,
       borderTopLeftRadius: 4,
       borderTopRightRadius: 18,
       borderBottomLeftRadius: 18,
       borderBottomRightRadius: 18
     },
-    bubbleText: { color: colors.text, fontFamily: fonts.body, fontSize: 13.5, lineHeight: 19 },
+    bubbleText: { color: colors.text, fontFamily: fonts.body, fontSize: 16, lineHeight: 21 },
     userText: { color: colors.textOnAccent },
     messageColAssistant: { alignItems: "flex-start" },
     messageColUser: { alignItems: "flex-end" },
@@ -2784,15 +2851,16 @@ function createStyles(colors: ColorPalette) {
       gap: 8
     },
     composerPill: {
-      height: 48,
+      minHeight: 48,
       borderRadius: 24,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surface2,
       flexDirection: "row",
-      alignItems: "center",
+      alignItems: "flex-end",
       paddingLeft: 18,
       paddingRight: 6,
+      paddingVertical: 6,
       gap: 10,
       shadowColor: "#000",
       shadowOpacity: 0,
@@ -2805,15 +2873,22 @@ function createStyles(colors: ColorPalette) {
       color: colors.text,
       fontFamily: fonts.body,
       fontSize: 14,
-      lineHeight: 17,
-      paddingVertical: 0
+      lineHeight: 18,
+      paddingTop: 0,
+      paddingBottom: 0,
+      // Auto-grow up to ~6 lines, then the field scrolls internally.
+      minHeight: COMPOSER_MIN_INPUT_HEIGHT,
+      maxHeight: COMPOSER_MAX_INPUT_HEIGHT,
+      // Vertically center the single-line state against the 36px send button.
+      marginBottom: 7
     },
     composerCounter: {
       color: colors.muted3,
       fontFamily: fonts.body,
       ...typeStyles.caption2,
       minWidth: 24,
-      textAlign: "right"
+      textAlign: "right",
+      alignSelf: "center"
     },
     lockedComposer: {
       gap: 8

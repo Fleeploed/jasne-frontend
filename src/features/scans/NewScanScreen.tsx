@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { Dimensions, Image, Linking, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View, type GestureResponderEvent } from "react-native";
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { Animated, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Gesture, GestureDetector, type GestureType } from "react-native-gesture-handler";
+import { GestureViewer } from "react-native-gesture-image-viewer";
+import Reanimated, { runOnJS, useAnimatedProps, useSharedValue } from "react-native-reanimated";
+import { Camera, useCameraDevice, useCameraPermission, type CameraDevice, type CameraProps } from "react-native-vision-camera";
 import { Icon, type IconName } from "@/components/Icon";
 import { fonts, typeStyles, useThemePreference } from "@/components/ui";
 
@@ -33,19 +36,70 @@ import { triggerSelectionHaptic } from "@/lib/haptics";
 import type { UserPlan } from "@/lib/types";
 
 type ScannerCopy = ReturnType<typeof getScannerCopy>;
+type CameraTapPoint = { x: number; y: number };
 type CameraFocusPoint = { x: number; y: number; key: number };
-type CameraZoomLevel = { label: string; value: number };
+type CameraZoomLevel = { label: string; value: number; displayValue: number };
 
-const CAMERA_ZOOM_LEVELS: CameraZoomLevel[] = [
-  { label: "1x", value: 0 },
-  { label: "2x", value: 0.18 },
-  { label: "3x", value: 0.32 },
-];
-const CAMERA_MAX_ZOOM = 0.48;
+const CAMERA_MAX_ZOOM_FACTOR = 6;
+const CAMERA_DISPLAY_ZOOM_LEVELS = [0.5, 1, 2, 3];
 const SHUTTER_BLACKOUT_MS = 180;
+const IMPORT_SHEET_HIDDEN = 420;
+const CAMERA_ZOOM_SWIPE_DISTANCE = 520;
+const CAMERA_ZOOM_SWIPE_ACTIVATE_DX = 9;
+const CAMERA_ZOOM_HIDE_DELAY_MS = 650;
+const SCAN_PREVIEW_VIEWER_ID = "scan-preview-viewer";
 
-function clampCameraZoom(value: number) {
-  return Math.max(0, Math.min(CAMERA_MAX_ZOOM, value));
+Reanimated.addWhitelistedNativeProps({ zoom: true });
+const ReanimatedCamera = Reanimated.createAnimatedComponent(Camera);
+
+function cameraDefaultZoom(device?: Pick<CameraDevice, "neutralZoom">) {
+  return device?.neutralZoom ?? 1;
+}
+
+// VisionCamera uses native zoom factors; the UI shows iPhone-style zoom
+// relative to the neutral wide-angle lens: displayZoom = nativeZoom / neutralZoom.
+function cameraDisplayZoomForNative(value: number, device?: Pick<CameraDevice, "neutralZoom">) {
+  return value / Math.max(cameraDefaultZoom(device), 0.1);
+}
+
+function cameraNativeZoomForDisplay(value: number, device?: Pick<CameraDevice, "neutralZoom">) {
+  return value * cameraDefaultZoom(device);
+}
+
+function cameraZoomBounds(device?: Pick<CameraDevice, "minZoom" | "maxZoom" | "neutralZoom">) {
+  const defaultZoom = cameraDefaultZoom(device);
+  const minZoom = Math.max(device?.minZoom ?? defaultZoom, 0.1);
+  const maxZoom = Math.max(minZoom, Math.min(device?.maxZoom ?? CAMERA_MAX_ZOOM_FACTOR, CAMERA_MAX_ZOOM_FACTOR));
+  return { minZoom, maxZoom };
+}
+
+function clampCameraZoom(value: number, device?: Pick<CameraDevice, "minZoom" | "maxZoom" | "neutralZoom">) {
+  const { minZoom, maxZoom } = cameraZoomBounds(device);
+  return Math.max(minZoom, Math.min(maxZoom, value));
+}
+
+function cameraZoomLevelsForDevice(device?: Pick<CameraDevice, "minZoom" | "maxZoom" | "neutralZoom">) {
+  const { minZoom, maxZoom } = cameraZoomBounds(device);
+  const levels = CAMERA_DISPLAY_ZOOM_LEVELS.flatMap((displayValue) => {
+    const nativeValue = cameraNativeZoomForDisplay(displayValue, device);
+    if (nativeValue < minZoom - 0.05 || nativeValue > maxZoom + 0.05) return [];
+    return [{ label: formatCameraZoomLabel(displayValue), value: clampCameraZoom(nativeValue, device), displayValue }];
+  });
+  if (levels.length > 0) return levels;
+  const displayValue = cameraDisplayZoomForNative(minZoom, device);
+  return [{ label: formatCameraZoomLabel(displayValue), value: minZoom, displayValue }];
+}
+
+function nearestCameraZoomLevel(value: number, levels: CameraZoomLevel[]) {
+  return levels.reduce((best, level) =>
+    Math.abs(level.value - value) < Math.abs(best.value - value) ? level : best
+  );
+}
+
+function formatCameraZoomLabel(value: number) {
+  const rounded = Math.round(value);
+  if (Math.abs(value - rounded) < 0.08) return `${rounded}x`;
+  return `${value.toFixed(1)}x`;
 }
 
 const scannerDark = {
@@ -156,14 +210,25 @@ export function NewScanScreen() {
   const copy = useMemo(() => getScannerCopy(getLocale()), []);
   const { scannerStyles } = useScannerTheme();
 
-  const cameraRef = useRef<CameraView>(null);
+  const cameraRef = useRef<Camera>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shutterFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const cameraPermission = useCameraPermission();
+  const cameraDevice = useCameraDevice("back", {
+    physicalDevices: ["ultra-wide-angle-camera", "wide-angle-camera", "telephoto-camera"],
+  });
+  const defaultCameraZoom = useMemo(
+    () => clampCameraZoom(cameraDefaultZoom(cameraDevice), cameraDevice),
+    [cameraDevice?.id, cameraDevice?.minZoom, cameraDevice?.maxZoom, cameraDevice?.neutralZoom],
+  );
+  const cameraZoomLevels = useMemo(
+    () => cameraZoomLevelsForDevice(cameraDevice),
+    [cameraDevice?.id, cameraDevice?.minZoom, cameraDevice?.maxZoom, cameraDevice?.neutralZoom],
+  );
   const [torchOn, setTorchOn] = useState(false);
   const [capturing, setCapturing] = useState(false);
-  const [cameraZoom, setCameraZoom] = useState(0);
-  const [focusPulse, setFocusPulse] = useState(false);
+  const [cameraZoom, setCameraZoom] = useState(1);
+  const defaultCameraZoomRef = useRef(defaultCameraZoom);
   const [focusPoint, setFocusPoint] = useState<CameraFocusPoint | null>(null);
   const [shutterBlackout, setShutterBlackout] = useState(false);
 
@@ -195,6 +260,10 @@ export function NewScanScreen() {
   const [pillFlash, setPillFlash] = useState<{ label: string; key: number } | null>(null);
 
   useEffect(() => {
+    defaultCameraZoomRef.current = defaultCameraZoom;
+  }, [defaultCameraZoom]);
+
+  useEffect(() => {
     if (!pillFlash) return;
     const timer = setTimeout(() => setPillFlash((current) => (current?.key === pillFlash.key ? null : current)), 2000);
     return () => clearTimeout(timer);
@@ -211,9 +280,8 @@ export function NewScanScreen() {
     setPdfRendering(false);
     setPdfConverting(false);
     setPermissionDenied(false);
-    setCameraZoom(0);
+    setCameraZoom(defaultCameraZoomRef.current);
     setFocusPoint(null);
-    setFocusPulse(false);
     setShutterBlackout(false);
     setActivePendingId(params.pending && getPendingScanById(params.pending) ? params.pending : null);
   }, [params.fresh, params.pending]);
@@ -245,10 +313,24 @@ export function NewScanScreen() {
   // Ask for camera permission on entry so the live preview can show immediately.
   // If the user previously hard-denied it, the permission screen kicks in below.
   useEffect(() => {
-    if (cameraPermission && !cameraPermission.granted && cameraPermission.canAskAgain) {
-      void requestCameraPermission();
-    }
-  }, [cameraPermission?.granted, cameraPermission?.canAskAgain]);
+    if (cameraPermission.hasPermission) return;
+    let alive = true;
+    void cameraPermission.requestPermission().then((granted) => {
+      if (alive && !granted) setPermissionDenied(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [cameraPermission.hasPermission, cameraPermission.requestPermission]);
+
+  useEffect(() => {
+    setCameraZoom((current) => clampCameraZoom(current, cameraDevice));
+  }, [cameraDevice?.id, cameraDevice?.minZoom, cameraDevice?.maxZoom, cameraDevice?.neutralZoom]);
+
+  useEffect(() => {
+    if (!cameraDevice) return;
+    setCameraZoom(defaultCameraZoom);
+  }, [cameraDevice?.id, defaultCameraZoom]);
 
   async function addDocument() {
     try {
@@ -366,16 +448,15 @@ export function NewScanScreen() {
     }
   }
 
-  function handleCameraTap(event: GestureResponderEvent) {
+  function handleCameraTap(point: CameraTapPoint) {
     if (!cameraReady) return;
-    const { locationX, locationY } = event.nativeEvent;
     triggerSelectionHaptic();
-    setFocusPulse(false);
-    setFocusPoint({ x: locationX, y: locationY, key: Date.now() });
-    requestAnimationFrame(() => setFocusPulse(true));
+    setFocusPoint({ x: point.x, y: point.y, key: Date.now() });
+    if (cameraDevice?.supportsFocus) {
+      void cameraRef.current?.focus(point).catch(() => {});
+    }
     if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
     focusTimerRef.current = setTimeout(() => {
-      setFocusPulse(false);
       setFocusPoint(null);
       focusTimerRef.current = null;
     }, 850);
@@ -396,13 +477,16 @@ export function NewScanScreen() {
       setError(null);
 
       // Ensure camera permission right before capturing.
-      let granted = cameraPermission?.granted ?? false;
+      let granted = cameraPermission.hasPermission;
       if (!granted) {
-        const result = await requestCameraPermission();
-        granted = result.granted;
+        granted = await cameraPermission.requestPermission();
       }
       if (!granted) {
         setPermissionDenied(true);
+        return;
+      }
+      if (!cameraDevice) {
+        setError(t("scan.scannerUnavailable"));
         return;
       }
 
@@ -410,10 +494,11 @@ export function NewScanScreen() {
       if (availableSlots <= 0) return;
 
       setCapturing(true);
-      const photo = await cameraRef.current?.takePictureAsync({ quality: 0.9 });
-      if (photo?.uri) {
+      const photo = await cameraRef.current?.takePhoto({ flash: "off", enableShutterSound: false });
+      if (photo?.path) {
+        const uri = photo.path.startsWith("file://") ? photo.path : `file://${photo.path}`;
         appendFiles(
-          [{ uri: photo.uri, name: `scan-${Date.now()}.jpg`, mimeType: "image/jpeg" }],
+          [{ uri, name: `scan-${Date.now()}.jpg`, mimeType: "image/jpeg" }],
           availableSlots,
         );
       }
@@ -552,11 +637,10 @@ export function NewScanScreen() {
   const isPro = plan === "pro";
   const limitReached = files.length >= maxPages;
   const nearLimit = isPro && maxPages - files.length === 1;
-  const cameraReady = cameraPermission?.granted ?? false;
-  // Show the dedicated permission screen when access was hard-denied (can't ask again)
-  // or the user explicitly hit a denial while capturing.
-  const showPermissionScreen =
-    permissionDenied || (!!cameraPermission && !cameraPermission.granted && !cameraPermission.canAskAgain);
+  const cameraReady = cameraPermission.hasPermission && Boolean(cameraDevice);
+  // VisionCamera v4 only reports granted/not granted, so show the dedicated
+  // permission screen after a concrete denied request.
+  const showPermissionScreen = permissionDenied;
 
   if (showPermissionScreen) {
     return (
@@ -585,8 +669,11 @@ export function NewScanScreen() {
         maxPages={maxPages}
         isPro={isPro}
         limitReached={limitReached}
-        torchOn={torchOn}
-        onToggleTorch={() => setTorchOn((on) => !on)}
+        torchOn={torchOn && Boolean(cameraDevice?.hasTorch)}
+        onToggleTorch={() => {
+          if (!cameraDevice?.hasTorch) return;
+          setTorchOn((on) => !on);
+        }}
         onClose={() => router.back()}
         topInset={insets.top}
       />
@@ -597,16 +684,17 @@ export function NewScanScreen() {
         files={files}
         limitReached={limitReached}
         cameraRef={cameraRef}
+        cameraDevice={cameraDevice}
         cameraReady={cameraReady}
         zoom={cameraZoom}
-        focusPulse={focusPulse}
+        zoomLevels={cameraZoomLevels}
         focusPoint={focusPoint}
         shutterBlackout={shutterBlackout}
-        torchOn={torchOn}
+        torchOn={torchOn && Boolean(cameraDevice?.hasTorch)}
         flashPill={pillFlash ? { label: pillFlash.label, visible: true } : undefined}
         pdfRendering={pdfRendering}
         onCameraTap={handleCameraTap}
-        onZoomChange={setCameraZoom}
+        onZoomChange={(nextZoom) => setCameraZoom(clampCameraZoom(nextZoom, cameraDevice))}
       >
         {files.length > 0 ? (
           <ThumbnailStrip
@@ -658,7 +746,7 @@ export function NewScanScreen() {
         onPickPhotos={() => void addImage()}
       />
       <PdfPagePicker
-        visible={Boolean(pdfPicker)}
+        visible={Boolean(pdfPicker) && !showPaywall}
         pageCount={pdfPicker?.pageCount ?? 0}
         available={pdfPicker?.available ?? 0}
         thumbnails={pdfPicker?.thumbnails ?? {}}
@@ -679,9 +767,11 @@ export function NewScanScreen() {
         onPurchase={() => {
           void getLimits()
             .then((limits) => {
+              const nextAvailable = Math.max(0, limits.max_pages_per_scan - files.length);
               setPageLimit(limits.max_pages_per_scan);
               setPlan(limits.plan);
               setScansRemaining(limits.scans_remaining);
+              setPdfPicker((current) => current ? { ...current, available: nextAvailable } : current);
             })
             .catch(() => {});
         }}
@@ -752,9 +842,10 @@ function ScannerCamera({
   copy,
   files,
   cameraRef,
+  cameraDevice,
   cameraReady,
   zoom,
-  focusPulse,
+  zoomLevels,
   focusPoint,
   shutterBlackout,
   torchOn,
@@ -768,61 +859,159 @@ function ScannerCamera({
   isPro: boolean;
   files: PickedUpload[];
   limitReached: boolean;
-  cameraRef: RefObject<CameraView | null>;
+  cameraRef: RefObject<Camera | null>;
+  cameraDevice?: CameraDevice;
   cameraReady: boolean;
   zoom: number;
-  focusPulse: boolean;
+  zoomLevels: CameraZoomLevel[];
   focusPoint: CameraFocusPoint | null;
   shutterBlackout: boolean;
   torchOn: boolean;
   flashPill?: { label: string; visible: boolean };
   pdfRendering?: boolean;
-  onCameraTap: (event: GestureResponderEvent) => void;
+  onCameraTap: (point: CameraTapPoint) => void;
   onZoomChange: (zoom: number) => void;
   children?: React.ReactNode;
 }) {
   const { scanner, scannerStyles } = useScannerTheme();
-  const zoomRef = useRef(zoom);
-  const zoomStartRef = useRef(zoom);
+  const zoomHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [zoomGestureActive, setZoomGestureActive] = useState(false);
+  const [gestureZoomDisplay, setGestureZoomDisplay] = useState(() => cameraDisplayZoomForNative(zoom, cameraDevice));
+  const zoomBounds = useMemo(() => cameraZoomBounds(cameraDevice), [cameraDevice?.id, cameraDevice?.minZoom, cameraDevice?.maxZoom, cameraDevice?.neutralZoom]);
+  const zoomValue = useSharedValue(zoom);
+  const zoomStartValue = useSharedValue(zoom);
+  const zoomMinValue = useSharedValue(zoomBounds.minZoom);
+  const zoomMaxValue = useSharedValue(zoomBounds.maxZoom);
+  const zoomNeutralValue = useSharedValue(cameraDefaultZoom(cameraDevice));
+  const zoomReadoutValue = useSharedValue(cameraDisplayZoomForNative(zoom, cameraDevice));
 
   useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
+    const clamped = clampCameraZoom(zoom, cameraDevice);
+    const displayZoom = cameraDisplayZoomForNative(clamped, cameraDevice);
+    zoomValue.value = clamped;
+    zoomNeutralValue.value = cameraDefaultZoom(cameraDevice);
+    zoomReadoutValue.value = displayZoom;
+    setGestureZoomDisplay(displayZoom);
+  }, [cameraDevice, zoom, zoomNeutralValue, zoomReadoutValue, zoomValue]);
 
-  const setGestureZoom = useCallback((nextZoom: number) => {
-    const clamped = clampCameraZoom(nextZoom);
-    if (Math.abs(clamped - zoomRef.current) < 0.006) return;
-    zoomRef.current = clamped;
-    onZoomChange(clamped);
-  }, [onZoomChange]);
+  useEffect(() => {
+    zoomMinValue.value = zoomBounds.minZoom;
+    zoomMaxValue.value = zoomBounds.maxZoom;
+    const clamped = Math.max(zoomBounds.minZoom, Math.min(zoomBounds.maxZoom, zoomValue.value));
+    const displayZoom = cameraDisplayZoomForNative(clamped, cameraDevice);
+    zoomValue.value = clamped;
+    zoomNeutralValue.value = cameraDefaultZoom(cameraDevice);
+    zoomReadoutValue.value = displayZoom;
+    setGestureZoomDisplay(displayZoom);
+  }, [cameraDevice, zoomBounds.maxZoom, zoomBounds.minZoom, zoomMaxValue, zoomMinValue, zoomNeutralValue, zoomReadoutValue, zoomValue]);
 
-  const cameraPanResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_, { dx, dy }) =>
-          Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx) * 1.25,
-        onPanResponderGrant: () => {
-          zoomStartRef.current = zoomRef.current;
-        },
-        onPanResponderMove: (_, { dy }) => {
-          setGestureZoom(zoomStartRef.current - dy / 780);
-        },
+  useEffect(() => () => {
+    if (zoomHideTimerRef.current) clearTimeout(zoomHideTimerRef.current);
+  }, []);
+
+  const animatedCameraProps = useAnimatedProps<CameraProps>(() => ({
+    zoom: zoomValue.value,
+  }));
+
+  const showZoomReadout = useCallback(() => {
+    if (zoomHideTimerRef.current) {
+      clearTimeout(zoomHideTimerRef.current);
+      zoomHideTimerRef.current = null;
+    }
+    setZoomGestureActive(true);
+  }, []);
+
+  const hideZoomReadoutSoon = useCallback(() => {
+    if (zoomHideTimerRef.current) clearTimeout(zoomHideTimerRef.current);
+    zoomHideTimerRef.current = setTimeout(() => {
+      setZoomGestureActive(false);
+      zoomHideTimerRef.current = null;
+    }, CAMERA_ZOOM_HIDE_DELAY_MS);
+  }, []);
+
+  const updateGestureZoomReadout = useCallback((nextZoom: number) => {
+    setGestureZoomDisplay(nextZoom);
+  }, []);
+
+  const settleGestureZoom = useCallback((nextZoom: number) => {
+    const clamped = clampCameraZoom(nextZoom, cameraDevice);
+    const nearest = nearestCameraZoomLevel(clamped, zoomLevels);
+    const settled = Math.abs(nearest.value - clamped) < 0.08 ? nearest.value : clamped;
+    const displayZoom = cameraDisplayZoomForNative(settled, cameraDevice);
+    zoomValue.value = settled;
+    zoomNeutralValue.value = cameraDefaultZoom(cameraDevice);
+    zoomReadoutValue.value = displayZoom;
+    setGestureZoomDisplay(displayZoom);
+    if (Math.abs(settled - zoom) >= 0.006) {
+      onZoomChange(settled);
+    }
+    hideZoomReadoutSoon();
+  }, [cameraDevice, hideZoomReadoutSoon, onZoomChange, zoom, zoomLevels, zoomNeutralValue, zoomReadoutValue, zoomValue]);
+
+  const createHorizontalZoomGesture = useCallback(() =>
+    Gesture.Pan()
+      .activeOffsetX([-CAMERA_ZOOM_SWIPE_ACTIVATE_DX, CAMERA_ZOOM_SWIPE_ACTIVATE_DX])
+      .failOffsetY([-28, 28])
+      .onBegin(() => {
+        zoomStartValue.value = zoomValue.value;
+      })
+      .onStart(() => {
+        runOnJS(showZoomReadout)();
+      })
+      .onUpdate((event) => {
+        const range = zoomMaxValue.value - zoomMinValue.value;
+        const nextZoom = Math.max(
+          zoomMinValue.value,
+          Math.min(zoomMaxValue.value, zoomStartValue.value + (event.translationX / CAMERA_ZOOM_SWIPE_DISTANCE) * range),
+        );
+        const displayZoom = nextZoom / Math.max(zoomNeutralValue.value, 0.1);
+        const readoutZoom = Math.round(displayZoom * 10) / 10;
+        zoomValue.value = nextZoom;
+        if (Math.abs(readoutZoom - zoomReadoutValue.value) >= 0.05) {
+          zoomReadoutValue.value = readoutZoom;
+          runOnJS(updateGestureZoomReadout)(readoutZoom);
+        }
+      })
+      .onFinalize(() => {
+        runOnJS(settleGestureZoom)(zoomValue.value);
       }),
-    [setGestureZoom],
+    [settleGestureZoom, showZoomReadout, updateGestureZoomReadout, zoomMaxValue, zoomMinValue, zoomNeutralValue, zoomReadoutValue, zoomStartValue, zoomValue],
+  );
+
+  const cameraTapGesture = useMemo(
+    () =>
+      Gesture.Tap()
+        .maxDistance(CAMERA_ZOOM_SWIPE_ACTIVATE_DX)
+        .onEnd((event, success) => {
+          if (!success) return;
+          runOnJS(onCameraTap)({ x: event.x, y: event.y });
+      }),
+    [onCameraTap],
+  );
+
+  const cameraGesture = useMemo(
+    () => Gesture.Exclusive(createHorizontalZoomGesture(), cameraTapGesture),
+    [cameraTapGesture, createHorizontalZoomGesture],
+  );
+
+  const zoomControlGesture = useMemo(
+    () => createHorizontalZoomGesture(),
+    [createHorizontalZoomGesture],
   );
 
   return (
     <View style={scannerStyles.camera}>
-      {cameraReady ? (
-        <CameraView
-          ref={cameraRef as React.Ref<CameraView>}
+      {cameraReady && cameraDevice ? (
+        <ReanimatedCamera
+          ref={cameraRef as React.Ref<Camera>}
           style={StyleSheet.absoluteFill}
-          facing="back"
-          enableTorch={torchOn}
-          zoom={zoom}
-          autofocus={focusPulse ? "on" : "off"}
-          animateShutter={false}
+          device={cameraDevice}
+          isActive={cameraReady}
+          photo
+          photoQualityBalance="balanced"
+          animatedProps={animatedCameraProps}
+          torch={torchOn ? "on" : "off"}
+          lowLightBoost={cameraDevice.supportsLowLightBoost}
         />
       ) : (
         <View style={scannerStyles.emptyState}>
@@ -833,20 +1022,27 @@ function ScannerCamera({
 
       {cameraReady ? (
         <>
-          <Pressable
-            {...cameraPanResponder.panHandlers}
-            accessibilityRole="button"
-            accessibilityLabel={copy.pointCamera}
-            onPress={onCameraTap}
-            style={StyleSheet.absoluteFill}
-          />
+          <GestureDetector gesture={cameraGesture}>
+            <View
+              collapsable={false}
+              accessibilityRole="button"
+              accessibilityLabel={copy.pointCamera}
+              style={StyleSheet.absoluteFill}
+            />
+          </GestureDetector>
           {focusPoint ? <FocusMarker point={focusPoint} /> : null}
           <ZoomControls
-            levels={CAMERA_ZOOM_LEVELS}
+            levels={zoomLevels}
             value={zoom}
             hasFiles={files.length > 0}
+            gesture={zoomControlGesture}
             onChange={onZoomChange}
           />
+          {zoomGestureActive ? (
+            <View pointerEvents="none" style={[scannerStyles.zoomReadout, files.length > 0 && scannerStyles.zoomReadoutRaised]}>
+              <Text style={scannerStyles.zoomReadoutText}>{formatCameraZoomLabel(gestureZoomDisplay)}</Text>
+            </View>
+          ) : null}
         </>
       ) : null}
 
@@ -895,16 +1091,18 @@ function ZoomControls({
   levels,
   value,
   hasFiles,
+  gesture,
   onChange,
 }: {
   levels: CameraZoomLevel[];
   value: number;
   hasFiles: boolean;
+  gesture?: GestureType;
   onChange: (zoom: number) => void;
 }) {
   const { scannerStyles } = useScannerTheme();
-  return (
-    <View style={[scannerStyles.zoomControls, hasFiles && scannerStyles.zoomControlsRaised]}>
+  const controls = (
+    <View collapsable={false} style={[scannerStyles.zoomControls, hasFiles && scannerStyles.zoomControlsRaised]}>
       {levels.map((level) => {
         const active = Math.abs(value - level.value) < 0.01;
         return (
@@ -927,6 +1125,7 @@ function ZoomControls({
       })}
     </View>
   );
+  return gesture ? <GestureDetector gesture={gesture}>{controls}</GestureDetector> : controls;
 }
 
 function isImageUpload(file: PickedUpload) {
@@ -1082,22 +1281,70 @@ function ImportSheet({
   onPickPhotos: () => void;
 }) {
   const { sheetStyles } = useScannerTheme();
+  const sheetY = useRef(new Animated.Value(IMPORT_SHEET_HIDDEN)).current;
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const closingRef = useRef(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    closingRef.current = false;
+    sheetY.setValue(IMPORT_SHEET_HIDDEN);
+    backdropOpacity.setValue(0);
+    Animated.parallel([
+      Animated.timing(backdropOpacity, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      Animated.spring(sheetY, {
+        toValue: 0,
+        useNativeDriver: true,
+        damping: 22,
+        stiffness: 210,
+        mass: 0.9,
+      }),
+    ]).start();
+  }, [backdropOpacity, sheetY, visible]);
+
+  const close = useCallback((afterClose?: () => void) => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    Animated.parallel([
+      Animated.timing(backdropOpacity, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sheetY, {
+        toValue: IMPORT_SHEET_HIDDEN,
+        duration: 190,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      onClose();
+      if (afterClose) {
+        requestAnimationFrame(afterClose);
+      }
+    });
+  }, [backdropOpacity, onClose, sheetY]);
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={sheetStyles.overlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={sheetStyles.sheet}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={() => close()} statusBarTranslucent>
+      <View style={sheetStyles.modalRoot}>
+        <Animated.View pointerEvents="none" style={[sheetStyles.overlay, { opacity: backdropOpacity }]} />
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => close()} />
+        <Animated.View style={[sheetStyles.sheet, { transform: [{ translateY: sheetY }] }]}>
           <View style={sheetStyles.handle} />
           <Text style={sheetStyles.sectionLabel}>{copy.addToScan}</Text>
           <View style={sheetStyles.rows}>
-            <SheetRow icon="doc-text" title={copy.pdfFile} detail={copy.importFromFiles} onPress={onPickPdf} />
+            <SheetRow icon="doc-text" title={copy.pdfFile} detail={copy.importFromFiles} onPress={() => close(onPickPdf)} />
             <View style={sheetStyles.divider} />
-            <SheetRow icon="pages" title={copy.photosFromGallery} detail={copy.selectPhotos(maxPages)} onPress={onPickPhotos} />
+            <SheetRow icon="pages" title={copy.photosFromGallery} detail={copy.selectPhotos(maxPages)} onPress={() => close(onPickPhotos)} />
           </View>
-          <Pressable onPress={onClose} style={sheetStyles.cancelButton}>
+          <Pressable onPress={() => close()} style={sheetStyles.cancelButton}>
             <Text style={sheetStyles.cancelText}>{copy.cancel}</Text>
           </Pressable>
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -1229,9 +1476,17 @@ function PdfPagePicker({
               </Text>
             </Pressable>
             {!isPro && !converting ? (
-              <Pressable onPress={onUpgrade} style={pickerStyles.upgradeButton}>
-                <Icon name="star" size={12} color={scanner.purple} />
-                <Text style={pickerStyles.upgradeButtonText}>{copy.upgradePdf}</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={copy.upgradeToPro}
+                onPress={() => {
+                  triggerSelectionHaptic();
+                  onUpgrade();
+                }}
+                style={({ pressed }) => [pickerStyles.upgradeButton, pressed && pickerStyles.upgradeButtonPressed]}
+              >
+                <Icon name="star" size={13} color={scanner.stageInk} />
+                <Text numberOfLines={1} style={pickerStyles.upgradeButtonText}>{copy.upgradeToPro}</Text>
               </Pressable>
             ) : null}
             {!converting ? (
@@ -1274,9 +1529,11 @@ function PreviewModal({
   onClose: () => void;
 }) {
   const { scanner, previewStyles } = useScannerTheme();
-  const { width } = Dimensions.get("window");
+  const { width, height } = useWindowDimensions();
   const [pageIndex, setPageIndex] = useState(0);
   const insets = useSafeAreaInsets();
+  const pageTopPadding = insets.top + 66;
+  const pageBottomPadding = Math.max(insets.bottom, 14) + (files.length > 1 ? 58 : 34);
 
   useEffect(() => {
     if (visible) setPageIndex(0);
@@ -1291,6 +1548,50 @@ function PreviewModal({
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={previewStyles.root}>
+        {files.length > 0 ? (
+          <GestureViewer
+            id={SCAN_PREVIEW_VIEWER_ID}
+            data={files}
+            initialIndex={0}
+            ListComponent={ScrollView}
+            width={width}
+            height={height}
+            onIndexChange={setPageIndex}
+            onDismiss={onClose}
+            enableDismissGesture
+            enableSwipeGesture={files.length > 1}
+            enableZoomGesture
+            enableDoubleTapGesture
+            enableZoomPanGesture
+            dismissThreshold={80}
+            resistance={2}
+            maxZoomScale={4}
+            animateBackdrop
+            backdropStyle={{ backgroundColor: scanner.bgDeep }}
+            containerStyle={{ flex: 1, backgroundColor: scanner.bgDeep }}
+            listProps={{
+              directionalLockEnabled: true,
+              bounces: false,
+              alwaysBounceHorizontal: false,
+              alwaysBounceVertical: false,
+            }}
+            renderItem={(file, index) => (
+              <View key={`${file.uri}-${index}`} style={[previewStyles.page, { width, height }]}>
+                <View style={[previewStyles.pageInner, { paddingTop: pageTopPadding, paddingBottom: pageBottomPadding }]}>
+                  {isImageUpload(file) ? (
+                    <Image source={{ uri: file.uri }} style={previewStyles.pageImage} resizeMode="contain" />
+                  ) : (
+                    <View style={previewStyles.pagePdf}>
+                      <Icon name="doc" size={64} color={scanner.blue} />
+                      <Text style={previewStyles.pagePdfName} numberOfLines={2}>{file.name}</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+          />
+        ) : null}
+
         <View style={[previewStyles.topBar, { paddingTop: insets.top + 12 }]}>
           <Text style={previewStyles.counter}>
             {files.length ? copy.previewPageOf(pageIndex + 1, files.length) : ""}
@@ -1299,30 +1600,6 @@ function PreviewModal({
             <Icon name="x" size={20} color={scanner.ink2} />
           </Pressable>
         </View>
-
-        <ScrollView
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={(e) => {
-            const next = Math.round(e.nativeEvent.contentOffset.x / width);
-            if (next !== pageIndex) setPageIndex(next);
-          }}
-          style={previewStyles.pager}
-        >
-          {files.map((file, index) => (
-            <View key={`${file.uri}-${index}`} style={[previewStyles.page, { width }]}>
-              {isImageUpload(file) ? (
-                <Image source={{ uri: file.uri }} style={previewStyles.pageImage} resizeMode="contain" />
-              ) : (
-                <View style={previewStyles.pagePdf}>
-                  <Icon name="doc" size={64} color={scanner.blue} />
-                  <Text style={previewStyles.pagePdfName} numberOfLines={2}>{file.name}</Text>
-                </View>
-              )}
-            </View>
-          ))}
-        </ScrollView>
 
         {files.length > 1 ? (
           <View style={[previewStyles.dots, { paddingBottom: Math.max(insets.bottom, 14) + 6 }]}>
@@ -1333,9 +1610,7 @@ function PreviewModal({
               />
             ))}
           </View>
-        ) : (
-          <View style={{ height: Math.max(insets.bottom, 14) + 16 }} />
-        )}
+        ) : null}
       </View>
     </Modal>
   );
@@ -1648,6 +1923,29 @@ const createScannerStyles = (scanner: ScannerPalette) => StyleSheet.create({
   zoomControlsRaised: {
     bottom: 100,
   },
+  zoomReadout: {
+    position: "absolute",
+    bottom: 72,
+    alignSelf: "center",
+    minWidth: 56,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    backgroundColor: "rgba(0,0,0,0.58)",
+    borderWidth: 1,
+    borderColor: "rgba(244,239,230,0.12)",
+  },
+  zoomReadoutRaised: {
+    bottom: 148,
+  },
+  zoomReadoutText: {
+    color: scanner.stageInk,
+    fontFamily: fonts.bodySemiBold,
+    ...typeStyles.caption1,
+    fontWeight: "600",
+  },
   zoomButton: {
     minWidth: 42,
     height: 34,
@@ -1817,7 +2115,8 @@ const createScannerStyles = (scanner: ScannerPalette) => StyleSheet.create({
 });
 
 const createSheetStyles = (scanner: ScannerPalette) => StyleSheet.create({
-  overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(10,9,7,0.50)" },
+  modalRoot: { flex: 1, justifyContent: "flex-end" },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(10,9,7,0.60)" },
   sheet: { backgroundColor: scanner.surface2, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 28 },
   handle: { width: 36, height: 4, borderRadius: 999, backgroundColor: scanner.ink3, alignSelf: "center", marginTop: 10 },
   sectionLabel: { paddingHorizontal: 22, paddingTop: 16, paddingBottom: 8, color: scanner.ink4, fontFamily: fonts.bodyExtraBold, ...typeStyles.sectionHeader, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase" },
@@ -1904,16 +2203,19 @@ const createPickerStyles = (scanner: ScannerPalette) => StyleSheet.create({
   addButtonDisabled: { opacity: 0.4 },
   addButtonText: { color: scanner.stageInk, fontFamily: fonts.bodyMedium, ...typeStyles.rowSecondary, fontWeight: "500" },
   upgradeButton: {
-    height: 48,
+    height: 52,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: scanner.purpleLine,
+    borderColor: scanner.purple,
+    backgroundColor: scanner.purple,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
-    gap: 6,
+    gap: 7,
+    paddingHorizontal: 14,
   },
-  upgradeButtonText: { color: scanner.purple, fontFamily: fonts.bodyMedium, ...typeStyles.rowMeta, fontWeight: "500" },
+  upgradeButtonPressed: { opacity: 0.78 },
+  upgradeButtonText: { color: scanner.stageInk, fontFamily: fonts.bodySemiBold, ...typeStyles.rowMeta, fontWeight: "600", flexShrink: 1 },
   cancelButton: { height: 44, alignItems: "center", justifyContent: "center", borderRadius: 10 },
   cancelText: { color: scanner.ink2, fontFamily: fonts.body, ...typeStyles.rowSecondary, fontWeight: "400" },
 });
@@ -1921,6 +2223,11 @@ const createPickerStyles = (scanner: ScannerPalette) => StyleSheet.create({
 const createPreviewStyles = (scanner: ScannerPalette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: scanner.bgDeep },
   topBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -1937,8 +2244,9 @@ const createPreviewStyles = (scanner: ScannerPalette) => StyleSheet.create({
   },
   counter: { color: scanner.ink2, fontFamily: fonts.bodySemiBold, ...typeStyles.rowMeta, fontWeight: "600", flex: 1 },
   pager: { flex: 1 },
-  page: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
-  pageImage: { width: "100%", height: "100%", borderRadius: 10 },
+  page: { flex: 1, alignItems: "stretch", justifyContent: "center" },
+  pageInner: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
+  pageImage: { flex: 1, width: "100%", borderRadius: 10 },
   pagePdf: {
     width: "100%",
     aspectRatio: 0.72,
@@ -1953,6 +2261,11 @@ const createPreviewStyles = (scanner: ScannerPalette) => StyleSheet.create({
   },
   pagePdfName: { color: scanner.ink, fontFamily: fonts.bodyMedium, ...typeStyles.rowSecondary, fontWeight: "500", textAlign: "center" },
   dots: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 2,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, FlatList, Image, Keyboard, LayoutAnimation, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, UIManager, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, FlatList, Image, Keyboard, LayoutAnimation, PanResponder, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, UIManager, useWindowDimensions, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useScrollToTop } from "@react-navigation/native";
 import { BrandWordmark } from "@/components/BrandMark";
@@ -14,7 +14,7 @@ import {
   getPendingScanList,
   subscribePendingScan,
 } from "@/features/scans/pendingScanStore";
-import { triggerLongPressHaptic } from "@/lib/haptics";
+import { triggerLongPressHaptic, triggerSelectionHaptic } from "@/lib/haptics";
 import { formatCategoryLabel, formatLocalizedDate, getLocale, pluralize, t, type PluralForms } from "@/lib/i18n";
 import type { DeadlineResponse, LimitsResponse, ScanListItem } from "@/lib/types";
 
@@ -36,6 +36,11 @@ type DocumentCategoryFilter = { key: DocumentCategoryFilterKey; label: string; c
 
 const DOCUMENT_CONTEXT_MENU_WIDTH = 272;
 const DOCUMENT_ROW_RADIUS = 20;
+const DOCUMENT_CATEGORY_SWIPE_ACTIVATE_DX = 24;
+const DOCUMENT_CATEGORY_SWIPE_COMMIT_DX = 76;
+const DOCUMENT_CATEGORY_SWIPE_COMMIT_VX = 0.55;
+const DOCUMENT_CATEGORY_SWIPE_DRAG_LIMIT = 46;
+const DOCUMENT_CATEGORY_TRANSITION_OFFSET = 58;
 const DOCUMENT_CATEGORY_ORDER = [
   "cizinecka",
   "danove",
@@ -92,6 +97,8 @@ export function ScanListScreen() {
   const [pendingScans, setPendingScans] = useState<PendingScanRecord[]>(() => getPendingScanList());
   const searchInputRef = useRef<TextInput>(null);
   const listRef = useRef<FlatList<any>>(null);
+  const categorySwipeX = useRef(new Animated.Value(0)).current;
+  const categorySwipeAnimatingRef = useRef(false);
   useScrollToTop(listRef);
 
   useEffect(() => {
@@ -245,18 +252,6 @@ export function ScanListScreen() {
     [deadlines, filteredScans, pinnedIds]
   );
 
-  if (loading) {
-    return (
-      <Screen>
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
-      </Screen>
-    );
-  }
-
-  const scanDisabled = Boolean(limits && limits.scans_remaining <= 0);
-  const limitWarning = getScanLimitWarning(limits);
   const activePendingScans = pendingScans.filter((p) => p.active);
   const hasPending = activePendingScans.length > 0;
   // The empty state lives below the pending-stack header. While a scan is in
@@ -269,6 +264,120 @@ export function ScanListScreen() {
   const showOfflineState = Boolean(error) && isEmpty && !search.trim();
   const showEmptyPlaceholder = isEmpty && !showOfflineState;
   const showCategoryFilters = categoryFilters.length > 1 && !showEmptyPlaceholder && !showOfflineState;
+
+  const selectCategoryFilter = useCallback((filter: DocumentCategoryFilterKey) => {
+    if (filter === selectedCategoryFilter) return;
+    setSelectedCategoryFilter(filter);
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [selectedCategoryFilter]);
+
+  const resetCategorySwipe = useCallback(() => {
+    Animated.spring(categorySwipeX, {
+      toValue: 0,
+      useNativeDriver: true,
+      damping: 20,
+      stiffness: 230,
+      mass: 0.85,
+    }).start();
+  }, [categorySwipeX]);
+
+  const switchCategoryWithSwipe = useCallback((nextFilter: DocumentCategoryFilterKey, direction: 1 | -1) => {
+    if (nextFilter === selectedCategoryFilter || categorySwipeAnimatingRef.current) return;
+
+    categorySwipeAnimatingRef.current = true;
+    triggerSelectionHaptic();
+    Animated.timing(categorySwipeX, {
+      toValue: -direction * DOCUMENT_CATEGORY_TRANSITION_OFFSET,
+      duration: 120,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished) {
+        categorySwipeAnimatingRef.current = false;
+        resetCategorySwipe();
+        return;
+      }
+
+      categorySwipeX.setValue(direction * DOCUMENT_CATEGORY_TRANSITION_OFFSET);
+      selectCategoryFilter(nextFilter);
+      requestAnimationFrame(() => {
+        Animated.spring(categorySwipeX, {
+          toValue: 0,
+          useNativeDriver: true,
+          damping: 22,
+          stiffness: 240,
+          mass: 0.82,
+        }).start(() => {
+          categorySwipeAnimatingRef.current = false;
+        });
+      });
+    });
+  }, [categorySwipeX, resetCategorySwipe, selectCategoryFilter, selectedCategoryFilter]);
+
+  const categorySwipeResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, { dx, dy, numberActiveTouches }) =>
+          showCategoryFilters &&
+          !documentMenu &&
+          !categorySwipeAnimatingRef.current &&
+          numberActiveTouches === 1 &&
+          Math.abs(dx) > DOCUMENT_CATEGORY_SWIPE_ACTIVATE_DX &&
+          Math.abs(dx) > Math.abs(dy) * 1.35,
+        onPanResponderGrant: () => {
+          categorySwipeX.stopAnimation();
+          categorySwipeX.setValue(0);
+        },
+        onPanResponderMove: (_, { dx }) => {
+          const nextX = Math.max(
+            -DOCUMENT_CATEGORY_SWIPE_DRAG_LIMIT,
+            Math.min(DOCUMENT_CATEGORY_SWIPE_DRAG_LIMIT, dx * 0.42),
+          );
+          categorySwipeX.setValue(nextX);
+        },
+        onPanResponderRelease: (_, { dx, vx }) => {
+          if (!showCategoryFilters) return;
+          if (Math.abs(dx) < DOCUMENT_CATEGORY_SWIPE_COMMIT_DX && Math.abs(vx) < DOCUMENT_CATEGORY_SWIPE_COMMIT_VX) {
+            resetCategorySwipe();
+            return;
+          }
+          const swipeDirection = Math.abs(dx) >= DOCUMENT_CATEGORY_SWIPE_ACTIVATE_DX
+            ? (dx < 0 ? 1 : -1)
+            : (vx < 0 ? 1 : -1);
+          const nextFilter = getAdjacentDocumentCategoryFilter(
+            categoryFilters,
+            selectedCategoryFilter,
+            swipeDirection,
+          );
+          if (nextFilter !== selectedCategoryFilter) {
+            switchCategoryWithSwipe(nextFilter, swipeDirection);
+          } else {
+            resetCategorySwipe();
+          }
+        },
+        onPanResponderTerminate: resetCategorySwipe,
+      }),
+    [categoryFilters, categorySwipeX, documentMenu, resetCategorySwipe, selectedCategoryFilter, showCategoryFilters, switchCategoryWithSwipe],
+  );
+
+  const categorySwipeOpacity = categorySwipeX.interpolate({
+    inputRange: [-DOCUMENT_CATEGORY_TRANSITION_OFFSET, 0, DOCUMENT_CATEGORY_TRANSITION_OFFSET],
+    outputRange: [0.94, 1, 0.94],
+    extrapolate: "clamp",
+  });
+
+  if (loading) {
+    return (
+      <Screen>
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </Screen>
+    );
+  }
+
+  const scanDisabled = Boolean(limits && limits.scans_remaining <= 0);
+  const limitWarning = getScanLimitWarning(limits);
   const openNewScan = () => {
     router.push({ pathname: "/scan/new", params: { fresh: String(Date.now()) } });
   };
@@ -304,85 +413,97 @@ export function ScanListScreen() {
           filters={categoryFilters}
           selected={selectedCategoryFilter}
           styles={styles}
-          onSelect={setSelectedCategoryFilter}
+          onSelect={selectCategoryFilter}
         />
       ) : null}
-      <FlatList
-        ref={listRef}
-        data={sections.rows}
-        keyExtractor={(item) => item.key}
-        contentContainerStyle={[styles.list, isEmpty && styles.listEmpty]}
-        onEndReached={loadMoreScans}
-        onEndReachedThreshold={0.35}
-        ListFooterComponent={loadingMoreScans ? <ListLoadingFooter color={colors.primary} styles={styles} /> : null}
-        refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
-        ListHeaderComponent={
-          hasPending ? (
-            <View style={styles.pendingStack}>
-              {activePendingScans.map((p) => (
-                <PendingScanCard
-                  key={p.localId}
-                  pending={p}
+      <View style={styles.categorySwipeRegion} {...categorySwipeResponder.panHandlers}>
+        <Animated.View
+          style={[
+            styles.categorySwipeContent,
+            {
+              opacity: categorySwipeOpacity,
+              transform: [{ translateX: categorySwipeX }],
+            },
+          ]}
+        >
+          <FlatList
+            ref={listRef}
+            data={sections.rows}
+            keyExtractor={(item) => item.key}
+            contentContainerStyle={[styles.list, isEmpty && styles.listEmpty]}
+            onEndReached={loadMoreScans}
+            onEndReachedThreshold={0.35}
+            ListFooterComponent={loadingMoreScans ? <ListLoadingFooter color={colors.primary} styles={styles} /> : null}
+            refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
+            ListHeaderComponent={
+              hasPending ? (
+                <View style={styles.pendingStack}>
+                  {activePendingScans.map((p) => (
+                    <PendingScanCard
+                      key={p.localId}
+                      pending={p}
+                      colors={colors}
+                      styles={styles}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/scan/new",
+                          params: { pending: p.localId, fresh: String(Date.now()) },
+                        })
+                      }
+                    />
+                  ))}
+                </View>
+              ) : null
+            }
+            ListEmptyComponent={
+              search.trim() ? (
+                <SearchEmpty query={search.trim()} colors={colors} styles={styles} />
+              ) : showOfflineState ? (
+                <OfflineState
+                  onRetry={() => {
+                    setLoading(true);
+                    void load();
+                  }}
                   colors={colors}
                   styles={styles}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/scan/new",
-                      params: { pending: p.localId, fresh: String(Date.now()) },
-                    })
-                  }
                 />
-              ))}
-            </View>
-          ) : null
-        }
-        ListEmptyComponent={
-          search.trim() ? (
-            <SearchEmpty query={search.trim()} colors={colors} styles={styles} />
-          ) : showOfflineState ? (
-            <OfflineState
-              onRetry={() => {
-                setLoading(true);
-                void load();
-              }}
-              colors={colors}
-              styles={styles}
-            />
-          ) : showEmptyPlaceholder ? (
-            <DocumentsEmpty
-              limits={limits}
-              scanDisabled={scanDisabled}
-              onScan={openNewScan}
-              colors={colors}
-              styles={styles}
-            />
-          ) : null
-        }
-        renderItem={({ item }) => {
-          if (item.type === "section") return <Text style={styles.sectionHeader}>{item.title}</Text>;
-          return (
-            <DocumentRow
-              item={item.scan}
-              deadline={item.deadline}
-              pinned={item.pinned}
-              query={search}
-              colors={colors}
-              styles={styles}
-              categoryStyleList={categoryStyleList}
-              onLongPress={(rect) => {
-                triggerLongPressHaptic();
-                setDocumentMenu({
-                  scan: item.scan,
-                  deadline: item.deadline,
-                  pinned: item.pinned,
-                  query: search,
-                  rect,
-                });
-              }}
-            />
-          );
-        }}
-      />
+              ) : showEmptyPlaceholder ? (
+                <DocumentsEmpty
+                  limits={limits}
+                  scanDisabled={scanDisabled}
+                  onScan={openNewScan}
+                  colors={colors}
+                  styles={styles}
+                />
+              ) : null
+            }
+            renderItem={({ item }) => {
+              if (item.type === "section") return <Text style={styles.sectionHeader}>{item.title}</Text>;
+              return (
+                <DocumentRow
+                  item={item.scan}
+                  deadline={item.deadline}
+                  pinned={item.pinned}
+                  query={search}
+                  colors={colors}
+                  styles={styles}
+                  categoryStyleList={categoryStyleList}
+                  onLongPress={(rect) => {
+                    triggerLongPressHaptic();
+                    setDocumentMenu({
+                      scan: item.scan,
+                      deadline: item.deadline,
+                      pinned: item.pinned,
+                      query: search,
+                      rect,
+                    });
+                  }}
+                />
+              );
+            }}
+          />
+        </Animated.View>
+      </View>
       <DocumentContextMenu
         anchor={documentMenu}
         pinnedIds={pinnedIds}
@@ -812,18 +933,37 @@ function DocumentCategoryFilterBar({
   styles: ReturnType<typeof createStyles>;
   onSelect: (filter: DocumentCategoryFilterKey) => void;
 }) {
+  const scrollRef = useRef<ScrollView>(null);
+  const chipLayoutsRef = useRef(new Map<DocumentCategoryFilterKey, { x: number; width: number }>());
+  const [viewportWidth, setViewportWidth] = useState(0);
+
+  useEffect(() => {
+    const layout = chipLayoutsRef.current.get(selected);
+    if (!layout || viewportWidth <= 0) return;
+    scrollRef.current?.scrollTo({
+      x: Math.max(0, layout.x - (viewportWidth - layout.width) / 2),
+      animated: true,
+    });
+  }, [selected, viewportWidth, filters]);
+
   return (
     <View style={styles.categoryFilterShell}>
       <ScrollView
+        ref={scrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.categoryFilterContent}
+        onLayout={(event) => setViewportWidth(event.nativeEvent.layout.width)}
       >
         {filters.map((filter) => {
           const active = filter.key === selected;
           return (
             <Pressable
               key={filter.key}
+              onLayout={(event) => {
+                const { x, width } = event.nativeEvent.layout;
+                chipLayoutsRef.current.set(filter.key, { x, width });
+              }}
               onPress={() => onSelect(filter.key)}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
@@ -1040,6 +1180,18 @@ function filterScansByDocumentCategory(
 ): ScanListItem[] {
   if (filter === "all") return scans;
   return scans.filter((scan) => getScanCategoryFilterKey(scan) === filter);
+}
+
+function getAdjacentDocumentCategoryFilter(
+  filters: DocumentCategoryFilter[],
+  selected: DocumentCategoryFilterKey,
+  direction: 1 | -1,
+) {
+  if (filters.length === 0) return selected;
+  const currentIndex = filters.findIndex((filter) => filter.key === selected);
+  const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+  const nextIndex = (baseIndex + direction + filters.length) % filters.length;
+  return filters[nextIndex]?.key ?? selected;
 }
 
 function getScanCategoryFilterKey(scan: ScanListItem): Exclude<DocumentCategoryFilterKey, "all"> {
@@ -1420,6 +1572,14 @@ function createStyles(colors: ColorPalette) {
     categoryChipCountActive: {
       color: colors.textOnAccent,
       opacity: 0.72,
+    },
+    categorySwipeRegion: {
+      flex: 1,
+      backgroundColor: colors.bg,
+    },
+    categorySwipeContent: {
+      flex: 1,
+      backgroundColor: colors.bg,
     },
     list: {
       paddingHorizontal: 16,

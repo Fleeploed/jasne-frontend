@@ -27,6 +27,7 @@ export type IconName =
   | 'chevron-left'
   | 'chevron-down'
   | 'check'
+  | 'copy'
   | 'x'
   | 'doc'
   | 'doc-text'
@@ -125,6 +126,12 @@ export function Icon({ name, size = 24, color = '#000000', style }: IconProps) {
     case 'check': return (
       <Svg {...p}>
         <Path d="m4.5 12.5 5 5 10-11" {...sp}/>
+      </Svg>
+    );
+    case 'copy': return (
+      <Svg {...p}>
+        <Rect x={8} y={8} width={11} height={11} rx={2} {...sp}/>
+        <Path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" {...sp}/>
       </Svg>
     );
     case 'x': return (
