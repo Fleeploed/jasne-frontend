@@ -8,6 +8,9 @@
  */
 
 import * as FileSystem from "expo-file-system";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { t } from "@/lib/i18n";
 
 export type PendingPreview = {
   documentType?: string;
@@ -30,16 +33,59 @@ export type PendingScanRecord = {
   scanId: string | null;
   error: string | null;
   startedAt: number;
+  // Set when a scan that was still streaming is restored after the app was
+  // killed mid-scan. The stream can't resume, so the card is shown as a
+  // dismissable "interrupted" state instead of vanishing silently.
+  interrupted?: boolean;
 };
 
 type Listener = () => void;
+
+const STORAGE_KEY = "jasne_pending_scans_v1";
 
 const _records = new Map<string, PendingScanRecord>();
 const _listeners = new Set<Listener>();
 
 function notify() {
+  persist();
   _listeners.forEach((fn) => fn());
 }
+
+// Snapshot the live records so an in-flight scan survives a cold start. Cheap,
+// best-effort, fire-and-forget — the server remains the source of truth.
+function persist() {
+  const snapshot = Array.from(_records.values());
+  void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot)).catch(() => {});
+}
+
+// Restore on module load. A scan that was still `active` when the app died can
+// no longer stream, so it comes back as `interrupted` — visible and tappable
+// to dismiss. Already-settled records (completed/failed in a prior session)
+// are dropped: the real scan, if it finished, is fetched from the server.
+async function hydrate() {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw) as PendingScanRecord[];
+    for (const record of saved) {
+      if (!record.active && !record.interrupted) continue;
+      _records.set(record.localId, {
+        ...record,
+        active: false,
+        interrupted: true,
+        error: record.error ?? t("scan.interrupted"),
+      });
+    }
+  } catch {
+    // Corrupt or unreadable cache — start clean.
+  } finally {
+    // Normalise storage to the cleaned set and wake any mounted listeners.
+    if (_records.size) notify();
+    else persist();
+  }
+}
+
+void hydrate();
 
 export function generatePendingScanId(): string {
   return `p-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

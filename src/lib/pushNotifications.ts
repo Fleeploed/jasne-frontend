@@ -1,8 +1,10 @@
 import Constants from "expo-constants";
+import { logger } from "@/lib/logger";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { apiFetch } from "@/lib/api";
+import { t } from "@/lib/i18n";
 import { registerSignOutTask } from "@/lib/session";
 import { TRACKINGS_QUERY_KEY } from "@/features/trackings/queryKeys";
 import { queryClient } from "@/lib/queryClient";
@@ -114,7 +116,8 @@ async function registerForPushNotifications() {
 
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync(DEADLINE_CHANNEL_ID, {
-      name: "Deadline reminders",
+      name: t("notifications.deadlineChannelName"),
+      description: t("notifications.deadlineChannelDescription"),
       importance: Notifications.AndroidImportance.DEFAULT,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: "#6FA0E6",
@@ -131,7 +134,7 @@ async function registerForPushNotifications() {
 
   const projectId = getProjectId();
   if (!projectId) {
-    console.warn("Push notifications skipped: missing EAS projectId.");
+    logger.warn("Push notifications skipped: missing EAS projectId.");
     return null;
   }
 
@@ -178,7 +181,7 @@ async function getNotificationsModule() {
         return Notifications;
       })
       .catch((error) => {
-        console.warn("Push notifications unavailable in this native build", error);
+        logger.warn("Push notifications unavailable in this native build", error);
         return null;
       });
   }
