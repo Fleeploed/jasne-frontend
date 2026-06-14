@@ -124,7 +124,7 @@ async function streamPostWithXhr(
   });
 }
 
-function consumeSseText(text: string, onMessage: (message: SseMessage) => void) {
+export function consumeSseText(text: string, onMessage: (message: SseMessage) => void) {
   const chunks = text.split("\n\n");
   const rest = chunks.pop() ?? "";
   for (const chunk of chunks) {
@@ -134,7 +134,7 @@ function consumeSseText(text: string, onMessage: (message: SseMessage) => void) 
   return rest;
 }
 
-function parseSseChunk(chunk: string): SseMessage | null {
+export function parseSseChunk(chunk: string): SseMessage | null {
   const lines = chunk.split(/\r?\n/);
   let event = "message";
   const dataLines: string[] = [];
