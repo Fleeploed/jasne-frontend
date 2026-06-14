@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api";
+import { isRecord } from "@/lib/apiErrors";
 import { t } from "@/lib/i18n";
 import { streamPost } from "@/lib/sse";
 import type { ScanMessage } from "@/lib/types";
@@ -40,8 +41,4 @@ export async function streamChat(
       }
     }
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

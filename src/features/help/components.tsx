@@ -1,14 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
+import { logger } from "@/lib/logger";
 import type { ComponentProps, ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, type StyleProp, type ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import * as Clipboard from "expo-clipboard";
 
 import { Icon, type IconName } from "@/components/Icon";
-import { SelectableText } from "@/components/SelectableText";
 import { fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { ProBlurSection } from "@/features/help/ProBlurSection";
-import { triggerSelectionHaptic } from "@/lib/haptics";
 import { t } from "@/lib/i18n";
 import type {
   CtaAction,
@@ -226,55 +224,6 @@ export function ScanCtaCard({ cta, onPress }: {
   );
 }
 
-// Joins an optional block title with its body/items into one clipboard string.
-function blockPlainText(title: string | null | undefined, lines: string[]) {
-  const out: string[] = [];
-  const heading = title?.trim();
-  if (heading) out.push(heading);
-  lines.forEach((line) => {
-    const trimmed = line.trim();
-    if (trimmed) out.push(trimmed);
-  });
-  return out.join("\n");
-}
-
-function GuideCopyButton({ text }: { text: string }) {
-  const colors = useColors();
-  const styles = useMemo(() => createStyles(colors), [colors]);
-  const [copied, setCopied] = useState(false);
-  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => {
-    if (resetTimer.current) clearTimeout(resetTimer.current);
-  }, []);
-
-  const handleCopy = useCallback(async () => {
-    const value = text.trim();
-    if (!value) return;
-    try {
-      await Clipboard.setStringAsync(value);
-    } catch {
-      return;
-    }
-    triggerSelectionHaptic();
-    setCopied(true);
-    if (resetTimer.current) clearTimeout(resetTimer.current);
-    resetTimer.current = setTimeout(() => setCopied(false), 1500);
-  }, [text]);
-
-  return (
-    <Pressable
-      onPress={handleCopy}
-      hitSlop={10}
-      accessibilityRole="button"
-      accessibilityLabel={t(copied ? "chat.copied" : "chat.copy")}
-      style={({ pressed }) => [styles.guideCopyBtn, pressed && styles.pressed]}
-    >
-      <Icon name={copied ? "check" : "copy"} size={15} color={copied ? colors.green : colors.muted2} />
-    </Pressable>
-  );
-}
-
 export function WarningCard({ title, body, info = false }: {
   title?: string | null;
   body: string;
@@ -286,10 +235,9 @@ export function WarningCard({ title, body, info = false }: {
     <View style={[styles.warningCard, info && styles.infoCard]}>
       <Ionicons name={info ? "information-circle-outline" : "alert-circle-outline"} size={22} color={info ? colors.muted2 : colors.amberDark} />
       <View style={styles.warningBody}>
-        {title ? <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.warningTitle}>{title}</SelectableText> : null}
-        <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.warningText}>{body}</SelectableText>
+        {title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.warningTitle}>{title}</Text> : null}
+        <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.warningText}>{body}</Text>
       </View>
-      <GuideCopyButton text={blockPlainText(title, [body])} />
     </View>
   );
 }
@@ -299,19 +247,14 @@ export function StepsList({ title, items }: { title?: string | null; items: stri
   const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <View style={styles.contentCard}>
-      <View style={styles.blockHeader}>
-        <View style={styles.blockHeaderTitle}>
-          {title ? <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{title}</SelectableText> : null}
-        </View>
-        <GuideCopyButton text={blockPlainText(title, items.map((item, index) => `${index + 1}. ${item}`))} />
-      </View>
+      {title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{title}</Text> : null}
       <View style={styles.listBlock}>
         {items.map((item, index) => (
           <View key={`${index}-${item}`} style={styles.stepRow}>
             <View style={styles.stepNumber}>
               <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.stepNumberText}>{index + 1}</Text>
             </View>
-            <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{item}</SelectableText>
+            <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{item}</Text>
           </View>
         ))}
       </View>
@@ -324,17 +267,12 @@ export function ChecklistList({ title, items }: { title?: string | null; items: 
   const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <View style={styles.contentCard}>
-      <View style={styles.blockHeader}>
-        <View style={styles.blockHeaderTitle}>
-          {title ? <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{title}</SelectableText> : null}
-        </View>
-        <GuideCopyButton text={blockPlainText(title, items.map((item) => `• ${item}`))} />
-      </View>
+      {title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{title}</Text> : null}
       <View style={styles.listBlock}>
         {items.map((item, index) => (
           <View key={`${index}-${item}`} style={styles.checkRow}>
             <Ionicons name="checkmark-outline" size={24} color={colors.primary} />
-            <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{item}</SelectableText>
+            <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{item}</Text>
           </View>
         ))}
       </View>
@@ -357,13 +295,8 @@ export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
         if (section.type === "text") {
           rendered = (
             <View style={styles.contentCard}>
-              <View style={styles.blockHeader}>
-                <View style={styles.blockHeaderTitle}>
-                  {section.title ? <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{section.title}</SelectableText> : null}
-                </View>
-                <GuideCopyButton text={blockPlainText(section.title, [section.body])} />
-              </View>
-              <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{section.body}</SelectableText>
+              {section.title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.eyebrow}>{section.title}</Text> : null}
+              <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{section.body}</Text>
             </View>
           );
         } else if (section.type === "steps") {
@@ -375,7 +308,7 @@ export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
         } else {
           rendered = (
             <View style={styles.ctaSection}>
-              {section.title ? <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{section.title}</SelectableText> : null}
+              {section.title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{section.title}</Text> : null}
               {section.actions.map((action) => (
                 <CtaActionButton key={action} action={action} onPress={() => onAction(action)} />
               ))}
@@ -392,9 +325,9 @@ export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
           let body: ReactNode;
           if (section.type === "text") {
             body = (
-              <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
+              <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
                 {section.body}
-              </SelectableText>
+              </Text>
             );
           } else if (section.type === "steps") {
             body = (
@@ -406,9 +339,9 @@ export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
                         {i + 1}
                       </Text>
                     </View>
-                    <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
+                    <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
                       {item}
-                    </SelectableText>
+                    </Text>
                   </View>
                 ))}
               </View>
@@ -420,9 +353,9 @@ export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
                 {section.items.map((item, i) => (
                   <View key={`${i}-${item}`} style={styles.checkRow}>
                     <Ionicons name="checkmark-outline" size={24} color={colors.primary} />
-                    <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
+                    <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
                       {item}
-                    </SelectableText>
+                    </Text>
                   </View>
                 ))}
               </View>
@@ -445,7 +378,7 @@ function CtaActionButton({ action, onPress }: { action: CtaAction; onPress: () =
   const styles = useMemo(() => createStyles(colors), [colors]);
   const label = labelForCtaAction(action);
   if (!label) {
-    console.warn("Unknown help CTA action", action);
+    logger.warn("Unknown help CTA action", action);
     return null;
   }
   return (
@@ -751,12 +684,9 @@ function createStyles(colors: ColorPalette) {
       borderColor: colors.borderSoft
     },
     warningBody: { flex: 1, gap: 4 },
-    warningTitle: { color: colors.amberDeep, fontFamily: fonts.bodyBold, ...typeStyles.headline },
-    warningText: { color: colors.muted, fontFamily: fonts.body, ...typeStyles.rowMeta, fontSize: 15, lineHeight: 21 },
+    warningTitle: { color: colors.amberDeep, fontFamily: fonts.bodyBold, ...typeStyles.rowMeta },
+    warningText: { color: colors.muted, fontFamily: fonts.body, ...typeStyles.rowMeta },
     renderer: { gap: 12 },
-    blockHeader: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
-    blockHeaderTitle: { flex: 1 },
-    guideCopyBtn: { padding: 4, borderRadius: 8, alignSelf: "flex-start" },
     contentCard: {
       borderRadius: 20,
       borderWidth: 1,
@@ -765,8 +695,15 @@ function createStyles(colors: ColorPalette) {
       padding: 16,
       gap: 12
     },
+    eyebrow: {
+      color: colors.primary,
+      fontFamily: fonts.bodyExtraBold,
+      ...typeStyles.caption2,
+      letterSpacing: 1.8,
+      textTransform: "uppercase"
+    },
     contentTitle: { color: colors.text, fontFamily: fonts.bodyBold, ...typeStyles.rowTitle },
-    contentText: { flex: 1, color: colors.muted, fontFamily: fonts.body, ...typeStyles.rowSecondary, fontSize: 16, lineHeight: 22 },
+    contentText: { flex: 1, color: colors.muted, fontFamily: fonts.body, ...typeStyles.rowSecondary },
     listBlock: { gap: 13 },
     stepRow: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
     stepNumber: {

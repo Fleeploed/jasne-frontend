@@ -1,10 +1,12 @@
 import * as DocumentPicker from "expo-document-picker";
+import { logger } from "@/lib/logger";
 import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import PdfThumbnail from "react-native-pdf-thumbnail";
 import { PDFDocument } from "pdf-lib";
 
 import { apiFetch } from "@/lib/api";
+import { isRecord } from "@/lib/apiErrors";
 import { config } from "@/lib/config";
 import { getLocale, t } from "@/lib/i18n";
 import { streamPost } from "@/lib/sse";
@@ -146,7 +148,7 @@ export async function uploadToStorage(files: PickedUpload[]) {
     if (result.status >= 400) {
       const message = parseStorageErrorMessage(result.body) ?? `HTTP ${result.status}`;
       if (__DEV__) {
-        console.warn("Supabase storage upload failed", {
+        logger.warn("Supabase storage upload failed", {
           bucket: "documents",
           path: storagePath,
           mimeType: file.mimeType,
@@ -314,10 +316,6 @@ export async function renderPdfPage(uri: string, pageIndex: number): Promise<Pic
     name: `pdf-page-${Date.now()}-${pageIndex + 1}.jpg`,
     mimeType: "image/jpeg",
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function stringValue(value: unknown) {
