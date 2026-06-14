@@ -30,6 +30,7 @@ import {
   normalizeCategoryKey,
   splitScans,
   type DocumentCategoryFilterKey,
+  type ListRow,
   type MeasuredRect,
 } from "@/features/scans/components/scanListData";
 import { DocumentRow } from "@/features/scans/components/DocumentRow";

@@ -33,6 +33,7 @@ export function getActivityDate(scan: ScanListItem) {
 }
 
 export function filterScans(scans: ScanListItem[], deadlines: DeadlineResponse[], query: string): ScanListItem[] {
+  if (!Array.isArray(scans)) return [];
   const q = query.trim().toLowerCase();
   if (!q) return scans;
 
@@ -70,6 +71,7 @@ export function buildDocumentCategoryFilters(
   serverCounts: ScanCountsResponse | null,
 ): DocumentCategoryFilter[] {
   const local = new Map<string, number>();
+  if (!Array.isArray(scans)) return [{ key: "all", label: t("documents.filter.all"), count: 0 }];
   scans.forEach((scan) => {
     const category = getScanCategoryKey(scan);
     local.set(category, (local.get(category) ?? 0) + 1);
@@ -128,9 +130,9 @@ function compareCategoryKeys(a: string, b: string) {
   return formatCategoryLabel(a).localeCompare(formatCategoryLabel(b));
 }
 
-type SectionRow = { key: string; type: "section"; title: string };
-type ScanRow = { key: string; type: "scan"; scan: ScanListItem; deadline?: DeadlineResponse; pinned?: boolean };
-type ListRow = SectionRow | ScanRow;
+export type SectionRow = { key: string; type: "section"; title: string };
+export type ScanRow = { key: string; type: "scan"; scan: ScanListItem; deadline?: DeadlineResponse; pinned?: boolean };
+export type ListRow = SectionRow | ScanRow;
 
 export function splitScans(scans: ScanListItem[], deadlines: DeadlineResponse[], pinnedIds: Set<string>) {
   const todayKey = getTodayDateKey();
