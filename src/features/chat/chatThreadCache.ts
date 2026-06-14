@@ -88,24 +88,40 @@ async function readIndex(): Promise<string[]> {
   }
 }
 
-async function trackIndex(scanId: string) {
-  const list = await readIndex();
-  if (list.includes(scanId)) return;
-  list.push(scanId);
-  await AsyncStorage.setItem(INDEX_KEY, JSON.stringify(list)).catch(() => {});
+// Index mutations are read-modify-write on a single key. Parallel
+// setChatCache calls would otherwise interleave and lose entries, so we chain
+// every mutation through one promise so they run strictly one at a time.
+let indexQueue: Promise<void> = Promise.resolve();
+
+function enqueueIndexMutation(mutate: () => Promise<void>): Promise<void> {
+  indexQueue = indexQueue.then(mutate, mutate);
+  return indexQueue;
 }
 
-async function untrackIndex(scanId: string) {
-  const list = await readIndex();
-  const next = list.filter((id) => id !== scanId);
-  if (next.length === list.length) return;
-  await AsyncStorage.setItem(INDEX_KEY, JSON.stringify(next)).catch(() => {});
+function trackIndex(scanId: string) {
+  return enqueueIndexMutation(async () => {
+    const list = await readIndex();
+    if (list.includes(scanId)) return;
+    list.push(scanId);
+    await AsyncStorage.setItem(INDEX_KEY, JSON.stringify(list)).catch(() => {});
+  });
 }
 
-async function clearAllPersisted() {
-  const list = await readIndex();
-  if (list.length) {
-    await AsyncStorage.multiRemove(list.map(storageKey));
-  }
-  await AsyncStorage.removeItem(INDEX_KEY);
+function untrackIndex(scanId: string) {
+  return enqueueIndexMutation(async () => {
+    const list = await readIndex();
+    const next = list.filter((id) => id !== scanId);
+    if (next.length === list.length) return;
+    await AsyncStorage.setItem(INDEX_KEY, JSON.stringify(next)).catch(() => {});
+  });
+}
+
+function clearAllPersisted() {
+  return enqueueIndexMutation(async () => {
+    const list = await readIndex();
+    if (list.length) {
+      await AsyncStorage.multiRemove(list.map(storageKey));
+    }
+    await AsyncStorage.removeItem(INDEX_KEY);
+  });
 }

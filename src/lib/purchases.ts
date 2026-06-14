@@ -14,6 +14,7 @@
  */
 
 import { Linking, Platform } from "react-native";
+import { logger } from "@/lib/logger";
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import type {
   CustomerInfo,
@@ -56,7 +57,7 @@ async function getPurchases() {
     const module = await import("react-native-purchases");
     return module.default;
   } catch (error) {
-    console.warn("[purchases] native module unavailable:", error);
+    logger.warn("[purchases] native module unavailable:", error);
     return null;
   }
 }
@@ -77,7 +78,7 @@ async function configurePurchasesOnce() {
   if (!apiKey) {
     // Missing key is expected in dev until env vars are wired — don't spam.
     if (__DEV__) {
-      console.warn(
+      logger.warn(
         `[purchases] EXPO_PUBLIC_REVENUECAT_${Platform.OS === "ios" ? "IOS" : "ANDROID"}_KEY is not set`
       );
     }
@@ -92,7 +93,7 @@ async function configurePurchasesOnce() {
     configured = true;
     return true;
   } catch (error) {
-    console.warn("[purchases] configure failed:", error);
+    logger.warn("[purchases] configure failed:", error);
     return false;
   }
 }
@@ -130,7 +131,7 @@ async function fetchProPackages(): Promise<ProPackages | null> {
       yearly: normalizePackage("yearly", findPackageForPlan(offering, "yearly")),
     };
   } catch (error) {
-    console.warn("[purchases] getOfferings failed:", error);
+    logger.warn("[purchases] getOfferings failed:", error);
     return null;
   }
 }
@@ -184,7 +185,7 @@ export async function getSubscriptionManagementUrl(): Promise<string> {
       const customerInfo = await Purchases.getCustomerInfo();
       if (customerInfo.managementURL) return customerInfo.managementURL;
     } catch (error) {
-      if (__DEV__) console.warn("[purchases] getCustomerInfo failed:", error);
+      if (__DEV__) logger.warn("[purchases] getCustomerInfo failed:", error);
     }
   }
 
@@ -227,7 +228,7 @@ export async function identifyPurchasesUser(userId: string) {
     await Purchases.logIn(userId);
     proPackagesCache = null;
   } catch (error) {
-    console.warn("[purchases] logIn failed:", error);
+    logger.warn("[purchases] logIn failed:", error);
   }
 }
 
@@ -243,6 +244,6 @@ export async function clearPurchasesIdentity() {
     proPackagesCache = null;
   } catch (error) {
     // logOut throws if the user is already anonymous — safe to ignore.
-    if (__DEV__) console.info("[purchases] logOut ignored:", error);
+    if (__DEV__) logger.info("[purchases] logOut ignored:", error);
   }
 }

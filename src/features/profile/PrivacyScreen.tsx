@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { logger } from "@/lib/logger";
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -63,9 +64,6 @@ export function PrivacyScreen() {
       if (!aliveRef.current) return;
       setScansCount(0);
       setDeadlinesCount(0);
-      // TODO: once push notifications are wired, cancel any locally scheduled
-      // reminders for the deleted deadlines here. The backend has already
-      // removed the rows; only client-side scheduled notifications remain.
       Alert.alert(
         t("privacy.deleteAll.successToast", {
           scans: result.deleted_scans,
@@ -75,7 +73,7 @@ export function PrivacyScreen() {
     } catch (error) {
       if (!aliveRef.current) return;
       const detail = error instanceof Error ? error.message : String(error);
-      console.warn("deleteAllScans failed", error);
+      logger.warn("deleteAllScans failed", error);
       Alert.alert(t("privacy.deleteAll.errorToast"), detail);
       void loadCounts();
     } finally {

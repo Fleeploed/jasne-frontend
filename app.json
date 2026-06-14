@@ -62,6 +62,12 @@
         "projectId": "9d4ebefc-e4b4-4c83-852e-787f5985725c"
       }
     },
-    "owner": "fleeploed"
+    "owner": "fleeploed",
+    "locales": {
+      "cs": "./locales/ios/cs.json",
+      "ru": "./locales/ios/ru.json",
+      "uk": "./locales/ios/uk.json",
+      "en": "./locales/ios/en.json"
+    }
   }
 }

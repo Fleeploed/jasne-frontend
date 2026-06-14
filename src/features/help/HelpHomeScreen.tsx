@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { logger } from "@/lib/logger";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useScrollToTop } from "@react-navigation/native";
@@ -44,7 +45,7 @@ export function HelpHomeScreen() {
       if (!aliveRef.current) return;
       setHome(response);
     } catch (error) {
-      console.warn("Failed to load Help home", error);
+      logger.warn("Failed to load Help home", error);
       if (aliveRef.current) setFailed(true);
     } finally {
       if (aliveRef.current) setLoading(false);
@@ -72,7 +73,7 @@ export function HelpHomeScreen() {
       setHome(response);
       setFailed(false);
     } catch (error) {
-      console.warn("Failed to refresh Help home", error);
+      logger.warn("Failed to refresh Help home", error);
     } finally {
       clearTimeout(spinnerTimeout);
       if (aliveRef.current && refreshRequestIdRef.current === requestId) {
@@ -188,7 +189,7 @@ function routeTarget(route: string, key: string) {
   if (route.startsWith("/help/category/")) return route as `/help/category/${string}`;
   if (route.startsWith("/help/guides/")) return route.replace("/help/guides/", "/help/guide/") as `/help/guide/${string}`;
   if (route.startsWith("/help/guide/")) return route as `/help/guide/${string}`;
-  console.warn("Unknown Help route", route);
+  logger.warn("Unknown Help route", route);
   return null;
 }
 

@@ -5,7 +5,7 @@ import type { ApiError } from "@/lib/types";
 // 4xx responses are client errors (auth, validation, not-found, payment-required) —
 // retrying them just wastes battery and delays the error UI. Only retry transient
 // failures (network errors, timeouts, 5xx) and cap the attempts.
-function shouldRetry(failureCount: number, error: unknown): boolean {
+export function shouldRetry(failureCount: number, error: unknown): boolean {
   const status = (error as ApiError | undefined)?.status;
   if (typeof status === "number" && status >= 400 && status < 500) return false;
   return failureCount < 3;
