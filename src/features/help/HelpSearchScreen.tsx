@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { logger } from "@/lib/logger";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 
@@ -40,7 +41,7 @@ export function HelpSearchScreen() {
       const result = await searchHelp(clean, language);
       if (requestIdRef.current === requestId) setResponse(result);
     } catch (error) {
-      console.warn("Failed to search Help", error);
+      logger.warn("Failed to search Help", error);
       if (requestIdRef.current === requestId) setFailed(true);
     } finally {
       if (requestIdRef.current === requestId) setLoading(false);

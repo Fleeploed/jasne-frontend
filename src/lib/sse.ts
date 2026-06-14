@@ -85,13 +85,10 @@ async function streamPostWithXhr(
     request.open("POST", `${config.apiBaseUrl}${path}`);
     Object.entries(headers).forEach(([key, value]) => request.setRequestHeader(key, value));
 
-    request.onreadystatechange = () => {
-      if (request.readyState === XMLHttpRequest.HEADERS_RECEIVED && request.status >= 400) {
-        request.abort();
-        void handleHttpError(request.status, request.responseText).then(settleReject);
-      }
-    };
-
+    // Do NOT abort on an error status at HEADERS_RECEIVED — the body carries
+    // the server's error detail. Let it download and reject from onload with
+    // the parsed message instead of a generic one. onprogress already skips
+    // SSE parsing while status >= 400 so the error body is never mis-read.
     request.onprogress = () => {
       if (request.status >= 400) return;
       armStallTimer();

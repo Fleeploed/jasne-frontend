@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import { logger } from "@/lib/logger";
 import * as Application from "expo-application";
 import Constants from "expo-constants";
 import PostHog from "posthog-react-native";
@@ -57,11 +58,11 @@ export function initializeAnalytics() {
       },
     });
   } else if (__DEV__) {
-    console.info("[analytics] EXPO_PUBLIC_POSTHOG_KEY is not set; PostHog disabled");
+    logger.info("[analytics] EXPO_PUBLIC_POSTHOG_KEY is not set; PostHog disabled");
   }
 
   if (!SENTRY_DSN && __DEV__) {
-    console.info("[analytics] EXPO_PUBLIC_SENTRY_DSN is not set; Sentry disabled");
+    logger.info("[analytics] EXPO_PUBLIC_SENTRY_DSN is not set; Sentry disabled");
   }
 }
 
@@ -69,7 +70,7 @@ export function trackEvent(name: string, props: AnalyticsProps = {}) {
   const safeProps = sanitizeProps(props);
 
   if (__DEV__) {
-    console.log("[analytics]", name, safeProps);
+    logger.debug("[analytics]", name, safeProps);
   }
 
   const client = getPostHog();
@@ -89,7 +90,7 @@ export function trackScreenView(pathname: string) {
   const screen = normalizeAnalyticsScreen(pathname);
 
   if (__DEV__) {
-    console.log("[analytics] screen_view", { screen });
+    logger.debug("[analytics] screen_view", { screen });
   }
 
   const client = getPostHog();
@@ -126,7 +127,7 @@ export async function flushAnalytics() {
   try {
     await client.flush();
   } catch (error) {
-    if (__DEV__) console.warn("[analytics] flush failed:", error);
+    if (__DEV__) logger.warn("[analytics] flush failed:", error);
   }
 }
 

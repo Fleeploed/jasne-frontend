@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { logger } from "@/lib/logger";
 import { ActivityIndicator, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Stack, useRouter } from "expo-router";
@@ -249,7 +250,7 @@ function AccountGate({ userId, children }: { userId: string; children: ReactNode
   useEffect(() => {
     if (profile?.deletion_status !== "active") return;
     void syncPushTokenAfterSignIn().catch((error) => {
-      console.warn("Push notification registration failed", error);
+      logger.warn("Push notification registration failed", error);
     });
   }, [profile?.deletion_status, userId]);
 
