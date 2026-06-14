@@ -38,10 +38,30 @@ export type ListScansOptions = {
   offset?: number;
 };
 
-export async function listScans(options: ListScansOptions = {}) {
+export type ScanListResponse = {
+  scans: ScanListItem[];
+  plan?: string;
+  archive_limit?: number | null;
+  hidden_count?: number;
+};
+
+export async function listScans(options: ListScansOptions = {}): Promise<ScanListItem[]> {
+  const response = await listScansResponse(options);
+  return response.scans;
+}
+
+/**
+ * Full envelope from GET /scans. Free plans only see the most-recent
+ * `archive_limit` scans; `hidden_count` is how many older scans are gated
+ * behind Pro. Tolerates the legacy bare-array shape so an old backend (or a
+ * cached response) doesn't crash the list.
+ */
+export async function listScansResponse(options: ListScansOptions = {}): Promise<ScanListResponse> {
   const limit = options.limit ?? SCANS_PAGE_SIZE;
   const offset = options.offset ?? 0;
-  return apiFetch<ScanListItem[]>(`/scans?limit=${limit}&offset=${offset}`);
+  const raw = await apiFetch<ScanListResponse | ScanListItem[]>(`/scans?limit=${limit}&offset=${offset}`);
+  if (Array.isArray(raw)) return { scans: raw };
+  return { ...raw, scans: Array.isArray(raw?.scans) ? raw.scans : [] };
 }
 
 export async function getScan(scanId: string) {
