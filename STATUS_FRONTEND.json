@@ -1153,6 +1153,11 @@
       "id": "fe-fix-85",
       "area": "Accessibility (Help Dynamic Type + icon-button labels)",
       "fix": "Help text was hard-clamped to maxFontSizeMultiplier={1} via HELP_TEXT_SCALE duplicated in 7 files — disabled OS font scaling, large-font users couldn't read guides. Centralized into src/features/help/constants.ts and raised to 1.6 (past largest standard iOS size into lower accessibility range, dense OAMP form still intact). Added accessibilityLabel to 7 icon-only touchables: DeadlinesScreen add-deadline (+), ManualDeadlineModal calendar prev/next month chevrons, DeadlineCard swipe done/edit/delete, help search clear. New i18n keys cs/ru/uk/en: deadlines.addAria, deadlines.calPrevMonth, deadlines.calNextMonth; reused common.edit/delete, deadlines.markDone, documents.searchClearAria."
+    },
+    {
+      "id": "fe-fix-86",
+      "area": "Deadlines — export to calendar (.ics)",
+      "fix": "New 'Add to calendar' action: long-press a deadline → context-menu row (calendar-plus) generates an RFC 5545 iCalendar file and opens the OS share sheet (expo-sharing@~13.0.0), so visa-expiry/payment dates go straight into Apple/Google Calendar. Chose .ics + expo-sharing over expo-calendar to avoid native calendar-permission dependency, cross-platform. src/features/deadlines/calendarExport.ts: buildDeadlineIcs() pure deterministic VEVENT builder (all-day event, non-inclusive next-day DTEND, RFC text escaping, CRLF, one DISPLAY VALARM per reminder_day) + exportDeadlineToCalendar() writes temp .ics to cache and shares. 14 unit tests in calendarExport.test.ts. Wired in DeadlinesScreen with Alert + logger.warn error fallback. New i18n keys cs/ru/uk/en: deadlines.addToCalendar, calendarExportError, calendarShareUnavailable. REQUIRES native rebuild to link expo-sharing."
     }
   ],
   "known_issues_and_risks": [
@@ -1261,7 +1266,6 @@
       "Add frontend smoke/e2e checklist for simulator manual testing.",
       "Add Android emulator test pass.",
       "Offline cache for scans/deadlines: ScanListScreen/deadlines fetch manually (not React Query) — persisting RQ cache won't cover them. Use AsyncStorage write-through in load(), or migrate those screens to useQuery first.",
-      "Export deadlines to calendar — .ics via Share sheet (expo-sharing, no native dep) preferred over expo-calendar for visa-expiry dates.",
       "Biometric app lock (expo-local-authentication) — toggle in Profile + gate in _layout on foreground/launch + flag in SecureStore. Requires native rebuild.",
       "Min supported app version check — backend already has GET /version; add min_supported field + blocking 'update app' screen for future breaking API changes."
     ],
