@@ -126,7 +126,7 @@ export function HelpHomeScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={colors.muted2}
+            tintColor={colors.primary}
             colors={[colors.primary]}
           />
         }

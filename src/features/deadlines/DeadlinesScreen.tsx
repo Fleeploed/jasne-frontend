@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Animated, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useScrollToTop } from "@react-navigation/native";
+import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppIcon } from "@/components/AppIcon";
@@ -19,16 +20,12 @@ const HORIZONTAL_PADDING = 24;
 // Slimmer than iOS Mail defaults — keeps the card title visible during
 // swipe and reduces accidental reveal. Buttons are still 64pt wide so the
 // 44pt iOS minimum tap target is comfortably exceeded.
-const SWIPE_ACTION_WIDTH = 76;       // done (right swipe) — single button
-const SWIPE_LEFT_ACTION_WIDTH = 64;  // edit + delete each (left swipe)
-const SWIPE_LEFT_WIDTH = SWIPE_LEFT_ACTION_WIDTH * 2;
-const SWIPE_RIGHT_WIDTH = SWIPE_ACTION_WIDTH;
-const SWIPE_LEFT_THRESHOLD = SWIPE_LEFT_WIDTH * 0.34;
-const SWIPE_RIGHT_COMMIT_THRESHOLD = SWIPE_RIGHT_WIDTH * 0.86;
-const SWIPE_GESTURE_START_DISTANCE = 6;
-const SWIPE_DIRECTION_LOCK_RATIO = 1.15;
-const SWIPE_ACTION_OVERDRAG = 18;
-const SWIPE_FAST_VELOCITY = 0.45;
+const SWIPE_DONE_ACTION_WIDTH = 76;      // leading action: done (right swipe)
+const SWIPE_TRAILING_ACTION_WIDTH = 64;  // trailing action: edit/delete (left swipe)
+const SWIPE_ACTIVE_TRAILING_WIDTH = SWIPE_TRAILING_ACTION_WIDTH * 2;
+const SWIPE_RIGHT_WIDTH = SWIPE_DONE_ACTION_WIDTH;
+const SWIPE_DRAG_OFFSET = 12;
+const UNDO_DELETE_DELAY_MS = 4500;
 const SHEET_DISMISS_DISTANCE = 96;
 const SHEET_DISMISS_VELOCITY = 0.9;
 const CALENDAR_ANIMATION_MAX_HEIGHT = 430;
@@ -91,6 +88,7 @@ export function DeadlinesScreen() {
   // reference. Count badge stays visible so user knows they exist.
   const [doneExpanded, setDoneExpanded] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<DeadlineResponse | null>(null);
+  const [undoDeleteItem, setUndoDeleteItem] = useState<DeadlineResponse | null>(null);
   const [detailDeadline, setDetailDeadline] = useState<DeadlineResponse | null>(null);
   // Pending action queued while detail modal finishes its iOS dismiss
   // animation. iOS forbids presenting a second Modal while the first is
@@ -116,12 +114,25 @@ export function DeadlinesScreen() {
   );
 
   const aliveRef = useRef(true);
+  const deadlinesRef = useRef<DeadlineResponse[]>([]);
+  const undoDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingUndoDeleteRef = useRef<DeadlineResponse | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
+  useEffect(() => {
+    deadlinesRef.current = deadlines;
+  }, [deadlines]);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
+      if (undoDeleteTimerRef.current) {
+        clearTimeout(undoDeleteTimerRef.current);
+        undoDeleteTimerRef.current = null;
+      }
+      const pendingUndoDelete = pendingUndoDeleteRef.current;
+      pendingUndoDeleteRef.current = null;
+      if (pendingUndoDelete) void deleteDeadline(pendingUndoDelete.id);
     };
   }, []);
 
@@ -165,6 +176,26 @@ export function DeadlinesScreen() {
     }
   }
 
+  async function markDoneOptimistic(item: DeadlineResponse) {
+    const optimistic: DeadlineResponse = { ...item, status: "completed" };
+    setError(null);
+    replaceDeadlines((current) =>
+      current.map((deadline) => (deadline.id === item.id ? optimistic : deadline)).sort(compareDeadlines)
+    );
+    try {
+      const updated = await completeDeadline(item.id);
+      replaceDeadlines((current) =>
+        current.map((deadline) => (deadline.id === updated.id ? updated : deadline)).sort(compareDeadlines)
+      );
+    } catch (doneError) {
+      replaceDeadlines((current) => {
+        if (!current.some((deadline) => deadline.id === item.id)) return current;
+        return current.map((deadline) => (deadline.id === item.id ? item : deadline)).sort(compareDeadlines);
+      });
+      setError(doneError instanceof Error ? doneError.message : t("deadlines.completeError"));
+    }
+  }
+
   async function markActive(deadlineId: string) {
     try {
       const updated = await reactivateDeadline(deadlineId);
@@ -183,6 +214,72 @@ export function DeadlinesScreen() {
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : t("deadlines.deleteError"));
     }
+  }
+
+  function replaceDeadlines(updater: (current: DeadlineResponse[]) => DeadlineResponse[]) {
+    const next = updater(deadlinesRef.current);
+    deadlinesRef.current = next;
+    setDeadlines(next);
+  }
+
+  function clearUndoDeleteTimer() {
+    if (!undoDeleteTimerRef.current) return;
+    clearTimeout(undoDeleteTimerRef.current);
+    undoDeleteTimerRef.current = null;
+  }
+
+  function restoreDeletedDeadline(item: DeadlineResponse) {
+    replaceDeadlines((current) => {
+      if (current.some((deadline) => deadline.id === item.id)) return current;
+      return [...current, item].sort(compareDeadlines);
+    });
+  }
+
+  async function persistPendingDelete(item: DeadlineResponse) {
+    try {
+      await deleteDeadline(item.id);
+    } catch (deleteError) {
+      if (!aliveRef.current) return;
+      restoreDeletedDeadline(item);
+      setError(deleteError instanceof Error ? deleteError.message : t("deadlines.deleteError"));
+    }
+  }
+
+  function flushPendingUndoDelete() {
+    const pending = pendingUndoDeleteRef.current;
+    clearUndoDeleteTimer();
+    pendingUndoDeleteRef.current = null;
+    setUndoDeleteItem(null);
+    if (pending) void persistPendingDelete(pending);
+  }
+
+  function deleteCompletedWithUndo(item: DeadlineResponse) {
+    if (item.status !== "completed") {
+      return;
+    }
+    if (pendingUndoDeleteRef.current?.id === item.id) return;
+    flushPendingUndoDelete();
+    setError(null);
+    setOpenDeadlineId(null);
+    pendingUndoDeleteRef.current = item;
+    replaceDeadlines((current) => current.filter((deadline) => deadline.id !== item.id));
+    setUndoDeleteItem(item);
+    undoDeleteTimerRef.current = setTimeout(() => {
+      const pending = pendingUndoDeleteRef.current;
+      undoDeleteTimerRef.current = null;
+      pendingUndoDeleteRef.current = null;
+      setUndoDeleteItem(null);
+      if (pending) void persistPendingDelete(pending);
+    }, UNDO_DELETE_DELAY_MS);
+  }
+
+  function undoCompletedDelete() {
+    const pending = pendingUndoDeleteRef.current;
+    if (!pending) return;
+    clearUndoDeleteTimer();
+    pendingUndoDeleteRef.current = null;
+    setUndoDeleteItem(null);
+    restoreDeletedDeadline(pending);
   }
 
   function confirmClearCompleted() {
@@ -217,7 +314,7 @@ export function DeadlinesScreen() {
 
   function confirmDelete(item: DeadlineResponse) {
     if (item.status === "completed") {
-      void removeDeadline(item.id);
+      deleteCompletedWithUndo(item);
       return;
     }
     requestAnimationFrame(() => setPendingDelete(item));
@@ -313,8 +410,10 @@ export function DeadlinesScreen() {
                       openDeadlineId={openDeadlineId}
                       setOpenDeadlineId={setOpenDeadlineId}
                       onDone={markDone}
+                      onSwipeDone={markDoneOptimistic}
                       onEdit={setEditingDeadline}
                       onDelete={confirmDelete}
+                      onSwipeDeleteCompleted={deleteCompletedWithUndo}
                       onOpenManual={setDetailDeadline}
                       onLongPress={(d, rect) => {
                         triggerLongPressHaptic();
@@ -361,8 +460,10 @@ export function DeadlinesScreen() {
                               openDeadlineId={openDeadlineId}
                               setOpenDeadlineId={setOpenDeadlineId}
                               onDone={markDone}
+                              onSwipeDone={markDoneOptimistic}
                               onEdit={setEditingDeadline}
                               onDelete={confirmDelete}
+                              onSwipeDeleteCompleted={deleteCompletedWithUndo}
                               onOpenManual={setDetailDeadline}
                               onLongPress={(d, rect) => {
                                 triggerLongPressHaptic();
@@ -389,6 +490,21 @@ export function DeadlinesScreen() {
           </>
         )}
       </ScrollView>
+      {undoDeleteItem ? (
+        <View style={styles.undoToast}>
+          <Text style={styles.undoToastText} numberOfLines={1}>
+            {t("deadlines.deletedToast")}
+          </Text>
+          <Pressable
+            onPress={undoCompletedDelete}
+            hitSlop={8}
+            style={({ pressed }) => [styles.undoToastActionButton, pressed && styles.pressed]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.undoToastActionText}>{t("common.undo")}</Text>
+          </Pressable>
+        </View>
+      ) : null}
       <ManualDeadlineModal
         open={modalOpen}
         plan={plan}
@@ -429,7 +545,8 @@ export function DeadlinesScreen() {
         }}
         onDelete={(item) => {
           setContextMenu(null);
-          confirmDelete(item);
+          if (item.status === "completed") deleteCompletedWithUndo(item);
+          else confirmDelete(item);
         }}
       />
       <ManualDeadlineDetailModal
@@ -455,6 +572,11 @@ export function DeadlinesScreen() {
           setDetailDeadline(null);
         }}
         onDelete={(item) => {
+          if (item.status === "completed") {
+            setDetailDeadline(null);
+            deleteCompletedWithUndo(item);
+            return;
+          }
           setPendingAfterDetailDismiss({ kind: "delete", item });
           setDetailDeadline(null);
         }}
@@ -481,8 +603,10 @@ function DeadlineCard({
   openDeadlineId,
   setOpenDeadlineId,
   onDone,
+  onSwipeDone,
   onEdit,
   onDelete,
+  onSwipeDeleteCompleted,
   onOpenManual,
   onLongPress,
   onOpenScan,
@@ -494,8 +618,10 @@ function DeadlineCard({
   openDeadlineId: string | null;
   setOpenDeadlineId: (deadlineId: string | null) => void;
   onDone: (deadlineId: string) => Promise<void>;
+  onSwipeDone: (deadline: DeadlineResponse) => void;
   onEdit: (deadline: DeadlineResponse) => void;
   onDelete: (deadline: DeadlineResponse) => void;
+  onSwipeDeleteCompleted: (deadline: DeadlineResponse) => void;
   onOpenManual: (deadline: DeadlineResponse) => void;
   onLongPress: (
     deadline: DeadlineResponse,
@@ -505,19 +631,11 @@ function DeadlineCard({
 }) {
   const done = item.status === "completed";
   const activeSwipe = openDeadlineId === item.id;
-  // Completed cards only allow left-swipe for delete (no edit, no "mark done" right swipe).
-  const leftWidth = done ? SWIPE_LEFT_ACTION_WIDTH : SWIPE_LEFT_WIDTH;
-  const rightWidth = done ? 0 : SWIPE_RIGHT_WIDTH;
-  const leftRevealThreshold = done
-    ? Math.max(22, SWIPE_LEFT_ACTION_WIDTH * 0.38)
-    : SWIPE_LEFT_THRESHOLD;
-  const rightRevealThreshold = SWIPE_RIGHT_WIDTH * 0.32;
-  const rightCommitThreshold = SWIPE_RIGHT_COMMIT_THRESHOLD;
-  const minSwipeX = -(leftWidth + SWIPE_ACTION_OVERDRAG);
-  const maxSwipeX = rightWidth + SWIPE_ACTION_OVERDRAG;
+  const trailingActionWidth = done ? SWIPE_TRAILING_ACTION_WIDTH : SWIPE_ACTIVE_TRAILING_WIDTH;
   // Ref on the outer wrapper of the row — measureInWindow gives us absolute
   // screen coords for the long-press preview, independent of scroll offset.
   const wrapperRef = useRef<View>(null);
+  const swipeableRef = useRef<SwipeableMethods>(null);
   const handleLongPress = useCallback(() => {
     wrapperRef.current?.measureInWindow((x, y, width, height) => {
       onLongPress(item, { x, y, width, height });
@@ -528,138 +646,100 @@ function DeadlineCard({
   const tile = tileColors(tone, colors);
   const relativeLabelColor = tone === "urgent" ? colors.danger : colors.text;
   const { day, month } = parseDayMonthAbbr(item.due_date);
-  const translateX = useRef(new Animated.Value(0)).current;
-  const currentX = useRef(0);
-  const thresholdVibrated = useRef(false);
-
-  const animateTo = useCallback(
-    (toValue: number, after?: () => void) => {
-      Animated.spring(translateX, {
-        toValue,
-        useNativeDriver: true,
-        damping: 22,
-        stiffness: 260,
-        mass: 0.85,
-      }).start(({ finished }) => {
-        if (!finished) return;
-        currentX.current = toValue;
-        after?.();
-      });
-    },
-    [translateX]
-  );
-
-  const closeRow = useCallback(() => {
-    thresholdVibrated.current = false;
-    currentX.current = 0;
-    animateTo(0);
-  }, [animateTo]);
 
   useEffect(() => {
     if (openDeadlineId !== null && openDeadlineId !== item.id) {
-      closeRow();
+      swipeableRef.current?.close();
     }
-  }, [closeRow, item.id, openDeadlineId]);
-
-  const openLeftActions = useCallback(() => {
-    currentX.current = -leftWidth;
-    setOpenDeadlineId(item.id);
-    animateTo(-leftWidth);
-  }, [animateTo, item.id, leftWidth, setOpenDeadlineId]);
-
-  const openRightAction = useCallback(() => {
-    if (rightWidth === 0) return;
-    currentX.current = rightWidth;
-    setOpenDeadlineId(item.id);
-    animateTo(rightWidth);
-  }, [animateTo, item.id, rightWidth, setOpenDeadlineId]);
+  }, [item.id, openDeadlineId]);
 
   const commitEdit = useCallback(() => {
+    swipeableRef.current?.close();
     setOpenDeadlineId(null);
-    closeRow();
     onEdit(item);
-  }, [closeRow, item, onEdit, setOpenDeadlineId]);
+  }, [item, onEdit, setOpenDeadlineId]);
 
-  const commitDelete = useCallback(() => {
+  const commitActiveDelete = useCallback(() => {
+    if (done) return;
+    swipeableRef.current?.close();
     setOpenDeadlineId(null);
-    closeRow();
     onDelete(item);
-  }, [closeRow, item, onDelete, setOpenDeadlineId]);
+  }, [done, item, onDelete, setOpenDeadlineId]);
+
+  const commitCompletedDelete = useCallback(() => {
+    if (!done) return;
+    swipeableRef.current?.close();
+    setOpenDeadlineId(null);
+    onSwipeDeleteCompleted(item);
+  }, [done, item, onSwipeDeleteCompleted, setOpenDeadlineId]);
 
   const commitDone = useCallback(() => {
+    swipeableRef.current?.close();
     setOpenDeadlineId(null);
-    Animated.spring(translateX, {
-      toValue: SWIPE_RIGHT_WIDTH,
-      useNativeDriver: true,
-      damping: 22,
-      stiffness: 260,
-      mass: 0.85,
-    }).start(() => {
-      currentX.current = SWIPE_RIGHT_WIDTH;
-      void onDone(item.id);
-    });
-  }, [item.id, onDone, setOpenDeadlineId, translateX]);
+    void onDone(item.id);
+  }, [item.id, onDone, setOpenDeadlineId]);
 
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        // Claim the responder once the user has clearly started a horizontal
-        // swipe, while still leaving mostly-vertical drags to the ScrollView.
-        onMoveShouldSetPanResponder: (_, gesture) => {
-          const absDx = Math.abs(gesture.dx);
-          const absDy = Math.abs(gesture.dy);
-          if (absDx < SWIPE_GESTURE_START_DISTANCE) return false;
-          if (absDx < absDy * SWIPE_DIRECTION_LOCK_RATIO) return false;
-          // Completed rows do not have a right-side action, unless the row is
-          // already open to the left and the user is swiping right to close it.
-          if (done && gesture.dx > 0 && currentX.current >= 0) return false;
-          return true;
-        },
-        onPanResponderGrant: () => {
-          thresholdVibrated.current = false;
-        },
-        onPanResponderMove: (_, gesture) => {
-          const next = Math.max(minSwipeX, Math.min(maxSwipeX, currentX.current + gesture.dx));
-          translateX.setValue(next);
+  const commitSwipeDone = useCallback(() => {
+    swipeableRef.current?.close();
+    setOpenDeadlineId(null);
+    onSwipeDone(item);
+  }, [item, onSwipeDone, setOpenDeadlineId]);
 
-          // Haptic on first crossing of the reveal/commit threshold.
-          const crossedLeft = next <= -leftRevealThreshold;
-          const crossedRight = rightWidth > 0 && next >= rightRevealThreshold;
-          if ((crossedLeft || crossedRight) && !thresholdVibrated.current) {
-            thresholdVibrated.current = true;
-            triggerSelectionHaptic();
-          }
-          if (next > -leftRevealThreshold && next < rightRevealThreshold) {
-            thresholdVibrated.current = false;
-          }
-        },
-        onPanResponderRelease: (_, gesture) => {
-          const next = Math.max(minSwipeX, Math.min(maxSwipeX, currentX.current + gesture.dx));
-          const fastLeft = gesture.vx < -SWIPE_FAST_VELOCITY && gesture.dx < -SWIPE_GESTURE_START_DISTANCE;
-          const fastRight = gesture.vx > SWIPE_FAST_VELOCITY && gesture.dx > SWIPE_GESTURE_START_DISTANCE;
+  const commitSwipeDeleteCompleted = useCallback(() => {
+    if (!done) return;
+    swipeableRef.current?.close();
+    setOpenDeadlineId(null);
+    onSwipeDeleteCompleted(item);
+  }, [done, item, onSwipeDeleteCompleted, setOpenDeadlineId]);
 
-          if (rightWidth > 0 && next >= rightCommitThreshold) {
-            commitDone();
-            return;
-          }
-          if (next <= -leftRevealThreshold || fastLeft) {
-            openLeftActions();
-            return;
-          }
-          if (rightWidth > 0 && (next >= rightRevealThreshold || fastRight)) {
-            openRightAction();
-            return;
-          }
-          setOpenDeadlineId(null);
-          closeRow();
-        },
-        onPanResponderTerminate: () => {
-          setOpenDeadlineId(null);
-          closeRow();
-        },
-      }),
-    [closeRow, commitDone, done, item.id, leftRevealThreshold, maxSwipeX, minSwipeX, openLeftActions, openRightAction, rightCommitThreshold, rightRevealThreshold, rightWidth, setOpenDeadlineId, translateX]
-  );
+  const handleSwipeWillOpen = useCallback((direction: "left" | "right") => {
+    if (!done && direction === "right") {
+      triggerSelectionHaptic();
+      commitSwipeDone();
+      return;
+    }
+    if (done && direction === "left") {
+      triggerSelectionHaptic();
+      commitSwipeDeleteCompleted();
+      return;
+    }
+    setOpenDeadlineId(item.id);
+    triggerSelectionHaptic();
+  }, [commitSwipeDeleteCompleted, commitSwipeDone, done, item.id, setOpenDeadlineId]);
+
+  const handleSwipeClose = useCallback(() => {
+    if (openDeadlineId === item.id) {
+      setOpenDeadlineId(null);
+    }
+  }, [item.id, openDeadlineId, setOpenDeadlineId]);
+
+  const renderDoneAction = useCallback(() => {
+    if (done) return null;
+    return (
+      <Pressable onPress={commitDone} style={({ pressed }) => [styles.swipeLeadingDoneArea, pressed && styles.pressed]}>
+        <AppIcon name="check" size={24} color={colors.greenDark} strokeWidth={2.4} />
+      </Pressable>
+    );
+  }, [colors.greenDark, commitDone, done, styles]);
+
+  const renderRightActions = useCallback(() => (
+    <View style={[styles.swipeTrailingActions, { width: trailingActionWidth }]}>
+      {!done ? (
+        <>
+          <Pressable onPress={commitEdit} style={({ pressed }) => [styles.swipeTrailingEditArea, pressed && styles.pressed]}>
+            <AppIcon name="sliders" size={22} color={colors.primary} strokeWidth={1.9} />
+          </Pressable>
+          <Pressable onPress={commitActiveDelete} style={({ pressed }) => [styles.swipeTrailingDeleteArea, pressed && styles.pressed]}>
+            <AppIcon name="x" size={22} color={colors.dangerDark} strokeWidth={2.2} />
+          </Pressable>
+        </>
+      ) : (
+        <Pressable onPress={commitCompletedDelete} style={({ pressed }) => [styles.swipeTrailingDeleteArea, pressed && styles.pressed]}>
+          <AppIcon name="x" size={22} color={colors.dangerDark} strokeWidth={2.2} />
+        </Pressable>
+      )}
+    </View>
+  ), [colors.dangerDark, colors.primary, commitActiveDelete, commitCompletedDelete, commitEdit, done, styles, trailingActionWidth]);
 
   const sourceLabel = item.scan_id ? deadlineSourceLabel(item) : null;
 
@@ -713,43 +793,28 @@ function DeadlineCard({
 
   return (
     <View ref={wrapperRef} style={[styles.rowShell, done && styles.rowShellCompleted, { width: cardWidth }]}>
-      <View style={styles.swipeActionLayer} pointerEvents="box-none">
-        {done ? (
-          // Placeholder keeps `space-between` layout balanced so the delete
-          // group still sits flush against the right edge for completed rows.
-          <View style={styles.swipeDonePlaceholder} pointerEvents="none" />
-        ) : (
-          <Pressable onPress={commitDone} style={({ pressed }) => [styles.swipeDoneArea, pressed && styles.pressed]}>
-            <AppIcon name="check" size={24} color={colors.greenDark} strokeWidth={2.4} />
-          </Pressable>
-        )}
-        <View style={[styles.swipeLeftActions, done && styles.swipeLeftActionsCompact]}>
-          {!done ? (
-            <Pressable onPress={commitEdit} style={({ pressed }) => [styles.swipeEditArea, pressed && styles.pressed]}>
-              <AppIcon name="sliders" size={22} color={colors.primary} strokeWidth={1.9} />
-            </Pressable>
-          ) : null}
-          <Pressable onPress={commitDelete} style={({ pressed }) => [styles.swipeDeleteArea, pressed && styles.pressed]}>
-            <AppIcon name="x" size={22} color={colors.dangerDark} strokeWidth={2.2} />
-          </Pressable>
-        </View>
-      </View>
-      <Animated.View
-        {...panResponder.panHandlers}
-        style={[
-          styles.swipeCard,
-          activeSwipe && styles.swipeCardActive,
-          {
-            width: cardWidth,
-            transform: [{ translateX }],
-          },
-        ]}
+      <ReanimatedSwipeable
+        ref={swipeableRef}
+        friction={1.08}
+        leftThreshold={SWIPE_RIGHT_WIDTH * 0.62}
+        rightThreshold={done ? SWIPE_TRAILING_ACTION_WIDTH * 0.78 : trailingActionWidth * 0.38}
+        dragOffsetFromLeftEdge={SWIPE_DRAG_OFFSET}
+        dragOffsetFromRightEdge={SWIPE_DRAG_OFFSET}
+        overshootLeft={false}
+        overshootRight={false}
+        enableTrackpadTwoFingerGesture
+        renderLeftActions={done ? undefined : renderDoneAction}
+        renderRightActions={renderRightActions}
+        onSwipeableWillOpen={handleSwipeWillOpen}
+        onSwipeableClose={handleSwipeClose}
+        containerStyle={[styles.swipeableContainer, done && styles.swipeableContainerCompleted, { width: cardWidth }]}
+        childrenContainerStyle={[styles.swipeCard, activeSwipe && styles.swipeCardActive, { width: cardWidth }]}
       >
         <Pressable
           onPress={() => {
-            if (currentX.current !== 0) {
+            if (activeSwipe) {
+              swipeableRef.current?.close();
               setOpenDeadlineId(null);
-              closeRow();
               return;
             }
             if (item.scan_id) onOpenScan(item.scan_id);
@@ -762,7 +827,7 @@ function DeadlineCard({
         >
           {card}
         </Pressable>
-      </Animated.View>
+      </ReanimatedSwipeable>
     </View>
   );
 }
@@ -966,7 +1031,6 @@ function ManualDeadlineModal({
       duration: 180,
       useNativeDriver: true,
     }).start(() => {
-      sheetTranslateY.setValue(0);
       onClose();
     });
   }, [onClose, sheetTranslateY]);
@@ -2345,6 +2409,46 @@ function createStyles(colors: ColorPalette) {
       ...typeStyles.callout,
       fontWeight: "600",
     },
+    undoToast: {
+      position: "absolute",
+      left: 18,
+      right: 18,
+      bottom: 12,
+      minHeight: 54,
+      borderRadius: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 14,
+      backgroundColor: colors.surface2,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.28,
+      shadowRadius: 20,
+      elevation: 12,
+    },
+    undoToastText: {
+      flex: 1,
+      color: colors.text,
+      fontFamily: fonts.bodySemiBold,
+      ...typeStyles.callout,
+      fontWeight: "600",
+    },
+    undoToastActionButton: {
+      minHeight: 32,
+      paddingHorizontal: 4,
+      justifyContent: "center",
+    },
+    undoToastActionText: {
+      color: colors.primary,
+      fontFamily: fonts.bodyExtraBold,
+      ...typeStyles.callout,
+      fontWeight: "700",
+    },
     completedToggle: {
       flexDirection: "row",
       alignItems: "center",
@@ -2377,24 +2481,17 @@ function createStyles(colors: ColorPalette) {
       backgroundColor: "transparent"
     },
     rowShellCompleted: { minHeight: 86 },
-    // Underlay holding the action buttons. Buttons sit at flex-start (done)
-    // and flex-end (edit/delete); the visible middle band is intentionally
-    // covered by the card itself, so transparent here means no bg-color
-    // hairline ever shows on rounded corners.
-    swipeActionLayer: {
-      ...StyleSheet.absoluteFillObject,
+    swipeableContainer: {
       minHeight: 96,
-      flexDirection: "row",
-      alignItems: "stretch",
-      justifyContent: "space-between",
-      backgroundColor: "transparent"
+      backgroundColor: "transparent",
     },
+    swipeableContainerCompleted: { minHeight: 86 },
     // Soft tinted backgrounds matching the urgency date-tile aesthetic.
     // Auto-adapts per theme: in dark mode the *Light tokens are rgba ~12%
     // (subtle); in light mode they're solid pale colors. Card on top is
     // fully opaque (surface) so there's no actual bleed-through — the soft
     // tints only show in the revealed area after swipe.
-    swipeDoneArea: {
+    swipeLeadingDoneArea: {
       width: SWIPE_RIGHT_WIDTH,
       height: "100%",
       minHeight: 96,
@@ -2402,8 +2499,8 @@ function createStyles(colors: ColorPalette) {
       justifyContent: "center",
       backgroundColor: colors.greenLight,
     },
-    swipeLeftActions: {
-      width: SWIPE_LEFT_WIDTH,
+    swipeTrailingActions: {
+      width: SWIPE_TRAILING_ACTION_WIDTH,
       height: "100%",
       minHeight: 96,
       flexDirection: "row",
@@ -2411,19 +2508,16 @@ function createStyles(colors: ColorPalette) {
       justifyContent: "flex-end",
       backgroundColor: "transparent",
     },
-    // Completed cards only reveal the delete action (single button, half width).
-    swipeLeftActionsCompact: { width: SWIPE_LEFT_ACTION_WIDTH },
-    swipeDonePlaceholder: { width: 0, height: "100%" },
-    swipeEditArea: {
-      width: SWIPE_LEFT_ACTION_WIDTH,
+    swipeTrailingEditArea: {
+      width: SWIPE_TRAILING_ACTION_WIDTH,
       height: "100%",
       minHeight: 96,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: colors.blueSoft,
     },
-    swipeDeleteArea: {
-      width: SWIPE_LEFT_ACTION_WIDTH,
+    swipeTrailingDeleteArea: {
+      width: SWIPE_TRAILING_ACTION_WIDTH,
       height: "100%",
       minHeight: 96,
       alignItems: "center",

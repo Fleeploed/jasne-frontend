@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
+import { SelectableText } from "@/components/SelectableText";
 import { AppBar, BackButton, Screen, fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { HelpContentRenderer, HelpEmptyState, HelpErrorState, HelpLoadingState } from "@/features/help/components";
 import { getHelpGuide } from "@/features/help/helpApi";
@@ -128,7 +129,7 @@ export function HelpGuideScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={colors.muted2}
+              tintColor={colors.primary}
               colors={[colors.primary]}
             />
           }
@@ -136,7 +137,7 @@ export function HelpGuideScreen() {
           {guide.fallback_language ? (
             <View style={styles.fallbackNote}>
               <Ionicons name="information-circle-outline" size={17} color={colors.primary} />
-              <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.fallbackText}>{fallbackLanguageNote(guide.fallback_language)}</Text>
+              <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.fallbackText}>{fallbackLanguageNote(guide.fallback_language)}</SelectableText>
             </View>
           ) : null}
           <HelpContentRenderer
@@ -145,9 +146,9 @@ export function HelpGuideScreen() {
             plan={userPlan}
           />
           {guide.updated_at ? (
-            <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.updatedAt}>
+            <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.updatedAt}>
               {formatGuideUpdatedAt(guide.updated_at, language)}
-            </Text>
+            </SelectableText>
           ) : null}
         </ScrollView>
       </View>

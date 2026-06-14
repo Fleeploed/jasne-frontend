@@ -7,6 +7,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
 import { QueryClientProvider } from "@tanstack/react-query";
 import * as Sentry from "@sentry/react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { AccountDeletionScreen } from "@/features/auth/AccountDeletionScreen";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
@@ -56,31 +57,35 @@ function RootLayout() {
 
   if (!fontsLoaded) {
     return (
-      <SafeAreaProvider style={{ flex: 1, backgroundColor: ROOT_FALLBACK_BG }}>
-        <FontLoadingScreen />
-      </SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider style={{ flex: 1, backgroundColor: ROOT_FALLBACK_BG }}>
+          <FontLoadingScreen />
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
     );
   }
 
   return (
-    <SafeAreaProvider style={{ flex: 1, backgroundColor: ROOT_FALLBACK_BG }}>
-      <ThemeProvider>
-        <ErrorBoundary>
-          <ThemedAppRoot>
-            <QueryClientProvider client={queryClient}>
-              <ThemedStatusBar />
-              <LocaleProvider>
-                <AuthProvider>
-                  <AnalyticsRouteTracker />
-                  <OfflineBanner />
-                  <RootNavigator />
-                </AuthProvider>
-              </LocaleProvider>
-            </QueryClientProvider>
-          </ThemedAppRoot>
-        </ErrorBoundary>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: ROOT_FALLBACK_BG }}>
+        <ThemeProvider>
+          <ErrorBoundary>
+            <ThemedAppRoot>
+              <QueryClientProvider client={queryClient}>
+                <ThemedStatusBar />
+                <LocaleProvider>
+                  <AuthProvider>
+                    <AnalyticsRouteTracker />
+                    <OfflineBanner />
+                    <RootNavigator />
+                  </AuthProvider>
+                </LocaleProvider>
+              </QueryClientProvider>
+            </ThemedAppRoot>
+          </ErrorBoundary>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

@@ -12,6 +12,13 @@
       "supportsTablet": false,
       "bundleIdentifier": "app.jasne.mobile",
       "infoPlist": {
+        "CFBundleAllowMixedLocalizations": true,
+        "CFBundleLocalizations": [
+          "cs",
+          "en",
+          "ru",
+          "uk"
+        ],
         "NSCameraUsageDescription": "Jasne uses the camera to scan bureaucracy documents.",
         "NSPhotoLibraryUsageDescription": "Jasne can upload documents selected from your library."
       }
@@ -23,20 +30,15 @@
         "backgroundColor": "#16458A"
       },
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE"
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
       "expo-router",
       "expo-document-picker",
       "expo-image-picker",
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Jasne uses the camera to scan bureaucracy documents."
-        }
-      ],
       "@react-native-community/datetimepicker",
       "expo-font",
       "expo-notifications",
@@ -51,6 +53,15 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "9d4ebefc-e4b4-4c83-852e-787f5985725c"
+      }
+    },
+    "owner": "fleeploed"
   }
 }

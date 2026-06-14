@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
+import { SelectableText } from "@/components/SelectableText";
 import { fonts, Screen, type ColorPalette, typeStyles, useColors } from "@/components/ui";
 import { t } from "@/lib/i18n";
 
@@ -30,16 +31,16 @@ export default function OdvolaniGuideRoute() {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
           <Text style={styles.kicker}>OAMP</Text>
-          <Text style={styles.title}>{t("oamp.odvolani.heading")}</Text>
-          {cisloJednaci ? <Text style={styles.caseNumber}>{cisloJednaci}</Text> : null}
-          <Text style={styles.body}>{t("oamp.odvolani.body")}</Text>
+          <SelectableText style={styles.title}>{t("oamp.odvolani.heading")}</SelectableText>
+          {cisloJednaci ? <SelectableText style={styles.caseNumber}>{cisloJednaci}</SelectableText> : null}
+          <SelectableText style={styles.body}>{t("oamp.odvolani.body")}</SelectableText>
         </View>
         {ODVOLANI_STEP_KEYS.map((key, index) => (
           <View key={key} style={styles.stepRow}>
             <View style={styles.stepNumber}>
               <Text style={styles.stepNumberText}>{index + 1}</Text>
             </View>
-            <Text style={styles.stepText}>{t(key)}</Text>
+            <SelectableText style={styles.stepText}>{t(key)}</SelectableText>
           </View>
         ))}
       </ScrollView>

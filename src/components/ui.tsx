@@ -8,7 +8,6 @@ import {
   Text,
   TextInput,
   View,
-  type ColorSchemeName,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -161,7 +160,6 @@ export const typeStyles = {
 
 export type ThemePreference = "system" | "light" | "dark";
 type ResolvedTheme = "light" | "dark";
-type SystemTheme = "light" | "dark" | null | undefined;
 type ThemeContextValue = {
   preference: ThemePreference;
   setPreference: (preference: ThemePreference) => void;
@@ -177,13 +175,18 @@ function isThemePreference(value: string | null): value is ThemePreference {
   return value === "system" || value === "light" || value === "dark";
 }
 
-function resolveTheme(preference: ThemePreference, systemTheme: SystemTheme): ResolvedTheme {
+function readSystemTheme(fallback: ResolvedTheme = "dark"): ResolvedTheme {
+  const scheme = Appearance.getColorScheme();
+  return scheme === "light" || scheme === "dark" ? scheme : fallback;
+}
+
+function resolveTheme(preference: ThemePreference, systemTheme: ResolvedTheme): ResolvedTheme {
   if (preference === "light" || preference === "dark") return preference;
-  return systemTheme === "dark" ? "dark" : "light";
+  return systemTheme;
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [systemTheme, setSystemTheme] = useState<ColorSchemeName>(() => Appearance.getColorScheme());
+  const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(() => readSystemTheme());
   const [preference, setPreferenceState] = useState<ThemePreference>("system");
 
   useEffect(() => {
@@ -197,9 +200,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    setSystemTheme(Appearance.getColorScheme());
+    setSystemTheme((current) => readSystemTheme(current));
     const subscription = Appearance.addChangeListener(({ colorScheme }) => {
-      setSystemTheme(colorScheme);
+      if (colorScheme === "light" || colorScheme === "dark") {
+        setSystemTheme(colorScheme);
+      }
     });
 
     return () => subscription.remove();
@@ -222,7 +227,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
 export function useThemePreference(): ThemeContextValue {
   const context = useContext(ThemeContext);
-  const systemTheme = Appearance.getColorScheme();
+  const systemTheme = readSystemTheme();
   const scheme = resolveTheme("system", systemTheme);
   return context ?? {
     preference: "system",

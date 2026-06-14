@@ -20,9 +20,12 @@ const STATUS_LABEL_KEY: Record<string, "probiha" | "schvaleno" | "zamitnuto" | "
 
 export function OampStatusBody({ tracking }: { tracking: Tracking }) {
   const colors = useColors();
+  const firstCheckPending = tracking.last_checked_at == null;
   const rawStatus = tracking.current_status ?? "probiha";
   const labelKey = STATUS_LABEL_KEY[rawStatus] ?? "probiha";
-  const statusLabel = t(`oamp.status.${labelKey}.title` as Parameters<typeof t>[0]);
+  const statusLabel = firstCheckPending
+    ? t("tracking.types.oamp_status.checkingTitle")
+    : t(`oamp.status.${labelKey}.title` as Parameters<typeof t>[0]);
   return (
     <View style={styles.body}>
       <Text style={[styles.title, { color: colors.text }]}>

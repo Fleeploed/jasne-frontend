@@ -24,8 +24,8 @@
       "expo_go_status": "partial only",
       "expo_go_notes": [
         "Core JS screens can run in Expo Go.",
-        "In-app camera (expo-camera), custom URL schemes, OAuth redirects, and password reset links should be tested in a development build.",
-        "Camera capture uses expo-camera CameraView live preview inside the app UI; the native VisionKit document scanner was removed (no custom UI possible over it). Requires New Architecture + dev build."
+        "In-app camera (react-native-vision-camera), custom URL schemes, OAuth redirects, and password reset links should be tested in a development build.",
+        "Camera capture uses react-native-vision-camera live preview inside the app UI; the native VisionKit document scanner was removed (no custom UI possible over it). Requires New Architecture + dev build."
       ],
       "added_packages_this_session": [
         "yaml ^2.9.0 (parse bundled terms.yaml for the Terms of Service screen)",
@@ -114,7 +114,7 @@
         "expo-document-picker",
         "expo-file-system"
       ],
-      "camera": "expo-camera (CameraView live preview, in-app UI)",
+      "camera": "react-native-vision-camera (live preview, in-app UI)",
       "styling": "React Native StyleSheet + shared color tokens in src/components/ui.tsx",
       "i18n": "local dictionary in src/lib/i18n.ts"
     },
@@ -204,7 +204,8 @@
         "files": [
           "src/components/ui.tsx",
           "src/components/ActionSheet.tsx",
-          "src/components/PaywallSheet.tsx"
+          "src/components/PaywallSheet.tsx",
+          "src/components/SelectableText.tsx"
         ],
         "ui_contains": [
           "shared colors (lightColors warm-paper palette + darkColors)",
@@ -218,7 +219,8 @@
           "ErrorText",
           "fonts tokens (Geist / Inter)"
         ],
-        "action_sheet": "Reusable iOS-style bottom sheet (Modal + slide). Accepts title/subtitle/actions[]; supports destructive style and Ionicons. Used by DeadlinesScreen long-press menu.",
+        "action_sheet": "Reusable iOS-style bottom sheet (Modal + slide). Accepts title/subtitle/actions[]; supports destructive style and Ionicons. Used by DeadlinesScreen long-press menu and ChatThreadScreen long-press copy actions.",
+        "selectable_text": "src/components/SelectableText.tsx — TextInput-backed selectable read-only text wrapper for chat answers and help guides; stops press propagation so parent long-press copy surfaces do not steal text selection.",
         "paywall_sheet": "Custom Modal scaffold — SDK wiring deferred (RevenueCat).",
         "icon": "src/components/Icon.tsx — thin wrapper around Ionicons used for inline glyphs (e.g. eye toggle in password fields).",
         "auth_gradient": "src/components/AuthGradient.tsx — radial/linear gradient background shared by AuthScreen and ResetPasswordScreen.",
@@ -318,7 +320,11 @@
           "auto_scroll_only_if_at_bottom": true,
           "key_remount_per_scan_id_no_flash": true,
           "deadline_card_three_tone_urgency": true,
-          "footer_transparent_no_hairline": true
+          "footer_transparent_no_hairline": true,
+          "assistant_text_selectable": true,
+          "result_card_long_press_copy_sheet": true,
+          "deadline_card_long_press_copy_sheet": true,
+          "visible_copy_buttons_removed": true
         },
         "chat_thread_cache": "chatThreadCache.ts — in-memory Map keyed by scan_id; caches loaded threads so reopening a chat is instant; invalidateChatCache() called on deleteAllScans to prevent stale data."
       },
@@ -563,6 +569,13 @@
       ],
       "email_password": "enabled in Supabase Auth",
       "password_reset": "production redirect target is jasne://auth/reset-password; test from a native development or production build, not desktop Chrome",
+      "custom_domain": {
+        "status": "planned; pending DNS CNAME/TXT verification and Supabase activation",
+        "hostname": "auth.jasne.app",
+        "project_ref": "ndestbxknbgaxxdjoqkv",
+        "dns_cname": "auth.jasne.app -> ndestbxknbgaxxdjoqkv.supabase.co",
+        "post_activation_env": "EXPO_PUBLIC_SUPABASE_URL=https://auth.jasne.app"
+      },
       "custom_smtp": {
         "status": "must be configured in Supabase Auth dashboard before public signup",
         "required_before_public_signup": true,
@@ -581,9 +594,12 @@
         "OAuth consent screen configured",
         "Web OAuth Client ID created",
         "Client ID and Client Secret copied into Supabase Google provider",
-        "Supabase callback URL added to Google authorized redirect URIs"
+        "Default and custom-domain Supabase callback URLs added to Google authorized redirect URIs"
       ],
-      "supabase_callback_url": "https://ndestbxknbgaxxdjoqkv.supabase.co/auth/v1/callback"
+      "supabase_callback_urls": [
+        "https://ndestbxknbgaxxdjoqkv.supabase.co/auth/v1/callback",
+        "https://auth.jasne.app/auth/v1/callback"
+      ]
     },
     "analytics_and_crash_reporting": {
       "status": "code wired; keys configured locally; PostHog event export verified",
@@ -656,7 +672,7 @@
   },
 
   "tested_locally": {
-    "date": "2026-06-04",
+    "date": "2026-06-13",
     "environment": "MacBook Air Alisher, Expo SDK 52, iOS Simulator",
     "checks": [
       {
@@ -683,6 +699,16 @@
         "command": "node -e \"JSON.parse(require('fs').readFileSync('STATUS_FRONTEND.json','utf8'))\"",
         "status": "passed",
         "purpose": "STATUS_FRONTEND.json is valid JSON"
+      },
+      {
+        "command": "npm run typecheck",
+        "status": "passed",
+        "purpose": "TypeScript compile after OAMP tracking first-check label and PDF picker Pro CTA updates on 2026-06-13"
+      },
+      {
+        "command": "npm run typecheck",
+        "status": "passed",
+        "purpose": "TypeScript compile after chat selectable text and long-press copy ActionSheet update on 2026-06-13"
       }
     ],
     "manual_flows_observed": [
@@ -760,7 +786,17 @@
     { "id": "fe-fix-62", "area": "scansApi + i18n", "fix": "Upload switched from base64 to ArrayBuffer to Supabase (OOM on multi-MB PDFs) to native FileSystem.uploadAsync streaming straight from disk; added a 20MB client guard with a localized scanApi.fileTooLarge message (cs/ru/uk/en)." },
     { "id": "fe-fix-63", "area": "pendingScanStore + pinnedScansStore", "fix": "removePendingScanById/clearPendingScans now delete the local cached attachment files (only URIs under FileSystem.cacheDirectory) so processed scans stop accumulating on disk; added clearPinnedScans() for the sign-out cleanup path." },
     { "id": "fe-fix-64", "area": "secureStorage.ts (new) + supabase.ts", "fix": "Supabase auth session moved from plain AsyncStorage to an encrypted expo-secure-store adapter (iOS Keychain / Android Keystore) with 1800-byte chunking for the iOS 2KB item cap and a one-time transparent migration from AsyncStorage so existing users are not signed out. Requires native rebuild." },
-    { "id": "fe-fix-65", "area": "ChatThreadScreen + Icon + i18n", "fix": "Replaced fragmented <Text selectable> (only one sentence could be selected, awkward native copy menu) with explicit per-block copy buttons via expo-clipboard: summary, what-to-do steps, deadline cards, info blocks and assistant chat answers each copy the whole block with haptic + 1.5s confirmation; added a copy icon and chat.copy/chat.copied strings. Requires native rebuild." }
+    { "id": "fe-fix-65", "area": "ChatThreadScreen + Icon + i18n", "fix": "Replaced fragmented <Text selectable> (only one sentence could be selected, awkward native copy menu) with explicit per-block copy buttons via expo-clipboard: summary, what-to-do steps, deadline cards, info blocks and assistant chat answers each copy the whole block with haptic + 1.5s confirmation; added a copy icon and chat.copy/chat.copied strings. Requires native rebuild." },
+    { "id": "fe-fix-66", "area": "tracking + i18n", "fix": "OAMP tracking card now shows a dedicated first-check label while last_checked_at is null: 'Статус визы — проверяем' in ru, with matching cs/uk/en translations (tracking.types.oamp_status.checkingTitle = kontrolujeme/проверяем/перевіряємо/checking); completed statuses still use the backend status title such as 'В обработке'." },
+    { "id": "fe-fix-67", "area": "NewScanScreen PDF picker", "fix": "Free-user PDF picker Pro CTA is now an active primary button with accessibility role, pressed state, haptic feedback, and 'Перейти на Pro · до 10 страниц' copy. Opening paywall now temporarily hides the PDF picker (visible only when !showPaywall) to avoid stacked Modal issues, and after purchase the picker keeps the selected PDF while refreshing available page slots from /limits." },
+    { "id": "fe-fix-68", "area": "ChatThreadScreen", "fix": "Settled on a single copy mechanism (variant A): removed the duplicate long-press -> ActionSheet copy path (onCopyRequest prop chain through ResultCard/DeadlineReminderRow/MessageBubble, openCopySheet/copySelectedText, copySheetText/copyToastVisible state, the ActionSheet + copyToast render, resultCardToPlainText/deadlineToPlainText helpers, ActionSheet import, copyToast styles). Explicit per-block CopyButton icons remain. Also restored the deadline card background that disappeared after the merge — DeadlineReminderRow is wrapped in a View styled with blueSoft fill + blueMid border (was previously a LinearGradient) so the СРОКИ/ЗАДАЧА block reads as a card again." },
+    { "id": "fe-fix-69", "area": "ChatThreadScreen + SelectableText", "fix": "Re-enabled native text selection on result-card and chat content. First tried the <Text selectable> prop but on iOS it is unreliable inside FlatList/ScrollView (long-press is swallowed by the scroll responder), so switched to the existing TextInput-backed SelectableText component (editable=false on iOS, caretHidden, contextMenuHidden=false) for resultTitle, summary, action lines, deadline date + address, info-block text, and the assistant/user message bubble. docKind/docFrom header captions stay plain Text to avoid TextInput layout drift. User now has both: CopyButton icon for whole-block copy and reliable long-press selection for arbitrary spans." },
+    { "id": "fe-fix-70", "area": "ChatThreadScreen CopyButton", "fix": "CopyButton gained an optional title prop that is prepended (title + newline + body) when copying a whole block, so the clipboard text now carries the block name: summary -> document title, actions -> 'Co s tim udelat', each deadline -> its deadline-type label, info blocks (where to go / documents / penalty / tips) -> their section title. Also made the assistant chat-message CopyButton icon-only (compact) — dropped the 'Copy' text label so only the icon shows; result-card buttons were already compact." },
+    { "id": "fe-fix-71", "area": "ChatThreadScreen ChatComposer", "fix": "Telegram-style auto-growing message input. composerPill switched from fixed height:48 to minHeight:48 + paddingVertical:6 + alignItems:flex-end so the send button hugs the bottom as the field grows; composerInput marginBottom:7 keeps the single-line state vertically centered against the 36px send button. Removed returnKeyType=send/onSubmitEditing so Return inserts a newline (send is button-only), matching Telegram mobile. First attempt used a JS-controlled height via onContentSizeChange, but on iOS the inserted newline was clipped before the height state updated (looked like Enter did nothing); replaced with native multiline auto-grow — composerInput uses minHeight/maxHeight (22..120) and the TextInput has submitBehavior=newline, so Return reliably adds a line, the field grows to ~6 lines, then scrolls internally." },
+    { "id": "fe-fix-72", "area": "ChatThreadScreen ChatComposer + SendButton + i18n", "fix": "Two composer fixes. (1) Question counter (n/10) now vertically centered via alignSelf:center, overriding the pill's flex-end. (2) Working Stop button: the square shown during streaming was disabled (disabled || streaming) so it did nothing. SendButton now treats chat streaming (streaming && !muted) as stoppable — accent background, enabled, onPress -> new onStop handler; a still-processing scan (muted) keeps the non-interactive muted square. handleStopStreaming aborts streamAbortRef then refreshes /limits (backend may have counted the question before cancel). ask() catch now keeps the partial answer on a deliberate abort and only drops the bubble if empty. Added chat.stop string (cs/ru/uk/en)." },
+    { "id": "fe-fix-73", "area": "ChatThreadScreen + help/components", "fix": "Readability pass. Chat message bubbles were ~13.5px and unbounded width (the maxWidth:84% messageWrap style was dead/unused after the merge, so bubbles spanned nearly full width). Now bubbleText is 16/21 (callout) and the bubble style caps at maxWidth:82%; removed the unused messageWrap/userMessageWrap/assistantMessageWrap styles. Help guides bumped to match: contentText 15 -> 16/22, warningText 13 -> 15/21 (overridden per-style, shared typeStyles tokens untouched). Chose 16 over 17 to stay just above the 15px result-card subhead without inverting hierarchy." },
+    { "id": "fe-fix-74", "area": "ChatThreadScreen result card + help/components", "fix": "Finished the readability bump that fe-fix-73 missed: result-card body text was still small, so raised resultSummary and resultLine from rowSecondary(15) to 16/22, infoBlockText (where-to-go/documents/penalty/tip) from rowMeta(13) to 16/22, and deadline address from 13 to 15/21 — now consistent with the 16px chat bubbles. Also added per-block copy to Help guides: new GuideCopyButton (expo-clipboard + haptic + check confirmation, icon-only) placed on every guide section — text/steps/checklist get a blockHeader row (title left, copy right) and the warning card gets a top-aligned copy button. blockPlainText() builds the clipboard string as title + body/numbered-steps/bulleted-checklist. Pro-gated blurred sections intentionally get no copy button." },
+    { "id": "fe-fix-75", "area": "help/components guide section headers", "fix": "Unified guide section headers (variant B). After body text went to 16, headers were inconsistent and some smaller than body: text-section title used the eyebrow style (caption2 = 11px uppercase blue) and warningTitle used rowMeta (13px). Switched the text-section title to contentTitle (headline 17 bold, sentence case) to match steps/checklist, and bumped warningTitle from rowMeta(13) to headline(17) keeping the amber colour. All section headers are now 17 bold, clearly above the 16px body. Removed the now-unused eyebrow style." }
   ],
 
   "known_issues_and_risks": [
@@ -773,7 +809,7 @@
     {
       "area": "Expo Go",
       "status": "limited",
-      "detail": "Custom URL schemes and the in-app camera (expo-camera) are not reliable in Expo Go.",
+      "detail": "Custom URL schemes and the in-app camera (react-native-vision-camera) are not reliable in Expo Go.",
       "mitigation": "Use npx expo run:ios or EAS development build."
     },
     {
