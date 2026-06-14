@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { logger } from "@/lib/logger";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Asset } from "expo-asset";
 import * as FileSystem from "expo-file-system";
@@ -68,7 +69,7 @@ export function TermsScreen() {
         if (isActive) setTermsContent(selectTermsContent(file, locale));
       })
       .catch((error) => {
-        console.warn("Failed to load terms YAML", error);
+        logger.warn("Failed to load terms YAML", error);
       });
 
     return () => {

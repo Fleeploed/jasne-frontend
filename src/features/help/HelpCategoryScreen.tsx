@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { logger } from "@/lib/logger";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 
@@ -41,7 +42,7 @@ export function HelpCategoryScreen() {
       if (!aliveRef.current) return;
       setCategory(response);
     } catch (error) {
-      console.warn("Failed to load Help category", error);
+      logger.warn("Failed to load Help category", error);
       if (!aliveRef.current) return;
       if (isNotFound(error)) setNotFound(true);
       else setFailed(true);
@@ -59,7 +60,7 @@ export function HelpCategoryScreen() {
       setFailed(false);
       setNotFound(false);
     } catch (error) {
-      console.warn("Failed to refresh Help category", error);
+      logger.warn("Failed to refresh Help category", error);
     } finally {
       if (aliveRef.current) setRefreshing(false);
     }
@@ -174,7 +175,7 @@ function handlerForAction(action: string) {
   if (action === "scan_new") return () => router.push("/scan/new");
   // Manual deadline creation is a local DeadlinesScreen modal, so Help routes to the tab.
   if (action === "deadline_new" || action === "deadlines_tab") return () => router.push("/deadlines");
-  console.warn("Unknown Help useful action", action);
+  logger.warn("Unknown Help useful action", action);
   return undefined;
 }
 

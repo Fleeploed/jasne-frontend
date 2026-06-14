@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { logger } from "@/lib/logger";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { ReactNode } from "react";
 
@@ -44,7 +45,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
         setLocale(normalizeLocale(system));
       }
     }).catch((error) => {
-      if (__DEV__) console.warn("Failed to load stored locale", error);
+      if (__DEV__) logger.warn("Failed to load stored locale", error);
     });
   }, []);
 

@@ -51,6 +51,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "locales": {
+      "cs": "./locales/ios/cs.json",
+      "ru": "./locales/ios/ru.json",
+      "uk": "./locales/ios/uk.json",
+      "en": "./locales/ios/en.json"
     }
   }
 }

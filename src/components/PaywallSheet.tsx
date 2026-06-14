@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { logger } from "@/lib/logger";
 import { ActivityIndicator, Animated, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { AppIcon, type AppIconName } from "@/components/AppIcon";
@@ -139,7 +140,7 @@ export function PaywallSheet({
       const backendSynced = await waitForBackendProPlan();
       if (!backendSynced) {
         if (__DEV__ && isRevenueCatTestStoreConfigured()) {
-          console.warn("[purchases] RevenueCat Test Store purchase succeeded, but backend /limits still returned free.");
+          logger.warn("[purchases] RevenueCat Test Store purchase succeeded, but backend /limits still returned free.");
         }
         setError(t("paywall.purchaseSyncPending"));
         return;
