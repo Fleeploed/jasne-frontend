@@ -1148,6 +1148,11 @@
       "id": "fe-fix-84",
       "area": "scansApi — GET /scans envelope",
       "fix": "Root cause of empty document list: backend wraps GET /scans in ScanListResponse { scans, plan, archive_limit, hidden_count } for Free-tier archive gating; frontend still called apiFetch<ScanListItem[]> and received the whole envelope object, so scans state was set to {} and forEach crashed. Fixed by adding listScansResponse() that unwraps the envelope (tolerates legacy bare-array shape) and making listScans() call it and return .scans. Exposes full envelope via listScansResponse() for future hidden-count paywall row."
+    },
+    {
+      "id": "fe-fix-85",
+      "area": "Accessibility (Help Dynamic Type + icon-button labels)",
+      "fix": "Help text was hard-clamped to maxFontSizeMultiplier={1} via HELP_TEXT_SCALE duplicated in 7 files — disabled OS font scaling, large-font users couldn't read guides. Centralized into src/features/help/constants.ts and raised to 1.6 (past largest standard iOS size into lower accessibility range, dense OAMP form still intact). Added accessibilityLabel to 7 icon-only touchables: DeadlinesScreen add-deadline (+), ManualDeadlineModal calendar prev/next month chevrons, DeadlineCard swipe done/edit/delete, help search clear. New i18n keys cs/ru/uk/en: deadlines.addAria, deadlines.calPrevMonth, deadlines.calNextMonth; reused common.edit/delete, deadlines.markDone, documents.searchClearAria."
     }
   ],
   "known_issues_and_risks": [
@@ -1254,7 +1259,11 @@
       "Replace remaining hand-drawn glyphs (calendar/profile/chat in tab bar, FileGlyph, CameraGlyph) with Ionicons for consistency.",
       "Polish deadline swipe animation and final visual spacing.",
       "Add frontend smoke/e2e checklist for simulator manual testing.",
-      "Add Android emulator test pass."
+      "Add Android emulator test pass.",
+      "Offline cache for scans/deadlines: ScanListScreen/deadlines fetch manually (not React Query) — persisting RQ cache won't cover them. Use AsyncStorage write-through in load(), or migrate those screens to useQuery first.",
+      "Export deadlines to calendar — .ics via Share sheet (expo-sharing, no native dep) preferred over expo-calendar for visa-expiry dates.",
+      "Biometric app lock (expo-local-authentication) — toggle in Profile + gate in _layout on foreground/launch + flag in SecureStore. Requires native rebuild.",
+      "Min supported app version check — backend already has GET /version; add min_supported field + blocking 'update app' screen for future breaking API changes."
     ],
     "deferred": [
       "Full 6-screen onboarding flow",
