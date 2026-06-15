@@ -1158,6 +1158,11 @@
       "id": "fe-fix-86",
       "area": "Deadlines — export to calendar (.ics)",
       "fix": "New 'Add to calendar' action: long-press a deadline → context-menu row (calendar-plus) generates an RFC 5545 iCalendar file and opens the OS share sheet (expo-sharing@~13.0.0), so visa-expiry/payment dates go straight into Apple/Google Calendar. Chose .ics + expo-sharing over expo-calendar to avoid native calendar-permission dependency, cross-platform. src/features/deadlines/calendarExport.ts: buildDeadlineIcs() pure deterministic VEVENT builder (all-day event, non-inclusive next-day DTEND, RFC text escaping, CRLF, one DISPLAY VALARM per reminder_day) + exportDeadlineToCalendar() writes temp .ics to cache and shares. 14 unit tests in calendarExport.test.ts. Wired in DeadlinesScreen with Alert + logger.warn error fallback. New i18n keys cs/ru/uk/en: deadlines.addToCalendar, calendarExportError, calendarShareUnavailable. REQUIRES native rebuild to link expo-sharing."
+    },
+    {
+      "id": "fe-fix-87",
+      "area": "React Query cache persistence (offline)",
+      "fix": "Wrapped app in PersistQueryClientProvider (@tanstack/react-query-persist-client + query-async-storage-persister 5.101.0) so the RQ cache survives cold starts and is readable offline. Note: RQ only backs visa-status trackings (Deadlines screen) and the Pro entitlement — scans/deadlines still fetch manually via useState/useEffect and are NOT covered (would need AsyncStorage write-through or migration to useQuery, see backlog). queryClient.ts: AsyncStorage persister (key jasne_rq_cache_v1, 1s throttle), 24h maxAge, app-version buster via Application.nativeApplicationVersion (discards stale-shaped cache on new build), queries gcTime bumped to 24h so restored entries survive the persistence window. session.ts signOutOnce(): added persister.removeClient() next to queryClient.clear() so the next user on the device can't restore the previous account's trackings/entitlement from disk. jest.setup.js: added official AsyncStorage jest mock (queryClient.ts now imports it transitively). All 196 tests pass."
     }
   ],
   "known_issues_and_risks": [
@@ -1265,9 +1270,9 @@
       "Polish deadline swipe animation and final visual spacing.",
       "Add frontend smoke/e2e checklist for simulator manual testing.",
       "Add Android emulator test pass.",
-      "Offline cache for scans/deadlines: ScanListScreen/deadlines fetch manually (not React Query) — persisting RQ cache won't cover them. Use AsyncStorage write-through in load(), or migrate those screens to useQuery first.",
       "Biometric app lock (expo-local-authentication) — toggle in Profile + gate in _layout on foreground/launch + flag in SecureStore. Requires native rebuild.",
-      "Min supported app version check — backend already has GET /version; add min_supported field + blocking 'update app' screen for future breaking API changes."
+      "Min supported app version check — backend already has GET /version; add min_supported field + blocking 'update app' screen for future breaking API changes.",
+      "Offline for scans/deadlines specifically: they fetch via manual useState/useEffect, NOT React Query, so the RQ persist (fe-fix-87) does not cover them. Add AsyncStorage write-through in their load() or migrate to useQuery."
     ],
     "deferred": [
       "Full 6-screen onboarding flow",
