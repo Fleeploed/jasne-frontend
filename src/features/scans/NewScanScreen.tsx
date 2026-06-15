@@ -70,6 +70,10 @@ export function NewScanScreen() {
     if (cameraPermission && !cameraPermission.granted && cameraPermission.canAskAgain) {
       void requestCameraPermission();
     }
+    // Intentionally keyed only on the permission fields, not the whole object or
+    // the stable requestCameraPermission, so this fires once per actual status
+    // change and never re-prompts in a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraPermission?.granted, cameraPermission?.canAskAgain]);
 
   function handleCameraTap(event: GestureResponderEvent) {

@@ -1,3 +1,4 @@
+/* eslint-disable import/first -- jest.mock() must run before the imports it stubs; babel hoists these above the imports. */
 jest.mock("@/lib/i18n", () => ({ t: (key: string) => key }));
 jest.mock("expo-file-system", () => ({
   cacheDirectory: "file:///cache/",

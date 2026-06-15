@@ -60,8 +60,6 @@ export function OampStatusResultBody({
   onEdit: () => void;
   onRescan: () => void;
 }) {
-  const colors = useColors();
-  const styles = useMemo(() => createStyles(colors), [colors]);
   const { isPro, loading: subscriptionLoading } = useSubscription();
   const trackings = useTrackings("oamp_status");
   const refetchTrackings = trackings.refetch;

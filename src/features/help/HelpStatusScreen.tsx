@@ -3,7 +3,6 @@ import type { ComponentProps } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -16,7 +15,7 @@ import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { Screen, fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
-import { getLocale, normalizeLocale, t } from "@/lib/i18n";
+import { normalizeLocale, t } from "@/lib/i18n";
 import { useLocale } from "@/lib/LocaleContext";
 import { checkOampStatus, type OampStatusResponse } from "@/features/help/statusApi";
 import { OampStatusResultBody } from "@/features/oamp/OampStatusResultScreen";
@@ -37,7 +36,6 @@ type CaseParts = {
   year: string;
   visaNumber: string;
 };
-type StatusTone = "neutral" | "green" | "amber" | "red";
 
 const INITIAL_CASE_PARTS: CaseParts = {
   sequence: "",
@@ -499,49 +497,6 @@ function toOampStatus(status: OampStatusResponse["status"]): OampStatus {
   return "probiha";
 }
 
-function BackendStatusResult({
-  result,
-  styles,
-  colors,
-}: {
-  result: OampStatusResponse;
-  styles: ReturnType<typeof createStyles>;
-  colors: ColorPalette;
-}) {
-  const displayStatus = resolveDisplayStatus(result);
-  const tone = statusTone(displayStatus);
-  const icon = statusIcon(displayStatus);
-  const title = statusTitle(displayStatus);
-  const body = statusBody(result);
-
-  return (
-    <>
-      <HeroCard tone={tone} icon={icon} title={title} body={body} styles={styles} colors={colors} />
-      <View style={styles.detailCard}>
-        <DetailRow label={t("help.status.checkedAtLabel")} value={formatCheckedAt(result.checked_at)} styles={styles} />
-        <DetailRow label={t("help.status.kindLabel")} value={t(`help.status.kind.${result.kind}` as const)} styles={styles} last />
-      </View>
-      <Pressable
-        accessibilityRole="link"
-        onPress={() => void Linking.openURL(result.source_url)}
-        style={({ pressed }) => [styles.sourceLink, pressed && styles.pressed]}
-      >
-        <Ionicons name="open-outline" size={18} color={colors.primary} />
-        <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} numberOfLines={1} style={styles.sourceLinkText}>
-          {t("help.status.sourceLink")}
-        </Text>
-      </Pressable>
-      <TextLink label={t("help.status.backToTopics")} onPress={() => router.back()} styles={styles} />
-    </>
-  );
-}
-
-function formatCheckedAt(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
-}
-
 function CaseNumberStrip({ caseNumber, onEdit, styles }: {
   caseNumber: string;
   onEdit: () => void;
@@ -566,13 +521,6 @@ function CaseNumberStrip({ caseNumber, onEdit, styles }: {
       </Pressable>
     </View>
   );
-}
-
-function statusTone(status: OampStatusResponse["status"]): StatusTone {
-  if (status === "approved") return "green";
-  if (status === "processing" || status === "found") return "amber";
-  if (status === "not_found") return "neutral";
-  return "red";
 }
 
 function resolveDisplayStatus(result: OampStatusResponse): OampStatusResponse["status"] {
@@ -606,168 +554,6 @@ function normalizeStatusMessage(message: string): string {
     .toLowerCase();
 }
 
-function statusIcon(status: OampStatusResponse["status"]): IoniconName {
-  if (status === "approved") return "checkmark-circle-outline";
-  if (status === "processing" || status === "found") return "time-outline";
-  if (status === "not_found") return "search-circle-outline";
-  return "alert-circle-outline";
-}
-
-function statusTitle(status: OampStatusResponse["status"]) {
-  if (status === "approved") return t("help.status.approvedTitle");
-  if (status === "processing" || status === "found") return t("help.status.processingTitle");
-  if (status === "not_found") return t("help.status.notFoundTitle");
-  if (status === "rejected") return t("help.status.rejectedTitle");
-  return t("help.status.unknownTitle");
-}
-
-function statusBody(result: OampStatusResponse) {
-  const displayStatus = resolveDisplayStatus(result);
-  const locale = normalizeLocale(getLocale());
-  if (locale === "cs" || locale === "en") return result.message;
-
-  if (displayStatus === "approved") return t("help.status.result.approvedBody", { query: result.query });
-  if (displayStatus === "processing" || displayStatus === "found") {
-    return t("help.status.result.processingBody", { query: result.query });
-  }
-  if (displayStatus === "not_found") return t("help.status.result.notFoundBody", { query: result.query });
-  if (displayStatus === "rejected") return t("help.status.result.rejectedBody", { query: result.query });
-  return t("help.status.result.unknownBody", { query: result.query });
-}
-
-function NotFoundResult({ message, styles, colors }: {
-  message: string;
-  styles: ReturnType<typeof createStyles>;
-  colors: ColorPalette;
-}) {
-  return (
-    <>
-      <HeroCard
-        tone="neutral"
-        icon="search-circle-outline"
-        title={t("help.status.notFoundTitle")}
-        body={message || t("help.status.notFoundBody")}
-        styles={styles}
-        colors={colors}
-      />
-      <InfoPanel
-        title={t("help.status.notFoundInfoTitle")}
-        body={t("help.status.notFoundInfoBody")}
-        styles={styles}
-        colors={colors}
-      />
-      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.sectionTitle}>{t("help.status.possibleReasons")}</Text>
-      <View style={styles.listCard}>
-        {[t("help.status.notFoundReason1"), t("help.status.notFoundReason2"), t("help.status.notFoundReason3")].map((item, index, items) => (
-          <BulletRow key={item} text={item} last={index === items.length - 1} styles={styles} />
-        ))}
-      </View>
-      <PrimaryButton icon="camera-outline" label={t("help.status.scanLetterButton")} onPress={() => router.push("/scan/new")} styles={styles} colors={colors} />
-    </>
-  );
-}
-
-function HeroCard({ tone, icon, title, body, styles, colors }: {
-  tone: StatusTone;
-  icon: IoniconName;
-  title: string;
-  body: string;
-  styles: ReturnType<typeof createStyles>;
-  colors: ColorPalette;
-}) {
-  const toneStyles =
-    tone === "green" ? styles.heroGreen : tone === "amber" ? styles.heroAmber : tone === "red" ? styles.heroRed : styles.heroNeutral;
-  const iconStyle =
-    tone === "green" ? styles.heroIconGreen : tone === "amber" ? styles.heroIconAmber : tone === "red" ? styles.heroIconRed : styles.heroIconNeutral;
-  const iconColor = tone === "neutral" ? colors.muted2 : colors.textOnAccent;
-  return (
-    <View style={[styles.heroCard, toneStyles]}>
-      <View style={[styles.heroIcon, iconStyle]}>
-        <Ionicons name={icon} size={30} color={iconColor} />
-      </View>
-      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.heroTitle}>{title}</Text>
-      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.heroBody}>{body}</Text>
-    </View>
-  );
-}
-
-function InfoPanel({ title, body, styles, colors }: {
-  title: string;
-  body: string;
-  styles: ReturnType<typeof createStyles>;
-  colors: ColorPalette;
-}) {
-  return (
-    <View style={styles.infoPanel}>
-      <View style={styles.panelTitleRow}>
-        <Ionicons name="information-circle-outline" size={19} color={colors.primary} />
-        <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.infoTitle}>{title}</Text>
-      </View>
-      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.infoBody}>{body}</Text>
-    </View>
-  );
-}
-
-function WarningPanel({ title, body, styles, colors }: {
-  title: string;
-  body: string;
-  styles: ReturnType<typeof createStyles>;
-  colors: ColorPalette;
-}) {
-  return (
-    <View style={styles.warningPanel}>
-      <View style={styles.warningTitleRow}>
-        <Ionicons name="warning-outline" size={21} color={colors.amberDark} />
-        <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.warningTitle}>{title}</Text>
-      </View>
-      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.warningBody}>{body}</Text>
-    </View>
-  );
-}
-
-function BulletRow({ text, last, styles }: {
-  text: string;
-  last?: boolean;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  return (
-    <View style={[styles.listRow, last && styles.listRowLast]}>
-      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.bullet}>•</Text>
-      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.listText}>{text}</Text>
-    </View>
-  );
-}
-
-function NumberedRow({ index, text, last, styles }: {
-  index: number;
-  text: string;
-  last?: boolean;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  return (
-    <View style={[styles.listRow, last && styles.listRowLast]}>
-      <View style={styles.numberBubble}>
-        <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.numberText}>{index}</Text>
-      </View>
-      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.listText}>{text}</Text>
-    </View>
-  );
-}
-
-function DetailRow({ label, value, last, styles }: {
-  label: string;
-  value: string;
-  last?: boolean;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  return (
-    <View style={[styles.detailRow, last && styles.detailRowLast]}>
-      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.detailLabel}>{label}</Text>
-      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.detailValue}>{value}</Text>
-    </View>
-  );
-}
-
 function PrimaryButton({ label, onPress, styles, colors, disabled, icon, loading }: {
   label: string;
   onPress: () => void;
@@ -794,18 +580,6 @@ function PrimaryButton({ label, onPress, styles, colors, disabled, icon, loading
         <Ionicons name={icon} size={20} color={disabled ? colors.muted2 : colors.textOnAccent} />
       ) : null}
       <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={[styles.primaryText, disabled && !loading && styles.primaryTextDisabled]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function TextLink({ label, onPress, styles }: {
-  label: string;
-  onPress: () => void;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.textLink, pressed && styles.pressed]}>
-      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.textLinkText}>{label}</Text>
     </Pressable>
   );
 }

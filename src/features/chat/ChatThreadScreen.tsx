@@ -176,7 +176,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
     return () => {
       alive = false;
     };
-  }, [initialPending, params.id]);
+  }, [initialPending, params.id, setMessages]);
 
   // Refresh existing deadlines whenever the screen comes back into focus so
   // that deleting or completing a deadline on the Deadlines screen immediately
@@ -223,7 +223,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
     return () => {
       alive = false;
     };
-  }, [initialPending, params.id, cachedEntry]);
+  }, [initialPending, params.id, cachedEntry, setMessages]);
 
   // Subscribe to this specific pending scan record. When its scanId arrives,
   // load scan data IN PLACE (no navigation flash), update URL silently, and
@@ -269,7 +269,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
       alive = false;
       unsub();
     };
-  }, [initialPending, pendingId]);
+  }, [initialPending, pendingId, setMessages]);
 
   const displayMessages = useMemo(() => {
     const orderedMessages = orderInitialScanMessages(messages);
@@ -340,7 +340,6 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
   const noQuestionsLeft = questionsMax <= 0 || questionsUsed >= questionsMax;
   const chatDisabled = streaming || isPending || Boolean(limits && noQuestionsLeft);
   const canSend = question.trim().length > 0 && !chatDisabled;
-  const displayQuestionLimit = questionsMax > 0 ? questionsMax : 10;
 
   return (
     <Screen>
