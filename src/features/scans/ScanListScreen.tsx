@@ -5,7 +5,9 @@ import { useScrollToTop } from "@react-navigation/native";
 
 import { Icon } from "@/components/Icon";
 import { ErrorText, Screen, useColors } from "@/components/ui";
+import { useAuth } from "@/features/auth/AuthProvider";
 import { listAllDeadlines } from "@/features/deadlines/deadlinesApi";
+import { scanListCache } from "@/features/scans/scanListCache";
 import { SCANS_PAGE_SIZE, deleteScan, getLimits, getScanCounts, listScans, type ScanCountsResponse } from "@/features/scans/scansApi";
 import { invalidateChatCache } from "@/features/chat/chatThreadCache";
 import { getPinnedScanIds, togglePinnedScan } from "@/features/scans/pinnedScansStore";
@@ -48,6 +50,8 @@ export function ScanListScreen() {
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const categoryStyleList = useMemo(() => getCategoryStyles(colors), [colors]);
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
 
   const [scans, setScans] = useState<ScanListItem[]>([]);
   const [deadlines, setDeadlines] = useState<DeadlineResponse[]>([]);
@@ -90,6 +94,25 @@ export function ScanListScreen() {
     };
   }, []);
 
+  // Seed from the last-known-good snapshot so the list renders instantly on
+  // cold start and stays visible offline. Only fills empty state — a fresh
+  // network load that already landed always wins.
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    void scanListCache.read(userId).then((snapshot) => {
+      if (cancelled || !snapshot) return;
+      setScans((current) => (current.length ? current : snapshot.scans));
+      setDeadlines((current) => (current.length ? current : snapshot.deadlines));
+      setCounts((current) => current ?? snapshot.counts);
+      setLimits((current) => current ?? snapshot.limits);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
   const load = useCallback(async () => {
     setError(null);
     try {
@@ -107,6 +130,14 @@ export function ScanListScreen() {
       setDeadlines(nextDeadlines);
       setPinnedIds(new Set(nextPinned));
       if (nextCounts) setCounts(nextCounts);
+      if (userId) {
+        scanListCache.write(userId, {
+          scans: nextScans,
+          deadlines: nextDeadlines,
+          counts: nextCounts,
+          limits: nextLimits,
+        });
+      }
     } catch (loadError) {
       if (!aliveRef.current) return;
       setError(loadError instanceof Error ? loadError.message : t("documents.loadError"));
@@ -116,7 +147,7 @@ export function ScanListScreen() {
         setRefreshing(false);
       }
     }
-  }, []);
+  }, [userId]);
 
   const loadMoreScans = useCallback(async () => {
     if (loading || refreshing || loadingMoreScans || !hasMoreScans) return;

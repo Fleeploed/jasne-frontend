@@ -21,11 +21,15 @@ import { ManualDeadlineModal } from "@/features/deadlines/components/ManualDeadl
 import { ManualDeadlineDetailModal } from "@/features/deadlines/components/ManualDeadlineDetailModal";
 import { DeadlineContextMenu } from "@/features/deadlines/components/DeadlineContextMenu";
 import { DeleteDeadlineModal } from "@/features/deadlines/components/DeleteDeadlineModal";
+import { deadlinesCache } from "@/features/deadlines/deadlinesCache";
+import { useAuth } from "@/features/auth/AuthProvider";
 
 export function DeadlinesScreen() {
   const colors = useColors();
   const router = useRouter();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
   const trackingsQuery = useTrackings();
   const trackings: Tracking[] = trackingsQuery.data ?? [];
   const { width: screenWidth } = useWindowDimensions();
@@ -76,6 +80,23 @@ export function DeadlinesScreen() {
     };
   }, []);
 
+  // Seed from the last-known-good snapshot so the list renders instantly on
+  // cold start and stays visible offline. Only fills empty state — a fresh
+  // network load that already landed always wins.
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    void deadlinesCache.read(userId).then((snapshot) => {
+      if (cancelled || !snapshot) return;
+      setDeadlines((current) => (current.length ? current : [...snapshot.deadlines].sort(compareDeadlines)));
+      setPlan(snapshot.plan);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
   const load = useCallback(async () => {
     setError(null);
     try {
@@ -85,8 +106,11 @@ export function DeadlinesScreen() {
         getLimits().catch(() => null),
       ]);
       if (!aliveRef.current) return;
-      setDeadlines([...all].sort(compareDeadlines));
-      setPlan(limits?.plan ?? "free");
+      const sorted = [...all].sort(compareDeadlines);
+      const nextPlan = limits?.plan ?? "free";
+      setDeadlines(sorted);
+      setPlan(nextPlan);
+      if (userId) deadlinesCache.write(userId, { deadlines: sorted, plan: nextPlan });
     } catch (loadError) {
       if (!aliveRef.current) return;
       setError(loadError instanceof Error ? loadError.message : t("deadlines.loadError"));
@@ -96,7 +120,7 @@ export function DeadlinesScreen() {
         setRefreshing(false);
       }
     }
-  }, []);
+  }, [userId]);
 
   useFocusEffect(
     useCallback(() => {
