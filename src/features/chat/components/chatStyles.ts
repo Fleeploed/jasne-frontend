@@ -1,7 +1,6 @@
 import { Platform, StyleSheet } from "react-native";
 import { fonts, typeStyles } from "@/components/ui";
 import type { ColorPalette } from "@/components/ui";
-import { attachmentKind, reminderOptionTitle, reminderSheetTitle } from "@/features/chat/components/chatData";
 
 export function createStyles(colors: ColorPalette) {
   const isDark = colors.bg === "#0F0D0B";

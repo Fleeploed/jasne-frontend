@@ -268,14 +268,14 @@ const ONBOARDING_COPY: Record<LanguageCode, OnboardingCopy> = {
   },
 };
 
-const LANGUAGE_OPTIONS: Array<{ code: LanguageCode; label: string }> = [
+const LANGUAGE_OPTIONS: { code: LanguageCode; label: string }[] = [
   { code: "cs", label: "Čeština" },
   { code: "en", label: "English" },
   { code: "uk", label: "Українська" },
   { code: "ru", label: "Русский" },
 ];
 
-const GUIDE_TOPICS: Record<LanguageCode, Array<{ icon: IconName; title: string; sub: string; tone: GuideTone }>> = {
+const GUIDE_TOPICS: Record<LanguageCode, { icon: IconName; title: string; sub: string; tone: GuideTone }[]> = {
   ru: [
     { icon: "globe", title: "Визы и проживание", sub: "МВД Чехии, разрешения", tone: "blue" },
     { icon: "doc-text", title: "Налоги", sub: "Декларация, НДС, OSVČ", tone: "amber" },
@@ -742,7 +742,7 @@ function ScanSlide({ active, copy, colors, styles, onNext }: SlideProps & { onNe
 // away, then the result card assembles section-by-section.
 const SCAN_SWEEP_DELAY = 250;
 const SCAN_SWEEP_DURATION = 1150;
-const SCAN_PHASES: Array<{ at: number; phase: number }> = [
+const SCAN_PHASES: { at: number; phase: number }[] = [
   { at: 1500, phase: 2 }, // paper → card morph + header
   { at: 1900, phase: 3 },
   { at: 2150, phase: 4 }, // payment + reminder button

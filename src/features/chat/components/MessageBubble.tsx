@@ -112,6 +112,9 @@ export function DocumentAttachmentBubble({ scanId, content, colors, styles, onOp
     return () => {
       alive = false;
     };
+    // pathsKey is the serialized form of `paths`; depending on the array ref
+    // itself would re-run the effect on every render for no benefit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathsKey, scanId, cacheKey]);
 
   const firstPath = paths[0] ?? "";

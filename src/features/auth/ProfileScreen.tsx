@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Modal, PanResponder, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Modal, PanResponder, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -147,7 +147,6 @@ export function ProfileScreen() {
   const max = limits?.scans_max ?? 5;
   const remaining = limits?.scans_remaining ?? Math.max(max - used, 0);
   const progress = max > 0 ? Math.min(used / max, 1) : 0;
-  const planLabel = limits?.plan === "pro" ? t("documents.proPlan") : t("documents.freePlan");
   const currentLocale = LOCALE_OPTIONS.find((o) => o.code === locale);
   const themeLabel = getThemeLabel(preference);
   const cycleTheme = useCallback(() => {
