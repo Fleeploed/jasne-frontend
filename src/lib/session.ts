@@ -10,8 +10,10 @@
 
 import { invalidateChatCache } from "@/features/chat/chatThreadCache";
 import { clearCachedProfile } from "@/features/auth/profileCache";
+import { deadlinesCache } from "@/features/deadlines/deadlinesCache";
 import { clearPendingScans } from "@/features/scans/pendingScanStore";
 import { clearPinnedScans } from "@/features/scans/pinnedScansStore";
+import { scanListCache } from "@/features/scans/scanListCache";
 import { resetAnalyticsUser } from "@/lib/analytics";
 import { clearPurchasesIdentity } from "@/lib/purchases";
 import { persister, queryClient } from "@/lib/queryClient";
@@ -67,7 +69,12 @@ async function signOutOnce() {
   await persister.removeClient();
   invalidateChatCache();
   clearPendingScans();
-  await Promise.all([clearPinnedScans(), clearCachedProfile()]);
+  await Promise.all([
+    clearPinnedScans(),
+    clearCachedProfile(),
+    scanListCache.clear(),
+    deadlinesCache.clear(),
+  ]);
   await supabase.auth.signOut();
 }
 
