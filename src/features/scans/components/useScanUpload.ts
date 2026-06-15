@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import {
+  deleteFromStorage,
   getLimits,
   getPdfPageCount,
   pickDocument,
@@ -318,16 +319,26 @@ export function useScanUpload({
       setActivePendingId(localId);
 
       pushPendingProgressById(localId, t("scan.uploading"));
+      let uploadedPaths: string[] | null = null;
       try {
-        const paths = await uploadToStorage(files);
-        if (paths.length !== files.length) {
+        uploadedPaths = await uploadToStorage(files);
+        if (uploadedPaths.length !== files.length) {
           throw new Error(t("scan.uploadCountMismatch"));
         }
-        await streamScan(paths, (event) => handleScanEvent(localId, event));
+        await streamScan(uploadedPaths, (event) => handleScanEvent(localId, event));
       } catch (scanError) {
         const message = scanError instanceof Error ? scanError.message : t("scan.failed");
         // Don't setError here — component may have unmounted while streaming.
         updatePendingScanById(localId, { error: message, active: false });
+      } finally {
+        // If the upload succeeded but no scan record came back (stream threw or
+        // the backend streamed an error event — which doesn't throw), the
+        // uploaded objects would orphan in storage. Best-effort cleanup; never
+        // touches the user's local files. Skip when a scan was created, since
+        // the record references these same objects.
+        if (uploadedPaths?.length && !getPendingScanById(localId)?.scanId) {
+          void deleteFromStorage(uploadedPaths);
+        }
       }
     } catch (scanError) {
       const message = scanError instanceof Error ? scanError.message : t("scan.failed");

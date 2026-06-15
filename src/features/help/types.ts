@@ -13,12 +13,15 @@ export type CtaAction =
   | "check_status_visa"
   | "open_help_center";
 
+// `locked` is set by the backend when a pro_only section is served to a free
+// user: body/items arrive empty and the client renders a blurred placeholder
+// instead of the real Pro content (see proGating.ts + ProBlurSection.tsx).
 export type Section =
-  | { type: "text"; title?: string | null; body: string; pro_only?: boolean }
-  | { type: "steps"; title?: string | null; items: string[]; pro_only?: boolean }
-  | { type: "checklist"; title?: string | null; items: string[]; pro_only?: boolean }
-  | { type: "warning"; title?: string | null; body: string; pro_only?: boolean }
-  | { type: "cta"; title?: string | null; actions: CtaAction[]; pro_only?: boolean };
+  | { type: "text"; title?: string | null; body: string; pro_only?: boolean; locked?: boolean }
+  | { type: "steps"; title?: string | null; items: string[]; pro_only?: boolean; locked?: boolean }
+  | { type: "checklist"; title?: string | null; items: string[]; pro_only?: boolean; locked?: boolean }
+  | { type: "warning"; title?: string | null; body: string; pro_only?: boolean; locked?: boolean }
+  | { type: "cta"; title?: string | null; actions: CtaAction[]; pro_only?: boolean; locked?: boolean };
 
 export type HelpQuickAction = {
   key: string;
