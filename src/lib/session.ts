@@ -14,7 +14,7 @@ import { clearPendingScans } from "@/features/scans/pendingScanStore";
 import { clearPinnedScans } from "@/features/scans/pinnedScansStore";
 import { resetAnalyticsUser } from "@/lib/analytics";
 import { clearPurchasesIdentity } from "@/lib/purchases";
-import { queryClient } from "@/lib/queryClient";
+import { persister, queryClient } from "@/lib/queryClient";
 import { supabase } from "@/lib/supabase";
 
 let signOutPromise: Promise<void> | null = null;
@@ -62,6 +62,9 @@ async function signOutOnce() {
   resetAnalyticsUser();
   await clearPurchasesIdentity();
   queryClient.clear();
+  // Also wipe the persisted copy so the next user on this device can't restore
+  // the previous account's trackings/entitlement from AsyncStorage.
+  await persister.removeClient();
   invalidateChatCache();
   clearPendingScans();
   await Promise.all([clearPinnedScans(), clearCachedProfile()]);
