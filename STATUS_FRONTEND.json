@@ -1163,6 +1163,11 @@
       "id": "fe-fix-87",
       "area": "React Query cache persistence (offline)",
       "fix": "Wrapped app in PersistQueryClientProvider (@tanstack/react-query-persist-client + query-async-storage-persister 5.101.0) so the RQ cache survives cold starts and is readable offline. Note: RQ only backs visa-status trackings (Deadlines screen) and the Pro entitlement — scans/deadlines still fetch manually via useState/useEffect and are NOT covered (would need AsyncStorage write-through or migration to useQuery, see backlog). queryClient.ts: AsyncStorage persister (key jasne_rq_cache_v1, 1s throttle), 24h maxAge, app-version buster via Application.nativeApplicationVersion (discards stale-shaped cache on new build), queries gcTime bumped to 24h so restored entries survive the persistence window. session.ts signOutOnce(): added persister.removeClient() next to queryClient.clear() so the next user on the device can't restore the previous account's trackings/entitlement from disk. jest.setup.js: added official AsyncStorage jest mock (queryClient.ts now imports it transitively). All 196 tests pass."
+    },
+    {
+      "id": "fe-fix-88",
+      "area": "Offline write-through cache (scans & deadlines)",
+      "fix": "Documents (ScanListScreen) and deadlines (DeadlinesScreen) fetch manually via useState/useEffect, so the RQ persister (fe-fix-87) didn't cover them. Added a user-scoped AsyncStorage write-through cache so both render instantly on cold start and stay readable offline behind the existing OfflineBanner. src/lib/userScopedCache.ts: generic createUserScopedCache<T> mirroring profileCache — single key tagged with owning userId so a different account on the device never reads someone else's snapshot (6 unit tests in userScopedCache.test.ts). scanListCache (scans+deadlines+counts+limits) / deadlinesCache (deadlines+plan): thin typed instances. Both screens hydrate from snapshot on mount via useAuth() userId (only fills empty state — a landed network load always wins) and write through on every successful load(). session.ts signOutOnce(): clears both caches alongside existing local-cache wipes. All 202 tests pass."
     }
   ],
   "known_issues_and_risks": [
@@ -1271,8 +1276,7 @@
       "Add frontend smoke/e2e checklist for simulator manual testing.",
       "Add Android emulator test pass.",
       "Biometric app lock (expo-local-authentication) — toggle in Profile + gate in _layout on foreground/launch + flag in SecureStore. Requires native rebuild.",
-      "Min supported app version check — backend already has GET /version; add min_supported field + blocking 'update app' screen for future breaking API changes.",
-      "Offline for scans/deadlines specifically: they fetch via manual useState/useEffect, NOT React Query, so the RQ persist (fe-fix-87) does not cover them. Add AsyncStorage write-through in their load() or migrate to useQuery."
+      "Min supported app version check — backend already has GET /version; add min_supported field + blocking 'update app' screen for future breaking API changes."
     ],
     "deferred": [
       "Full 6-screen onboarding flow",
