@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,24 +10,30 @@ import { getProPackages } from "@/lib/purchases";
 
 import { HELP_TEXT_SCALE } from "@/features/help/constants";
 
+// Widths for the fake skeleton bars behind the blur. Purely decorative — they
+// carry no real content, just give the BlurView something to blur so the gate
+// reads as "there is locked content here".
+const SKELETON_BAR_WIDTHS = ["92%", "78%", "85%", "60%"] as const;
+
 /**
- * Pro-only Help section, rendered for FREE users only. Pro users should
- * skip this component entirely and render the real section.
+ * Pro-only Help section, rendered for FREE users only. Pro users skip this
+ * component entirely and render the real section.
+ *
+ * SECURITY: this component renders NO real Pro content. The backend strips
+ * body/items from pro_only sections for free users (routers/help.py
+ * `_gate_sections_for_plan`), so the real text never reaches the device. Here
+ * we only draw a content-free skeleton + blur + upgrade gate. The blur is a
+ * visual shell, never the protection mechanism.
  *
  * Layout:
  *   ┌─ contentCard ─────────────────────┐
  *   │ Title (full opacity — readable)   │
  *   │ ┌─ inner (position: relative) ──┐ │
- *   │ │ <real children — full text>   │ │
+ *   │ │ <fake skeleton bars — no text>│ │
  *   │ │ <BlurView absoluteFill>       │ │  ← native gaussian blur
  *   │ │ <Pro gate centered overlay>   │ │
  *   │ └────────────────────────────────┘ │
  *   └────────────────────────────────────┘
- *
- * `children` are the real section body (steps / checklist / text without
- * the card wrapper or title — those come from this component). The
- * BlurView sits on top and makes them unreadable; the Pro gate is
- * centered over the blur.
  *
  * Android note: on Android, expo-blur uses a software fallback by default.
  * We opt into the Dimezis blur method which is closer to the iOS look
@@ -36,13 +41,7 @@ import { HELP_TEXT_SCALE } from "@/features/help/constants";
  * still degrade — that's acceptable; worst case is a darker translucent
  * panel, which still hides the content.
  */
-export function ProBlurSection({
-  title,
-  children,
-}: {
-  title?: string | null;
-  children: ReactNode;
-}) {
+export function ProBlurSection({ title }: { title?: string | null }) {
   const colors = useColors();
   const { scheme } = useThemePreference();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -72,9 +71,13 @@ export function ProBlurSection({
       ) : null}
 
       <View style={styles.inner}>
-        {/* Real content — kept in the tree so layout/height is natural,
-            but the BlurView above makes it unreadable. */}
-        <View pointerEvents="none">{children}</View>
+        {/* Content-free skeleton — gives the card a natural height and
+            something for the BlurView to blur. No real text lives here. */}
+        <View style={styles.skeleton} pointerEvents="none">
+          {SKELETON_BAR_WIDTHS.map((width, i) => (
+            <View key={i} style={[styles.skeletonBar, { width }]} />
+          ))}
+        </View>
 
         <BlurView
           intensity={20}
@@ -134,10 +137,20 @@ function createStyles(colors: ColorPalette) {
       // wrap so the blur doesn't bleed past the corners.
       borderRadius: 14,
       overflow: "hidden",
-      // Floor the height in case the real content is very short (e.g. a
-      // 2-item checklist) so the Pro gate still has breathing room.
+      // Floor the height so the Pro gate always has breathing room.
       minHeight: 200,
       justifyContent: "center",
+    },
+    skeleton: {
+      ...StyleSheet.absoluteFillObject,
+      padding: 16,
+      gap: 12,
+      justifyContent: "center",
+    },
+    skeletonBar: {
+      height: 12,
+      borderRadius: 6,
+      backgroundColor: colors.borderSoft,
     },
     overlay: {
       ...StyleSheet.absoluteFillObject,

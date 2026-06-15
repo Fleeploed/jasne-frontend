@@ -319,53 +319,11 @@ export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
         // warning/cta are always open regardless of the pro_only flag.
         const gated = section.pro_only && section.type !== "warning" && section.type !== "cta";
         if (gated && plan === "free") {
-          // Build the section body WITHOUT the outer contentCard wrapper
-          // and WITHOUT a title — ProBlurSection provides both. The body
-          // is what BlurView blurs.
-          let body: ReactNode;
-          if (section.type === "text") {
-            body = (
-              <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
-                {section.body}
-              </Text>
-            );
-          } else if (section.type === "steps") {
-            body = (
-              <View style={styles.listBlock}>
-                {section.items.map((item, i) => (
-                  <View key={`${i}-${item}`} style={styles.stepRow}>
-                    <View style={styles.stepNumber}>
-                      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.stepNumberText}>
-                        {i + 1}
-                      </Text>
-                    </View>
-                    <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
-                      {item}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            );
-          } else {
-            // checklist
-            body = (
-              <View style={styles.listBlock}>
-                {section.items.map((item, i) => (
-                  <View key={`${i}-${item}`} style={styles.checkRow}>
-                    <Ionicons name="checkmark-outline" size={24} color={colors.primary} />
-                    <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
-                      {item}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            );
-          }
-          return (
-            <ProBlurSection key={key} title={section.title ?? null}>
-              {body}
-            </ProBlurSection>
-          );
+          // SECURITY: never pass section.body/items into the tree here. For
+          // free users the backend already strips them (they arrive empty),
+          // and the real Pro content must never be rendered even as blurred
+          // nodes. ProBlurSection draws a content-free skeleton + upgrade gate.
+          return <ProBlurSection key={key} title={section.title ?? null} />;
         }
         return <View key={key}>{rendered}</View>;
       })}
