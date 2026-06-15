@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "meta": {
     "project": "Jasne frontend",
-    "snapshot_date": "2026-06-15",
+    "snapshot_date": "2026-06-15T16:20Z",
     "repo_path": "/Users/alisheribrayev/Documents/Jasne/jasne-frontend",
     "app_name": "Jasne",
     "current_version": "0.1.0",
@@ -1173,6 +1173,16 @@
       "id": "fe-fix-89",
       "area": "Green checks: lint error + jest worktree dedup + warning cleanup",
       "fix": "Lint went 1 error + 29 warnings -> 0 problems; typecheck 0; 111 tests pass. (1) Icon.tsx: removed duplicate 'copy' union member + the unreachable 2nd `case 'copy'` (switch matched the first; rendered glyph unchanged) — was the only error blocking CI lint. (2) jest.config.js: added testPathIgnorePatterns + modulePathIgnorePatterns for <rootDir>/.claude/ — sibling git worktrees there (gitignored, local-only) made Jest run every test 2-3x with haste-collision risk; true count is 7 suites/111 tests (the earlier 202 was worktree inflation). (3) Removed real dead code: 15 superseded inline OAMP-status components/helpers in HelpStatusScreen (replaced by OampStatusResultBody) + unused imports (ProfileScreen ActivityIndicator, HelpGuide Text, ProBlur Platform, chatStyles 3 type imports) + unused locals (planLabel, displayQuestionLimit, OampStatusResultScreen styles/colors). (4) array-type Array<T>->T[] (TrackingCard, OnboardingScreen). (5) Hook deps real fixes: added stable setMessages setter to 3 ChatThreadScreen effects, dropped unused item.id dep in DeadlineCard. (6) Hook deps intentional -> eslint-disable-next-line + reason (NOT silenced in .eslintrc): useOampHours keeps `locale` so t() re-translates on language switch (removing = i18n bug), MessageBubble keeps serialized pathsKey, NewScanScreen keeps narrow permission-field deps. (7) logger.ts file-level eslint-disable no-console (sanctioned console boundary); test files import/first disabled where jest.mock must precede imports. Net -219 lines."
+    },
+    {
+      "id": "fe-fix-90",
+      "area": "Storage cleanup for orphaned uploads (scans)",
+      "fix": "Closed a storage leak: if uploadToStorage() succeeded but the scan never produced a record, the uploaded objects orphaned in the `documents` bucket forever. New scansApi.deleteFromStorage(paths): best-effort removal via supabase.storage.from('documents').remove(paths) — never throws (runs on the failure path, must not mask the original error), logs only in __DEV__, operates strictly on storage keys (never the user's local files). useScanUpload.startScan(): lifted uploadedPaths out of the inner try-scope and added cleanup in a finally guarded by !getPendingScanById(localId)?.scanId. Chose finally over catch deliberately — handleScanEvent's SSE 'error' event sets the pending record's error WITHOUT throwing, so a catch-only cleanup would miss backend-side processing failures (the more common orphan source); finally + the scanId guard covers both the thrown path (network/abort) and the error-event path while never deleting objects a created scan still references. typecheck clean on changed files. NOTE (not closed by this FE change): requires a DELETE RLS policy on bucket `documents` ((storage.foldername(name))[1] = auth.uid()::text) or remove() silently no-ops; partial failure inside uploadToStorage itself (Nth of M files fails) still leaves earlier objects untracked — separate gap."
+    },
+    {
+      "id": "fe-fix-91",
+      "area": "Close Pro Help leakage in ProBlurSection",
+      "fix": "ProBlurSection.tsx: removed children parameter — no longer renders real Pro content as blurred nodes. Instead draws a content-free skeleton (4 placeholder bars) behind the blur + upgrade gate. ProBlurSection title prop stays (for the readable header). components.tsx HelpContentRenderer: simplified the gated-section path — no longer builds actual body/items for free users (the big block at line 325-362 with text/steps/checklist body builders is gone). Now just <ProBlurSection key={key} title={section.title ?? null} /> so the React tree never contains Pro strings. Backend (routers/help.py, models/help_schemas.py) already strips body/items on the API side (security gate), so the frontend defense-in-depth ensures Pro content never renders even if a backend bug leaks it. Added src/features/help/__tests__/HelpContentRenderer.test.tsx: 2 render tests using react-test-renderer (RTL v14 incompatible with React 18.3) proving free render has zero Pro strings even when passed an unstripped payload, and pro render shows the real content. All 113 FE tests pass."
     }
   ],
   "known_issues_and_risks": [
