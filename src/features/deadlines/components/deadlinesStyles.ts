@@ -141,6 +141,49 @@ export function createStyles(colors: ColorPalette) {
       backgroundColor: "transparent"
     },
     rowShellCompleted: { minHeight: 86 },
+    // Undo snackbar shown after a swipe-to-delete (floats above the tab bar).
+    undoBar: {
+      position: "absolute",
+      left: 16,
+      right: 16,
+      bottom: 18,
+      alignItems: "center",
+    },
+    undoCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      alignSelf: "stretch",
+      maxWidth: 460,
+      paddingVertical: 12,
+      paddingLeft: 16,
+      paddingRight: 8,
+      borderRadius: 14,
+      backgroundColor: colors.surface3,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      shadowColor: "#000",
+      shadowOpacity: 0.22,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 10,
+    },
+    undoText: {
+      flex: 1,
+      color: colors.text,
+      fontFamily: fonts.bodySemiBold,
+      ...typeStyles.rowSecondary,
+    },
+    undoButton: {
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+      borderRadius: 10,
+    },
+    undoButtonText: {
+      color: colors.primary,
+      fontFamily: fonts.bodyBold,
+      ...typeStyles.rowSecondary,
+    },
     // Underlay holding the action buttons. Buttons sit at flex-start (done)
     // and flex-end (edit/delete); the visible middle band is intentionally
     // covered by the card itself, so transparent here means no bg-color

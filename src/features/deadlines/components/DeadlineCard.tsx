@@ -4,7 +4,6 @@ import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture
 import { AppIcon } from "@/components/AppIcon";
 import type { ColorPalette } from "@/components/ui";
 import { triggerSelectionHaptic } from "@/lib/haptics";
-import { t } from "@/lib/i18n";
 import type { DeadlineResponse } from "@/lib/types";
 import type { DeadlinesStyles } from "@/features/deadlines/components/deadlinesStyles";
 import {
@@ -27,8 +26,7 @@ export function DeadlineCard({
   openDeadlineId,
   setOpenDeadlineId,
   onDone,
-  onEdit,
-  onDelete,
+  onSwipeDelete,
   onOpenManual,
   onLongPress,
   onOpenScan,
@@ -40,8 +38,7 @@ export function DeadlineCard({
   openDeadlineId: string | null;
   setOpenDeadlineId: (deadlineId: string | null) => void;
   onDone: (deadlineId: string) => Promise<void>;
-  onEdit: (deadline: DeadlineResponse) => void;
-  onDelete: (deadline: DeadlineResponse) => void;
+  onSwipeDelete: (deadline: DeadlineResponse) => void;
   onOpenManual: (deadline: DeadlineResponse) => void;
   onLongPress: (
     deadline: DeadlineResponse,
@@ -68,69 +65,31 @@ export function DeadlineCard({
     });
   }, [item, onLongPress]);
 
-  // Only one row open at a time: when another row claims `openDeadlineId`,
-  // close this one. gesture-handler animates the close on the UI thread.
+  // Close this row's swipe when another row is being swiped.
   useEffect(() => {
     if (openDeadlineId !== null && openDeadlineId !== item.id) {
       swipeableRef.current?.close();
     }
   }, [openDeadlineId, item.id]);
 
-  const commitEdit = useCallback(() => {
-    swipeableRef.current?.close();
-    onEdit(item);
-  }, [item, onEdit]);
-
-  const commitDelete = useCallback(() => {
-    swipeableRef.current?.close();
-    onDelete(item);
-  }, [item, onDelete]);
-
-  const commitDone = useCallback(() => {
-    swipeableRef.current?.close();
-    void onDone(item.id);
-  }, [item.id, onDone]);
-
-  // Right-swipe action ("mark done"); not rendered on completed rows.
-  const renderLeftActions = useCallback(
+  // Swipe right reveals a green "done" check — active rows only.
+  const renderDoneAction = useCallback(
     () => (
-      <Pressable
-        onPress={commitDone}
-        accessibilityRole="button"
-        accessibilityLabel={t("deadlines.markDone")}
-        style={({ pressed }) => [styles.swipeDoneArea, pressed && styles.pressed]}
-      >
+      <View style={styles.swipeDoneArea}>
         <AppIcon name="check" size={24} color={colors.greenDark} strokeWidth={2.4} />
-      </Pressable>
-    ),
-    [colors.greenDark, commitDone, styles]
-  );
-
-  // Left-swipe actions — edit + delete (delete only on completed rows).
-  const renderRightActions = useCallback(
-    () => (
-      <View style={[styles.swipeLeftActions, done && styles.swipeLeftActionsCompact]}>
-        {!done ? (
-          <Pressable
-            onPress={commitEdit}
-            accessibilityRole="button"
-            accessibilityLabel={t("common.edit")}
-            style={({ pressed }) => [styles.swipeEditArea, pressed && styles.pressed]}
-          >
-            <AppIcon name="sliders" size={22} color={colors.primary} strokeWidth={1.9} />
-          </Pressable>
-        ) : null}
-        <Pressable
-          onPress={commitDelete}
-          accessibilityRole="button"
-          accessibilityLabel={t("common.delete")}
-          style={({ pressed }) => [styles.swipeDeleteArea, pressed && styles.pressed]}
-        >
-          <AppIcon name="x" size={22} color={colors.dangerDark} strokeWidth={2.2} />
-        </Pressable>
       </View>
     ),
-    [colors.dangerDark, colors.primary, commitDelete, commitEdit, done, styles]
+    [colors.greenDark, styles.swipeDoneArea]
+  );
+
+  // Swipe left reveals a red delete.
+  const renderDeleteAction = useCallback(
+    () => (
+      <View style={styles.swipeDeleteArea}>
+        <AppIcon name="x" size={22} color={colors.dangerDark} strokeWidth={2.2} />
+      </View>
+    ),
+    [colors.dangerDark, styles.swipeDeleteArea]
   );
 
   const sourceLabel = item.scan_id ? deadlineSourceLabel(item) : null;
@@ -192,11 +151,16 @@ export function DeadlineCard({
         overshootRight={false}
         leftThreshold={SWIPE_RIGHT_WIDTH * 0.5}
         rightThreshold={SWIPE_LEFT_THRESHOLD}
-        renderLeftActions={done ? undefined : renderLeftActions}
-        renderRightActions={renderRightActions}
-        onSwipeableWillOpen={() => {
-          setOpenDeadlineId(item.id);
+        renderLeftActions={done ? undefined : renderDoneAction}
+        renderRightActions={renderDeleteAction}
+        onSwipeableWillOpen={() => setOpenDeadlineId(item.id)}
+        onSwipeableOpen={(direction, swipeable) => {
           triggerSelectionHaptic();
+          // direction "left"  = left actions revealed = swiped RIGHT → mark done.
+          // direction "right" = right actions revealed = swiped LEFT  → delete.
+          if (direction === "left") void onDone(item.id);
+          else onSwipeDelete(item);
+          swipeable.close();
         }}
         onSwipeableClose={() => {
           if (openDeadlineId === item.id) setOpenDeadlineId(null);
@@ -204,10 +168,6 @@ export function DeadlineCard({
       >
         <Pressable
           onPress={() => {
-            if (openDeadlineId === item.id) {
-              swipeableRef.current?.close();
-              return;
-            }
             if (item.scan_id) onOpenScan(item.scan_id);
             else onOpenManual(item);
           }}
