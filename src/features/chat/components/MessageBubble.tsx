@@ -1,6 +1,7 @@
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
+import { SelectableText } from "@/components/SelectableText";
 import type { ColorPalette } from "@/components/ui";
 import { getScanImageUrls } from "@/features/scans/scansApi";
 import type { PendingAttachment } from "@/features/scans/pendingScanStore";
@@ -8,7 +9,20 @@ import { t } from "@/lib/i18n";
 import { supabase } from "@/lib/supabase";
 import type { DeadlineResponse, ScanResponse, UserPlan } from "@/lib/types";
 import type { ChatStyles } from "@/features/chat/components/chatStyles";
-import { attachmentKind, attachmentUrlCache, fileNameFromPath, getCachedAttachmentUrls, isPdfPath, isPreviewableAttachment, isPreviewableImage, markdownToPlainText, parseStoragePaths } from "@/features/chat/components/chatData";
+import {
+  attachmentKind,
+  attachmentUrlCache,
+  cacheChatImages,
+  cachedImageSource,
+  fileNameFromPath,
+  getCachedAttachmentUrls,
+  isPdfPath,
+  isPreviewableAttachment,
+  isPreviewableImage,
+  markdownToPlainText,
+  parseStoragePaths,
+  prefetchImageUris,
+} from "@/features/chat/components/chatData";
 import type { UiMessage } from "@/features/chat/components/chatData";
 import { CopyButton } from "@/features/chat/components/CopyButton";
 import { ResultCard } from "@/features/chat/components/ResultCard";
@@ -38,9 +52,9 @@ export function MessageBubble({ message, scan, plan, existingDeadlines, deadline
   return (
     <View style={isUser ? styles.messageColUser : styles.messageColAssistant}>
       <View style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}>
-        <Text style={[styles.bubbleText, isUser && styles.userText]}>
+        <SelectableText style={[styles.bubbleText, isUser && styles.userText]}>
           {isUser ? message.content || t("chat.thinking") : assistantText}
-        </Text>
+        </SelectableText>
       </View>
       {!isUser && message.content ? (
         <View style={styles.messageCopyRow}>
@@ -64,6 +78,7 @@ export function DocumentAttachmentBubble({ scanId, content, colors, styles, onOp
   const cacheKey = `${scanId}::${pathsKey}`;
   const cachedUrls = getCachedAttachmentUrls(cacheKey);
   const [signedUrls, setSignedUrls] = useState<string[]>(cachedUrls ?? []);
+  const [cachedImageUrls, setCachedImageUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(paths.length > 0 && !cachedUrls);
   const [failed, setFailed] = useState(false);
 
@@ -112,10 +127,29 @@ export function DocumentAttachmentBubble({ scanId, content, colors, styles, onOp
     return () => {
       alive = false;
     };
+    // pathsKey is the serialized form of `paths`; depending on the array ref
+    // itself would re-run the effect on every render for no benefit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathsKey, scanId, cacheKey]);
 
+  useEffect(() => {
+    let alive = true;
+    setCachedImageUrls([]);
+    if (!signedUrls.length) return undefined;
+
+    prefetchImageUris(signedUrls);
+    void cacheChatImages(cacheKey, signedUrls).then((cached) => {
+      if (alive) setCachedImageUrls(cached);
+    });
+
+    return () => {
+      alive = false;
+    };
+  }, [cacheKey, signedUrls]);
+
   const firstPath = paths[0] ?? "";
-  const firstUrl = signedUrls[0];
+  const viewerUrls = cachedImageUrls.length === signedUrls.length ? cachedImageUrls : signedUrls;
+  const firstUrl = viewerUrls[0];
   const firstIsPdf = isPdfPath(firstPath);
   const firstUrlIsImage = !firstIsPdf || isPreviewableImage(firstUrl ?? "") || firstUrl?.startsWith("data:image/");
 
@@ -131,11 +165,11 @@ export function DocumentAttachmentBubble({ scanId, content, colors, styles, onOp
 
   if (firstUrl && !failed && firstUrlIsImage) {
     return (
-      <Pressable style={styles.imageBubble} onPress={onOpenViewer ? () => onOpenViewer(signedUrls, 0) : undefined}>
-        <Image source={{ uri: firstUrl }} style={styles.sentImage} resizeMode="cover" />
-        {signedUrls.length > 1 ? (
+      <Pressable style={styles.imageBubble} onPress={onOpenViewer ? () => onOpenViewer(viewerUrls, 0) : undefined}>
+        <Image source={cachedImageSource(firstUrl)} style={styles.sentImage} resizeMode="cover" />
+        {viewerUrls.length > 1 ? (
           <View style={styles.imageCountBadge}>
-            <Text style={styles.imageCountText}>+{signedUrls.length - 1}</Text>
+            <Text style={styles.imageCountText}>+{viewerUrls.length - 1}</Text>
           </View>
         ) : null}
       </Pressable>
@@ -167,7 +201,7 @@ export function PendingAttachmentBubble({ attachments, styles, onOpenViewer }: {
     const uris = attachments.map((a) => a.uri);
     return (
       <Pressable style={styles.imageBubble} onPress={onOpenViewer ? () => onOpenViewer(uris, 0) : undefined}>
-        <Image source={{ uri: first.uri }} style={styles.sentImage} resizeMode="cover" />
+        <Image source={cachedImageSource(first.uri)} style={styles.sentImage} resizeMode="cover" />
         {attachments.length > 1 ? (
           <View style={styles.imageCountBadge}>
             <Text style={styles.imageCountText}>+{attachments.length - 1}</Text>
@@ -185,4 +219,3 @@ export function PendingAttachmentBubble({ attachments, styles, onOpenViewer }: {
     </View>
   );
 }
-

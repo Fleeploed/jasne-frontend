@@ -28,7 +28,12 @@ export default function OdvolaniGuideRoute() {
         <Text style={styles.topTitle}>{t("oamp.odvolani.title")}</Text>
         <View style={styles.topSpacer} />
       </View>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="always"
+      >
         <View style={styles.card}>
           <Text style={styles.kicker}>OAMP</Text>
           <SelectableText style={styles.title}>{t("oamp.odvolani.heading")}</SelectableText>

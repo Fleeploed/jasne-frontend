@@ -1,7 +1,10 @@
 import { Platform, StyleSheet } from "react-native";
 import { fonts, typeStyles } from "@/components/ui";
 import type { ColorPalette } from "@/components/ui";
-import { attachmentKind, reminderOptionTitle, reminderSheetTitle } from "@/features/chat/components/chatData";
+
+// Telegram-style auto-growing composer input bounds.
+const COMPOSER_MIN_INPUT_HEIGHT = 22;
+const COMPOSER_MAX_INPUT_HEIGHT = 120;
 
 export function createStyles(colors: ColorPalette) {
   const isDark = colors.bg === "#0F0D0B";
@@ -202,7 +205,10 @@ export function createStyles(colors: ColorPalette) {
       borderRadius: 14,
       borderWidth: 1,
       borderColor: colors.blueMid,
-      padding: 14,
+      paddingHorizontal: 14,
+      paddingTop: 14,
+      paddingBottom: 20,
+      overflow: "visible",
     },
     deadlineCardLabel: {
       color: colors.primary,
@@ -238,21 +244,26 @@ export function createStyles(colors: ColorPalette) {
       ...typeStyles.rowMeta,
     },
     deadlineCardBtn: {
-      marginTop: 12,
-      height: 38,
-      borderRadius: 10,
+      marginTop: 16,
+      minHeight: 48,
+      borderRadius: 12,
       backgroundColor: colors.primaryDark,
       flexDirection: "row" as const,
       alignItems: "center" as const,
       justifyContent: "center" as const,
       gap: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
     },
+    deadlineCardBottomSpacer: { height: 8 },
     deadlineCardBtnSaved: { backgroundColor: colors.greenLight },
     deadlineCardBtnText: {
       color: colors.textOnAccent,
       fontFamily: fonts.bodySemiBold,
       ...typeStyles.rowMeta,
       fontWeight: "600",
+      flexShrink: 1,
+      textAlign: "center",
     },
     deadlineCardBtnTextSaved: { color: colors.greenDark },
     reminderOverlay: {
@@ -656,15 +667,16 @@ export function createStyles(colors: ColorPalette) {
       gap: 8
     },
     composerPill: {
-      height: 48,
+      minHeight: 48,
       borderRadius: 24,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surface2,
       flexDirection: "row",
-      alignItems: "center",
+      alignItems: "flex-end",
       paddingLeft: 18,
       paddingRight: 6,
+      paddingVertical: 6,
       gap: 10,
       shadowColor: "#000",
       shadowOpacity: 0,
@@ -677,15 +689,19 @@ export function createStyles(colors: ColorPalette) {
       color: colors.text,
       fontFamily: fonts.body,
       fontSize: 14,
-      lineHeight: 17,
-      paddingVertical: 0
+      lineHeight: 18,
+      paddingVertical: 0,
+      minHeight: COMPOSER_MIN_INPUT_HEIGHT,
+      maxHeight: COMPOSER_MAX_INPUT_HEIGHT,
+      marginBottom: 7
     },
     composerCounter: {
       color: colors.muted3,
       fontFamily: fonts.body,
       ...typeStyles.caption2,
       minWidth: 24,
-      textAlign: "right"
+      textAlign: "right",
+      alignSelf: "center"
     },
     lockedComposer: {
       gap: 8

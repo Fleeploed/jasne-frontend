@@ -1,4 +1,5 @@
 import type React from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { BrandWordmark } from "@/components/BrandMark";
@@ -94,9 +95,23 @@ export function DocumentCategoryFilterBar({
   styles: ScanListStyles;
   onSelect: (filter: DocumentCategoryFilterKey) => void;
 }) {
+  const scrollRef = useRef<ScrollView>(null);
+  const selectedIndex = useMemo(
+    () => Math.max(0, filters.findIndex((filter) => filter.key === selected)),
+    [filters, selected],
+  );
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({
+      x: Math.max(0, selectedIndex * 104 - 16),
+      animated: false,
+    });
+  }, [selectedIndex]);
+
   return (
     <View style={styles.categoryFilterShell}>
       <ScrollView
+        ref={scrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.categoryFilterContent}

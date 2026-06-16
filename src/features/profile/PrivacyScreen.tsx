@@ -6,8 +6,8 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import { Screen, fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
-import { listDeadlines } from "@/features/deadlines/deadlinesApi";
-import { deleteAllScans, listScans } from "@/features/scans/scansApi";
+import { listAllDeadlines } from "@/features/deadlines/deadlinesApi";
+import { deleteAllScans, getScanCounts } from "@/features/scans/scansApi";
 import { invalidateChatCache } from "@/features/chat/chatThreadCache";
 import { t } from "@/lib/i18n";
 
@@ -41,9 +41,13 @@ export function PrivacyScreen() {
 
   const loadCounts = useCallback(async () => {
     try {
-      const [scans, deadlines] = await Promise.all([listScans(), listDeadlines(false)]);
+      // getScanCounts returns the true total (not gated by page size or the
+      // Free archive limit, unlike listScans), and listAllDeadlines paginates
+      // past the 50-row page — so the delete-all preview reflects everything
+      // that will actually be removed.
+      const [scanCounts, deadlines] = await Promise.all([getScanCounts(), listAllDeadlines(false)]);
       if (!aliveRef.current) return;
-      setScansCount(scans.length);
+      setScansCount(scanCounts.total);
       setDeadlinesCount(deadlines.length);
     } catch {
       if (!aliveRef.current) return;

@@ -1,3 +1,5 @@
+import * as FileSystem from "expo-file-system";
+import { Image } from "react-native";
 import type { ColorPalette } from "@/components/ui";
 import { createManualDeadline, listAllDeadlines } from "@/features/deadlines/deadlinesApi";
 import type { PendingAttachment } from "@/features/scans/pendingScanStore";
@@ -9,6 +11,9 @@ export const chatScrollOffsets = new Map<string, number>();
 // Signed URLs expire in 1h; cache for 50 min to keep a safety margin.
 export const ATTACHMENT_URL_TTL_MS = 50 * 60 * 1000;
 export const attachmentUrlCache = new Map<string, { urls: string[]; cachedAt: number }>();
+const CHAT_IMAGE_CACHE_DIR = FileSystem.cacheDirectory ? `${FileSystem.cacheDirectory}chat-images/` : null;
+const chatImageFileCache = new Map<string, string>();
+const chatImageCachePromises = new Map<string, Promise<string | null>>();
 
 // Scans whose analysis deadlines we already synced into the deadlines table
 // this session. Prevents recreating deadlines the user has intentionally deleted.
@@ -66,6 +71,90 @@ export function getCachedAttachmentUrls(key: string): string[] | null {
     return null;
   }
   return hit.urls;
+}
+
+export function isRemoteImageUri(uri: string) {
+  return /^https?:\/\//i.test(uri);
+}
+
+export function cachedImageSource(uri: string) {
+  return isRemoteImageUri(uri) ? { uri, cache: "force-cache" as const } : { uri };
+}
+
+function chatImageCacheExtension(uri: string) {
+  const clean = uri.split("?", 1)[0].toLowerCase();
+  if (clean.endsWith(".png")) return ".png";
+  if (clean.endsWith(".gif")) return ".gif";
+  if (clean.endsWith(".webp")) return ".webp";
+  if (clean.endsWith(".jpeg")) return ".jpg";
+  return ".jpg";
+}
+
+function hashCacheKey(input: string) {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+async function ensureChatImageCacheDir() {
+  if (!CHAT_IMAGE_CACHE_DIR) return null;
+  const info = await FileSystem.getInfoAsync(CHAT_IMAGE_CACHE_DIR);
+  if (!info.exists) {
+    await FileSystem.makeDirectoryAsync(CHAT_IMAGE_CACHE_DIR, { intermediates: true });
+  }
+  return CHAT_IMAGE_CACHE_DIR;
+}
+
+async function cacheChatImage(cacheKey: string, uri: string, index: number) {
+  if (!isRemoteImageUri(uri)) return uri;
+
+  const imageCacheKey = `${cacheKey}::${index}`;
+  const memoryHit = chatImageFileCache.get(imageCacheKey);
+  if (memoryHit) return memoryHit;
+
+  const pending = chatImageCachePromises.get(imageCacheKey);
+  if (pending) return pending;
+
+  const promise = (async () => {
+    try {
+      const dir = await ensureChatImageCacheDir();
+      if (!dir) return null;
+
+      const fileUri = `${dir}${hashCacheKey(imageCacheKey)}${chatImageCacheExtension(uri)}`;
+      const info = await FileSystem.getInfoAsync(fileUri);
+      if (info.exists) {
+        chatImageFileCache.set(imageCacheKey, fileUri);
+        return fileUri;
+      }
+
+      const result = await FileSystem.downloadAsync(uri, fileUri);
+      chatImageFileCache.set(imageCacheKey, result.uri);
+      return result.uri;
+    } catch {
+      return null;
+    } finally {
+      chatImageCachePromises.delete(imageCacheKey);
+    }
+  })();
+
+  chatImageCachePromises.set(imageCacheKey, promise);
+  return promise;
+}
+
+export async function cacheChatImages(cacheKey: string, uris: string[]) {
+  const cached = await Promise.all(uris.map((uri, index) => cacheChatImage(cacheKey, uri, index)));
+  return uris.map((uri, index) => cached[index] ?? uri);
+}
+
+export function prefetchImageUris(uris: string[]) {
+  uris.forEach((uri) => {
+    if (isRemoteImageUri(uri)) {
+      void Image.prefetch(uri).catch(() => undefined);
+    }
+  });
 }
 
 export type UiMessage = ScanMessage | {
@@ -366,4 +455,3 @@ export function formatPendingScanError(message: string | null) {
   }
   return message;
 }
-

@@ -1,20 +1,69 @@
 import type { PickedUpload } from "@/features/scans/scansApi";
 import { t } from "@/lib/i18n";
+import type { CameraDevice } from "react-native-vision-camera";
 
 export type ScannerCopy = ReturnType<typeof getScannerCopy>;
 export type CameraFocusPoint = { x: number; y: number; key: number };
-export type CameraZoomLevel = { label: string; value: number };
+export type CameraTapPoint = { x: number; y: number };
+export type CameraZoomLevel = { label: string; value: number; displayValue: number };
 
-export const CAMERA_ZOOM_LEVELS: CameraZoomLevel[] = [
-  { label: "1x", value: 0 },
-  { label: "2x", value: 0.18 },
-  { label: "3x", value: 0.32 },
-];
-export const CAMERA_MAX_ZOOM = 0.48;
+export const CAMERA_MAX_ZOOM_FACTOR = 6;
+export const CAMERA_DISPLAY_ZOOM_LEVELS = [0.5, 1, 2, 3];
+export const CAMERA_ZOOM_SWIPE_DISTANCE = 520;
+export const CAMERA_ZOOM_SWIPE_ACTIVATE_DX = 9;
+export const CAMERA_ZOOM_HIDE_DELAY_MS = 650;
 export const SHUTTER_BLACKOUT_MS = 180;
 
-export function clampCameraZoom(value: number) {
-  return Math.max(0, Math.min(CAMERA_MAX_ZOOM, value));
+type ZoomCapableDevice = Pick<CameraDevice, "minZoom" | "maxZoom" | "neutralZoom">;
+
+export function cameraDefaultZoom(device?: Pick<CameraDevice, "neutralZoom">) {
+  return device?.neutralZoom ?? 1;
+}
+
+// VisionCamera exposes native zoom factors. The UI shows iPhone-style zoom
+// relative to the wide/neutral lens: displayZoom = nativeZoom / neutralZoom.
+export function cameraDisplayZoomForNative(value: number, device?: Pick<CameraDevice, "neutralZoom">) {
+  return value / Math.max(cameraDefaultZoom(device), 0.1);
+}
+
+export function cameraNativeZoomForDisplay(value: number, device?: Pick<CameraDevice, "neutralZoom">) {
+  return value * cameraDefaultZoom(device);
+}
+
+export function cameraZoomBounds(device?: ZoomCapableDevice) {
+  const defaultZoom = cameraDefaultZoom(device);
+  const minZoom = Math.max(device?.minZoom ?? defaultZoom, 0.1);
+  const maxZoom = Math.max(minZoom, Math.min(device?.maxZoom ?? CAMERA_MAX_ZOOM_FACTOR, CAMERA_MAX_ZOOM_FACTOR));
+  return { minZoom, maxZoom };
+}
+
+export function clampCameraZoom(value: number, device?: ZoomCapableDevice) {
+  const { minZoom, maxZoom } = cameraZoomBounds(device);
+  return Math.max(minZoom, Math.min(maxZoom, value));
+}
+
+export function cameraZoomLevelsForDevice(device?: ZoomCapableDevice) {
+  const { minZoom, maxZoom } = cameraZoomBounds(device);
+  const levels = CAMERA_DISPLAY_ZOOM_LEVELS.flatMap((displayValue) => {
+    const nativeValue = cameraNativeZoomForDisplay(displayValue, device);
+    if (nativeValue < minZoom - 0.05 || nativeValue > maxZoom + 0.05) return [];
+    return [{ label: formatCameraZoomLabel(displayValue), value: clampCameraZoom(nativeValue, device), displayValue }];
+  });
+  if (levels.length > 0) return levels;
+  const displayValue = cameraDisplayZoomForNative(minZoom, device);
+  return [{ label: formatCameraZoomLabel(displayValue), value: minZoom, displayValue }];
+}
+
+export function nearestCameraZoomLevel(value: number, levels: CameraZoomLevel[]) {
+  return levels.reduce((best, level) =>
+    Math.abs(level.value - value) < Math.abs(best.value - value) ? level : best
+  );
+}
+
+export function formatCameraZoomLabel(value: number) {
+  const rounded = Math.round(value);
+  if (Math.abs(value - rounded) < 0.08) return `${rounded}x`;
+  return `${value.toFixed(1)}x`;
 }
 
 export const stepLabels: Record<string, ReturnType<typeof t>> = {
@@ -48,6 +97,24 @@ export function subtitleForState(copy: ScannerCopy, count: number, maxPages: num
 
 export function isPdfUpload(file: PickedUpload) {
   return file.mimeType === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+/**
+ * Decide whether to delete the just-uploaded storage objects after a scan
+ * stream ends. Only true when the backend explicitly reported an error (no
+ * scan was persisted) — the single case where the uploaded files are truly
+ * orphaned. A transport/SSE drop (stream throws with neither a `done` nor an
+ * `error` event) is ambiguous: the backend may have already created the scan
+ * record that references these objects, so we keep the files and let backend
+ * orphan-cleanup handle the rare leak. Deleting them here would strand a scan
+ * with missing files — the worse failure.
+ */
+export function shouldCleanupUploadedStorage(args: {
+  uploadedPaths: string[] | null;
+  scanCreated: boolean;
+  backendErrored: boolean;
+}): boolean {
+  return Boolean(args.uploadedPaths?.length) && !args.scanCreated && args.backendErrored;
 }
 
 export function getScannerCopy(locale: string) {
@@ -221,4 +288,3 @@ export function getScannerCopy(locale: string) {
 
   return copies[language];
 }
-

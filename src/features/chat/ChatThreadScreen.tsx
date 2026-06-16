@@ -70,7 +70,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
 
   // Chat answer stream — owns the message list, composer input, and the
   // optimistic send → SSE flow. Initial load below feeds it via setMessages.
-  const { messages, setMessages, question, setQuestion, streaming, ask } = useChatStream({
+  const { messages, setMessages, question, setQuestion, streaming, ask, stop } = useChatStream({
     scanId,
     initialMessages: cachedEntry?.messages ?? [],
     setError,
@@ -130,6 +130,13 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
       .catch(() => {});
   }, [initialPending, params.id, scan?.id]);
 
+  // Manual stop of an in-flight answer stream. The backend may have already
+  // counted the question before cancellation, so resync limits right after.
+  const handleStopStreaming = useCallback(() => {
+    stop();
+    refreshCurrentLimits();
+  }, [refreshCurrentLimits, stop]);
+
   // Tracks whether the server fetch has populated state, so a slower disk
   // hydrate doesn't overwrite fresh data with stale.
   const serverHydratedRef = useRef(Boolean(cachedEntry));
@@ -176,7 +183,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
     return () => {
       alive = false;
     };
-  }, [initialPending, params.id]);
+  }, [initialPending, params.id, setMessages]);
 
   // Refresh existing deadlines whenever the screen comes back into focus so
   // that deleting or completing a deadline on the Deadlines screen immediately
@@ -223,7 +230,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
     return () => {
       alive = false;
     };
-  }, [initialPending, params.id, cachedEntry]);
+  }, [initialPending, params.id, cachedEntry, setMessages]);
 
   // Subscribe to this specific pending scan record. When its scanId arrives,
   // load scan data IN PLACE (no navigation flash), update URL silently, and
@@ -269,7 +276,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
       alive = false;
       unsub();
     };
-  }, [initialPending, pendingId]);
+  }, [initialPending, pendingId, setMessages]);
 
   const displayMessages = useMemo(() => {
     const orderedMessages = orderInitialScanMessages(messages);
@@ -340,7 +347,6 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
   const noQuestionsLeft = questionsMax <= 0 || questionsUsed >= questionsMax;
   const chatDisabled = streaming || isPending || Boolean(limits && noQuestionsLeft);
   const canSend = question.trim().length > 0 && !chatDisabled;
-  const displayQuestionLimit = questionsMax > 0 ? questionsMax : 10;
 
   return (
     <Screen>
@@ -375,7 +381,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
             onContentSizeChange={handleContentSizeChange}
             onScroll={handleScroll}
             scrollEventThrottle={16}
-            keyboardShouldPersistTaps="handled"
+            keyboardShouldPersistTaps="always"
             renderItem={({ item }) => (
               <MessageBubble
                 message={item}
@@ -426,6 +432,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
                 questionsUsed={questionsUsed}
                 questionsMax={questionsMax}
                 onSend={ask}
+                onStop={handleStopStreaming}
                 colors={colors}
                 styles={styles}
               />

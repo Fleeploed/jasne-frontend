@@ -184,6 +184,28 @@ export async function uploadToStorage(files: PickedUpload[]) {
   return paths;
 }
 
+/**
+ * Best-effort removal of storage objects from the `documents` bucket. Used to
+ * clean up after a successful upload when the subsequent scan never produced a
+ * record (stream threw or the backend emitted an error event) — otherwise the
+ * objects orphan in storage forever. Only operates on storage paths, never the
+ * user's local files. Never throws: callers run this on a failure path and must
+ * not have the original error masked.
+ */
+export async function deleteFromStorage(paths: string[]): Promise<void> {
+  if (!paths.length) return;
+  try {
+    const { error } = await supabase.storage.from("documents").remove(paths);
+    if (error && __DEV__) {
+      logger.warn("Supabase storage cleanup failed", { paths, message: error.message });
+    }
+  } catch (cleanupError) {
+    if (__DEV__) {
+      logger.warn("Supabase storage cleanup threw", { paths, error: cleanupError });
+    }
+  }
+}
+
 function parseStorageErrorMessage(body: string): string | null {
   try {
     const parsed = JSON.parse(body) as { message?: unknown; error?: unknown };

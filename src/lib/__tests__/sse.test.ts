@@ -1,3 +1,4 @@
+/* eslint-disable import/first -- jest.mock() must run before the imports it stubs; babel hoists these above the imports. */
 // sse.ts imports api/config/session which pull in native AsyncStorage — mock them.
 jest.mock('@/lib/api', () => ({ authHeaders: jest.fn().mockResolvedValue({}) }));
 jest.mock('@/lib/config', () => ({ config: { apiBaseUrl: 'http://localhost' } }));

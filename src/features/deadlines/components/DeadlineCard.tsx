@@ -193,7 +193,7 @@ export function DeadlineCard({
           closeRow();
         },
       }),
-    [closeRow, commitDone, done, item.id, leftRevealThreshold, maxSwipeX, minSwipeX, openLeftActions, openRightAction, rightCommitThreshold, rightRevealThreshold, rightWidth, setOpenDeadlineId, translateX]
+    [closeRow, commitDone, done, leftRevealThreshold, maxSwipeX, minSwipeX, openLeftActions, openRightAction, rightCommitThreshold, rightRevealThreshold, rightWidth, setOpenDeadlineId, translateX]
   );
 
   const sourceLabel = item.scan_id ? deadlineSourceLabel(item) : null;

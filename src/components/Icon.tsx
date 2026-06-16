@@ -60,7 +60,6 @@ export type IconName =
   | 'building'
   | 'zap'
   | 'phone-document'
-  | 'copy'
   | 'trash';
 
 export interface IconProps {

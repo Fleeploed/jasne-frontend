@@ -31,6 +31,22 @@ export function SearchEmpty({ query, colors, styles }: {
   );
 }
 
+export function CategoryEmpty({ category, colors, styles }: {
+  category: string;
+  colors: ColorPalette;
+  styles: ScanListStyles;
+}) {
+  return (
+    <View style={styles.searchEmpty}>
+      <Icon name="doc-text" size={40} color={colors.muted3} />
+      <Text style={styles.searchEmptyTitle}>{t("documents.categoryEmptyTitle")}</Text>
+      <Text style={styles.searchEmptyDetail}>
+        {t("documents.categoryEmptyDetail", { category })}
+      </Text>
+    </View>
+  );
+}
+
 export function OfflineState({
   onRetry,
   colors,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { ActivityIndicator, Animated, Easing, Text, View } from "react-native";
 import type { DimensionValue } from "react-native";
+import { SelectableText } from "@/components/SelectableText";
 import type { ColorPalette } from "@/components/ui";
 import { extractOampIdentifier } from "@/features/chat/oampIdentifier";
 import { OampTrackingOffer } from "@/features/chat/OampTrackingOffer";
@@ -32,9 +33,9 @@ export function ResultCard({ scan, plan, existingDeadlines, deadlinesReady, onRe
         {result.deadlines[0] ? <Text style={[styles.urgencyPill, urgencyPillColors(result.deadlines[0].date, colors)]}>{deadlineDistance(result.deadlines[0].date)}</Text> : null}
 
       </View>
-      <Text style={styles.resultTitle}>{result.document_type_cz ?? result.document_type_localized ?? formatDocTitle(result.document_type ?? scan.doc_type)}</Text>
+      <SelectableText style={styles.resultTitle}>{result.document_type_cz ?? result.document_type_localized ?? formatDocTitle(result.document_type ?? scan.doc_type)}</SelectableText>
       <View style={styles.summaryRow}>
-        <Text style={[styles.resultSummary, styles.flex1]}>{result.summary}</Text>
+        <SelectableText style={[styles.resultSummary, styles.flex1]}>{result.summary}</SelectableText>
         {result.summary ? <CopyButton text={result.summary} colors={colors} styles={styles} compact /> : null}
       </View>
       {oampIdentifier ? <OampTrackingOffer identifier={oampIdentifier} plan={plan} /> : null}
@@ -54,7 +55,7 @@ export function ResultCard({ scan, plan, existingDeadlines, deadlinesReady, onRe
           <View style={styles.actionIndex}>
             <Text style={styles.actionIndexText}>{index + 1}</Text>
           </View>
-          <Text style={styles.resultLine}>{action}</Text>
+          <SelectableText style={styles.resultLine}>{action}</SelectableText>
         </View>
       ))}
       {result.deadlines.length ? <Text style={styles.sectionTitle}>{t("chat.deadlines")}</Text> : null}
@@ -147,7 +148,7 @@ export function ResultInfoBlock({ tone, title, value, colors, styles }: {
         <Text style={[styles.infoBlockTitle, titleStyle]}>{title}</Text>
         <CopyButton text={value} colors={colors} styles={styles} compact />
       </View>
-      <Text style={styles.infoBlockText}>{value}</Text>
+      <SelectableText style={styles.infoBlockText}>{value}</SelectableText>
     </View>
   );
 }
@@ -266,4 +267,3 @@ export function SkeletonLine({ width, height, shimmer, colors }: {
     />
   );
 }
-

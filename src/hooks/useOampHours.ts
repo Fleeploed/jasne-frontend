@@ -38,6 +38,9 @@ export function useOampHours() {
         time: formatHour(next.hour),
       }),
     };
+    // `locale` isn't referenced directly but t() reads it at call time — keep it
+    // so the labels re-translate when the user switches language.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locale, now]);
 }
 

@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- this module is the one sanctioned console boundary; everywhere else must use logger.* */
 import * as Sentry from "@sentry/react-native";
 
 /**
