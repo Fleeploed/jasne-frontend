@@ -46,6 +46,11 @@ export function DeadlinesScreen() {
   // reference. Count badge stays visible so user knows they exist.
   const [doneExpanded, setDoneExpanded] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<DeadlineResponse | null>(null);
+  // Swipe-to-delete with a 5s undo window: the row is removed optimistically
+  // and the actual API delete is deferred until the snackbar times out.
+  const [undoItem, setUndoItem] = useState<DeadlineResponse | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const undoPendingRef = useRef<DeadlineResponse | null>(null);
   const [detailDeadline, setDetailDeadline] = useState<DeadlineResponse | null>(null);
   // Pending action queued while detail modal finishes its iOS dismiss
   // animation. iOS forbids presenting a second Modal while the first is
@@ -80,6 +85,15 @@ export function DeadlinesScreen() {
     };
   }, []);
 
+  // On unmount, flush any pending swipe-delete so it isn't silently lost.
+  useEffect(
+    () => () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+      if (undoPendingRef.current) void deleteDeadline(undoPendingRef.current.id).catch(() => {});
+    },
+    []
+  );
+
   // Seed from the last-known-good snapshot so the list renders instantly on
   // cold start and stays visible offline. Only fills empty state — a fresh
   // network load that already landed always wins.
@@ -108,7 +122,9 @@ export function DeadlinesScreen() {
         getLimits().catch(() => null),
       ]);
       if (!aliveRef.current) return;
-      const sorted = [...all].sort(compareDeadlines);
+      // Keep a row that's mid-undo hidden — the server still has it, but the
+      // user just swiped it away and may still tap "Undo".
+      const sorted = [...all].sort(compareDeadlines).filter((item) => item.id !== undoPendingRef.current?.id);
       const nextPlan = limits?.plan ?? "free";
       setDeadlines(sorted);
       setPlan(nextPlan);
@@ -159,6 +175,49 @@ export function DeadlinesScreen() {
       setDeadlines((current) => current.filter((item) => item.id !== deadlineId));
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : t("deadlines.deleteError"));
+    }
+  }
+
+  // Persist a swipe-delete to the server; restore the row if the call fails.
+  function commitSwipeDelete(item: DeadlineResponse) {
+    void deleteDeadline(item.id).catch((deleteError) => {
+      if (!aliveRef.current) return;
+      setDeadlines((current) =>
+        current.some((d) => d.id === item.id) ? current : [...current, item].sort(compareDeadlines)
+      );
+      setError(deleteError instanceof Error ? deleteError.message : t("deadlines.deleteError"));
+    });
+  }
+
+  function swipeDelete(item: DeadlineResponse) {
+    // Only one undo at a time — flush any previously pending delete first.
+    if (undoPendingRef.current && undoPendingRef.current.id !== item.id) {
+      commitSwipeDelete(undoPendingRef.current);
+    }
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoPendingRef.current = item;
+    setUndoItem(item);
+    setDeadlines((current) => current.filter((d) => d.id !== item.id));
+    undoTimerRef.current = setTimeout(() => {
+      undoTimerRef.current = null;
+      undoPendingRef.current = null;
+      setUndoItem(null);
+      commitSwipeDelete(item);
+    }, 5000);
+  }
+
+  function undoSwipeDelete() {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+    const item = undoPendingRef.current;
+    undoPendingRef.current = null;
+    setUndoItem(null);
+    if (item) {
+      setDeadlines((current) =>
+        current.some((d) => d.id === item.id) ? current : [...current, item].sort(compareDeadlines)
+      );
     }
   }
 
@@ -302,8 +361,7 @@ export function DeadlinesScreen() {
                       openDeadlineId={openDeadlineId}
                       setOpenDeadlineId={setOpenDeadlineId}
                       onDone={markDone}
-                      onEdit={setEditingDeadline}
-                      onDelete={confirmDelete}
+                      onSwipeDelete={swipeDelete}
                       onOpenManual={setDetailDeadline}
                       onLongPress={(d, rect) => {
                         triggerLongPressHaptic();
@@ -350,8 +408,7 @@ export function DeadlinesScreen() {
                               openDeadlineId={openDeadlineId}
                               setOpenDeadlineId={setOpenDeadlineId}
                               onDone={markDone}
-                              onEdit={setEditingDeadline}
-                              onDelete={confirmDelete}
+                              onSwipeDelete={swipeDelete}
                               onOpenManual={setDetailDeadline}
                               onLongPress={(d, rect) => {
                                 triggerLongPressHaptic();
@@ -462,6 +519,21 @@ export function DeadlinesScreen() {
           void removeDeadline(item.id);
         }}
       />
+      {undoItem ? (
+        <View style={styles.undoBar} pointerEvents="box-none">
+          <View style={styles.undoCard}>
+            <Text style={styles.undoText} numberOfLines={1}>{t("deadlines.deletedToast")}</Text>
+            <Pressable
+              onPress={undoSwipeDelete}
+              hitSlop={8}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.undoButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.undoButtonText}>{t("common.undo")}</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
     </Screen>
   );
 }
