@@ -43,7 +43,7 @@ export function ResultCard({ scan, plan, existingDeadlines, deadlinesReady, onRe
         <View style={styles.sectionTitleRow}>
           <Text style={styles.sectionTitle}>{t("chat.actions")}</Text>
           <CopyButton
-            text={result.actions_required.map((action, index) => `${index + 1}. ${action}`).join("\n")}
+            text={[t("chat.actions"), ...result.actions_required.map((action, index) => `${index + 1}. ${action}`)].join("\n")}
             colors={colors}
             styles={styles}
             compact
@@ -146,7 +146,7 @@ export function ResultInfoBlock({ tone, title, value, colors, styles }: {
     <View style={[styles.infoBlock, toneStyle]}>
       <View style={styles.sectionTitleRow}>
         <Text style={[styles.infoBlockTitle, titleStyle]}>{title}</Text>
-        <CopyButton text={value} colors={colors} styles={styles} compact />
+        <CopyButton text={`${title}\n${value}`} colors={colors} styles={styles} compact />
       </View>
       <SelectableText style={styles.infoBlockText}>{value}</SelectableText>
     </View>
