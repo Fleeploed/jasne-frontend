@@ -746,7 +746,7 @@ function createStyles(colors: ColorPalette) {
       textTransform: "uppercase"
     },
     contentTitle: { color: colors.text, fontFamily: fonts.bodyBold, ...typeStyles.rowTitle },
-    contentText: { flex: 1, color: colors.muted, fontFamily: fonts.body, ...typeStyles.rowSecondary },
+    contentText: { flex: 1, color: colors.muted, fontFamily: fonts.body, ...typeStyles.rowSecondary, lineHeight: 22 },
     listBlock: { gap: 13 },
     stepRow: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
     stepNumber: {

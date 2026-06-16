@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { StyleSheet, TextInput, type StyleProp, type TextInputProps, type TextStyle } from "react-native";
+import { Text, type StyleProp, type TextProps, type TextStyle } from "react-native";
 
-type SelectableTextProps = Omit<TextInputProps, "children" | "editable" | "multiline" | "onChangeText" | "value"> & {
+type SelectableTextProps = Omit<TextProps, "children" | "style"> & {
   children?: ReactNode;
   value?: string | null;
   style?: StyleProp<TextStyle>;
@@ -9,36 +9,23 @@ type SelectableTextProps = Omit<TextInputProps, "children" | "editable" | "multi
 
 const DEFAULT_SELECTION_COLOR = "#6FA0E6";
 
+// Telegram-style selection: a plain <Text selectable> instead of a no-keyboard
+// TextInput. Long-press starts a selection with drag handles + the native
+// "Copy" menu, and there's no caret/cursor so it never feels like an editable
+// field (the old TextInput hack did, which is what users complained about).
 export function SelectableText({
   children,
   value,
   style,
-  scrollEnabled = false,
-  selectTextOnFocus = false,
   selectionColor = DEFAULT_SELECTION_COLOR,
   ...props
 }: SelectableTextProps) {
   const text = value ?? textFromChildren(children);
 
   return (
-    <TextInput
-      {...props}
-      value={text}
-      multiline
-      editable
-      showSoftInputOnFocus={false}
-      contextMenuHidden={false}
-      scrollEnabled={scrollEnabled}
-      selectionColor={selectionColor}
-      selectTextOnFocus={selectTextOnFocus}
-      autoCorrect={false}
-      spellCheck={false}
-      autoComplete="off"
-      importantForAutofill="no"
-      underlineColorAndroid="transparent"
-      onChangeText={() => undefined}
-      style={[styles.base, style]}
-    />
+    <Text {...props} selectable selectionColor={selectionColor} style={style}>
+      {text}
+    </Text>
   );
 }
 
@@ -48,13 +35,3 @@ function textFromChildren(children: ReactNode): string {
   if (Array.isArray(children)) return children.map(textFromChildren).join("");
   return "";
 }
-
-const styles = StyleSheet.create({
-  base: {
-    backgroundColor: "transparent",
-    borderWidth: 0,
-    margin: 0,
-    padding: 0,
-    textAlignVertical: "top",
-  },
-});

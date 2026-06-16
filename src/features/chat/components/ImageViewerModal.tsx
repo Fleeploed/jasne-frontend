@@ -13,6 +13,12 @@ export function ImageViewerModal({ images, initialIndex, visible, onClose }: {
 }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  // Measure the real fullscreen modal area instead of trusting
+  // useWindowDimensions(): on Android the window height excludes the system
+  // navigation bar while this translucent modal draws under it, so the gallery
+  // would center within a shorter box and push the image up (large black gap
+  // below). onLayout gives the true drawable height on both platforms.
+  const [container, setContainer] = useState<{ width: number; height: number } | null>(null);
   const closingRef = useRef(false);
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const safeInitialIndex = images.length > 0 ? Math.max(0, Math.min(initialIndex, images.length - 1)) : 0;
@@ -58,7 +64,13 @@ export function ImageViewerModal({ images, initialIndex, visible, onClose }: {
   return (
     <Modal visible transparent animationType="fade" onRequestClose={requestClose} statusBarTranslucent>
       <StatusBar hidden />
-      <View style={styles.root}>
+      <View
+        style={styles.root}
+        onLayout={(event) => {
+          const { width: w, height: h } = event.nativeEvent.layout;
+          if (w > 0 && h > 0) setContainer({ width: w, height: h });
+        }}
+      >
         <View pointerEvents="none" style={styles.backdrop} />
         <Gallery
           data={images}
@@ -69,7 +81,7 @@ export function ImageViewerModal({ images, initialIndex, visible, onClose }: {
             setCurrentIndex(index);
           }}
           onSwipeToClose={requestClose}
-          containerDimensions={{ width, height }}
+          containerDimensions={container ?? { width, height }}
           doubleTapScale={2.6}
           maxScale={4}
           disableTransitionOnScaledImage
