@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { StyleSheet, TextInput, type StyleProp, type TextInputProps, type TextStyle } from "react-native";
+import { Platform, StyleSheet, Text, TextInput, type StyleProp, type TextInputProps, type TextStyle } from "react-native";
 
 type SelectableTextProps = Omit<TextInputProps, "children" | "editable" | "multiline" | "onChangeText" | "value"> & {
   children?: ReactNode;
@@ -9,12 +9,12 @@ type SelectableTextProps = Omit<TextInputProps, "children" | "editable" | "multi
 
 const DEFAULT_SELECTION_COLOR = "#6FA0E6";
 
-// Telegram-style selection. A read-only TextInput (no keyboard, no caret) gives
-// reliable long-press selection + the native Copy menu on BOTH iOS and Android.
-// `<Text selectable>` is unreliable on iOS, and a plain editable TextInput shows
-// a blinking caret that makes it feel like an input — `caretHidden` plus
-// `showSoftInputOnFocus={false}` remove that while keeping selection working:
-// a tap does nothing visible, a long-press selects with handles + Copy.
+// Telegram-style selection, split by platform because no single primitive is
+// reliable on both:
+// - Android: a plain <Text selectable> gives native long-press word selection
+//   + the floating Copy toolbar, with no input feel.
+// - iOS: <Text selectable> is flaky, so use a read-only TextInput with
+//   caretHidden + no keyboard — long-press selects, a tap shows nothing.
 export function SelectableText({
   children,
   value,
@@ -25,6 +25,20 @@ export function SelectableText({
   ...props
 }: SelectableTextProps) {
   const text = value ?? textFromChildren(children);
+
+  if (Platform.OS === "android") {
+    return (
+      <Text
+        selectable
+        selectionColor={selectionColor}
+        maxFontSizeMultiplier={props.maxFontSizeMultiplier}
+        numberOfLines={props.numberOfLines}
+        style={style}
+      >
+        {text}
+      </Text>
+    );
+  }
 
   return (
     <TextInput
