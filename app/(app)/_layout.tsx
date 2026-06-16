@@ -3,6 +3,7 @@ import { Tabs } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppIcon } from "@/components/AppIcon";
 import { fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
@@ -101,6 +102,7 @@ function MockupTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const colors = useColors();
   // Subscribe so labels rebuild when locale changes
   useLocale();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createTabStyles(colors), [colors]);
 
   const currentRoute = state.routes[state.index];
@@ -110,7 +112,7 @@ function MockupTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const visibleRoutes = state.routes.filter((route) => tabIconByRoute[route.name]);
 
   return (
-    <View style={styles.tabbar}>
+    <View style={[styles.tabbar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
       {visibleRoutes.map((route) => {
         const routeIndex = state.routes.findIndex((item) => item.key === route.key);
         const focused = state.index === routeIndex;
@@ -149,8 +151,7 @@ function createTabStyles(colors: ColorPalette) {
       backgroundColor: colors.surface,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: colors.border,
-      paddingTop: 7,
-      paddingBottom: 30
+      paddingTop: 7
     },
     tab: { flex: 1, alignItems: "center", gap: 3, paddingVertical: 5 },
     tabLabel: { color: colors.muted2, fontFamily: fonts.bodySemiBold, ...typeStyles.caption2, fontWeight: "600" },
