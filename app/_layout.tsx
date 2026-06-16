@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { logger } from "@/lib/logger";
 import { ActivityIndicator, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Stack, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
+import { TransitionPresets } from "@react-navigation/stack";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
@@ -10,6 +11,7 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import * as Sentry from "@sentry/react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
+import { JsStack } from "@/components/JsStack";
 import { AccountDeletionScreen } from "@/features/auth/AccountDeletionScreen";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { readCachedProfile, writeCachedProfile } from "@/features/auth/profileCache";
@@ -179,25 +181,23 @@ function RootNavigator() {
 
   return (
     <AccountGate userId={session.user.id}>
-      <Stack
+      <JsStack
         screenOptions={{
-          contentStyle: { backgroundColor: colors.bg },
-          headerShadowVisible: false,
-          headerStyle: { backgroundColor: colors.bg },
           headerShown: false,
-          // iOS-style edge swipe-back, default on but explicit for clarity
+          cardStyle: { backgroundColor: colors.bg },
+          // JS stack enables swipe-back on Android too (native-stack is
+          // iOS-only). SlideFromRightIOS = horizontal slide + edge swipe.
           gestureEnabled: true,
-          gestureDirection: "horizontal",
-          animation: "slide_from_right",
+          ...TransitionPresets.SlideFromRightIOS,
         }}
       >
-        <Stack.Screen name="(app)" />
-        <Stack.Screen name="scan/new" />
-        <Stack.Screen name="scan/[id]" />
-        <Stack.Screen name="paywall" />
-        <Stack.Screen name="oamp/status-result" />
-        <Stack.Screen name="oamp/odvolani-guide" />
-      </Stack>
+        <JsStack.Screen name="(app)" />
+        <JsStack.Screen name="scan/new" />
+        <JsStack.Screen name="scan/[id]" />
+        <JsStack.Screen name="paywall" />
+        <JsStack.Screen name="oamp/status-result" />
+        <JsStack.Screen name="oamp/odvolani-guide" />
+      </JsStack>
     </AccountGate>
   );
 }

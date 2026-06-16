@@ -58,7 +58,7 @@ export function MessageBubble({ message, scan, plan, existingDeadlines, deadline
       </View>
       {!isUser && message.content ? (
         <View style={styles.messageCopyRow}>
-          <CopyButton text={assistantText} colors={colors} styles={styles} />
+          <CopyButton text={assistantText} colors={colors} styles={styles} compact />
         </View>
       ) : null}
     </View>

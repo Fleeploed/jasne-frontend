@@ -570,7 +570,7 @@ export function createStyles(colors: ColorPalette) {
       borderBottomLeftRadius: 18,
       borderBottomRightRadius: 18
     },
-    bubbleText: { color: colors.text, fontFamily: fonts.body, fontSize: 13.5, lineHeight: 19 },
+    bubbleText: { color: colors.text, fontFamily: fonts.body, fontSize: 15, lineHeight: 21 },
     userText: { color: colors.textOnAccent },
     messageColAssistant: { alignItems: "flex-start" },
     messageColUser: { alignItems: "flex-end" },
