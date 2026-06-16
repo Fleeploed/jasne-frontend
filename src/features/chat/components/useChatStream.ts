@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { streamChat } from "@/features/chat/chatApi";
 import { t } from "@/lib/i18n";
@@ -40,6 +40,10 @@ export function useChatStream({
       current.filter((message) => message.id !== messageId || message.content.trim().length > 0)
     );
   }
+
+  const stop = useCallback(() => {
+    streamAbortRef.current?.abort();
+  }, []);
 
   async function ask() {
     const trimmed = question.trim();
@@ -109,7 +113,8 @@ export function useChatStream({
         }
       }, abortController.signal);
     } catch (chatError) {
-      // Deliberate cancellation (screen unmount) — nothing to surface.
+      // Deliberate cancellation (manual stop or screen unmount): keep whatever
+      // partial answer has already streamed and surface no error.
       if (!abortController.signal.aborted) {
         flushTokens();
         setError(chatError instanceof Error ? chatError.message : t("chat.answerError"));
@@ -123,5 +128,5 @@ export function useChatStream({
     }
   }
 
-  return { messages, setMessages, question, setQuestion, streaming, ask };
+  return { messages, setMessages, question, setQuestion, streaming, ask, stop };
 }

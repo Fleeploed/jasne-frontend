@@ -5,6 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import type { ColorPalette } from "@/components/ui";
 import { Icon } from "@/components/Icon";
 import { PaywallSheet } from "@/components/PaywallSheet";
+import { SelectableText } from "@/components/SelectableText";
 import { createManualDeadline } from "@/features/deadlines/deadlinesApi";
 import { t } from "@/lib/i18n";
 import type { AnalysisDeadline, DeadlineResponse, UserPlan } from "@/lib/types";
@@ -91,14 +92,16 @@ export function DeadlineReminderRow({
         style={styles.deadlineCard}
       >
         <View style={styles.sectionTitleRow}>
-          <Text style={styles.deadlineCardLabel}>{t(`deadlineType.${deadline.type}` as Parameters<typeof t>[0]).toUpperCase()}</Text>
+          <SelectableText style={[styles.deadlineCardLabel, styles.flex1]}>
+            {t(`deadlineType.${deadline.type}` as Parameters<typeof t>[0]).toUpperCase()}
+          </SelectableText>
           <CopyButton text={deadlineCopyText} colors={colors} styles={styles} compact />
         </View>
-        <Text style={styles.deadlineCardDate}>{dateLabel}</Text>
+        <SelectableText style={styles.deadlineCardDate}>{dateLabel}</SelectableText>
         {showAddress && whereToGo ? (
           <View style={styles.deadlineCardAddress}>
             <Text style={styles.deadlineCardPin}>⊙</Text>
-            <Text style={styles.deadlineCardAddressText}>{whereToGo}</Text>
+            <SelectableText style={styles.deadlineCardAddressText}>{whereToGo}</SelectableText>
           </View>
         ) : null}
         <Pressable
@@ -120,6 +123,7 @@ export function DeadlineReminderRow({
             </>
           )}
         </Pressable>
+        <View style={styles.deadlineCardBottomSpacer} />
       </LinearGradient>
       <ReminderSheet
         visible={showReminderSheet}
@@ -416,4 +420,3 @@ export function ReminderToggle({
     </View>
   );
 }
-

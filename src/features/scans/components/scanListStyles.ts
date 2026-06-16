@@ -158,6 +158,14 @@ export function createStyles(colors: ColorPalette) {
       color: colors.textOnAccent,
       opacity: 0.72,
     },
+    categoryPager: {
+      flex: 1,
+      backgroundColor: colors.bg,
+    },
+    categoryPage: {
+      flex: 1,
+      backgroundColor: colors.bg,
+    },
     list: {
       paddingHorizontal: 16,
       paddingTop: 20,

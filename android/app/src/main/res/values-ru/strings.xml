@@ -1,0 +1,5 @@
+<resources>
+  <string name="app_name">Jasne</string>
+  <string name="camera_permission_message">Jasně нужен доступ к камере для сканирования документов.</string>
+  <string name="photo_library_permission_message">Jasně нужен доступ к фото, чтобы выбрать документы.</string>
+</resources>

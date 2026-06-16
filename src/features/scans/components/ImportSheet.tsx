@@ -1,4 +1,5 @@
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Animated, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { Icon } from "@/components/Icon";
 import type { IconName } from "@/components/Icon";
 import { useScannerTheme } from "@/features/scans/components/scannerStyles";
@@ -20,11 +21,71 @@ export function ImportSheet({
   onPickPhotos: () => void;
 }) {
   const { sheetStyles } = useScannerTheme();
+  const [mounted, setMounted] = useState(visible);
+  const latestVisibleRef = useRef(visible);
+  const progress = useRef(new Animated.Value(visible ? 1 : 0)).current;
+
+  useEffect(() => {
+    latestVisibleRef.current = visible;
+    if (visible) {
+      setMounted(true);
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    progress.stopAnimation();
+    if (visible) {
+      progress.setValue(0);
+      Animated.spring(progress, {
+        toValue: 1,
+        useNativeDriver: true,
+        damping: 22,
+        stiffness: 260,
+        mass: 0.8,
+      }).start();
+      return;
+    }
+
+    Animated.timing(progress, {
+      toValue: 0,
+      duration: 140,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished && !latestVisibleRef.current) {
+        setMounted(false);
+      }
+    });
+  }, [mounted, progress, visible]);
+
+  if (!mounted) return null;
+
+  const sheetTranslateY = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [24, 0],
+  });
+  const sheetOpacity = progress.interpolate({
+    inputRange: [0, 0.7, 1],
+    outputRange: [0, 1, 1],
+  });
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={sheetStyles.overlay}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={sheetStyles.sheet}>
+    <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
+      <View style={sheetStyles.root}>
+        <Animated.View style={[sheetStyles.overlay, { opacity: progress }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        </Animated.View>
+        <Animated.View
+          style={[
+            sheetStyles.sheet,
+            {
+              opacity: sheetOpacity,
+              transform: [{ translateY: sheetTranslateY }],
+            },
+          ]}
+          onStartShouldSetResponder={() => true}
+        >
           <View style={sheetStyles.handle} />
           <Text style={sheetStyles.sectionLabel}>{copy.addToScan}</Text>
           <View style={sheetStyles.rows}>
@@ -35,7 +96,7 @@ export function ImportSheet({
           <Pressable onPress={onClose} style={sheetStyles.cancelButton}>
             <Text style={sheetStyles.cancelText}>{copy.cancel}</Text>
           </Pressable>
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
