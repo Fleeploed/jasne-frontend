@@ -227,7 +227,7 @@ function relativeTimestamp(value: string | null) {
   const diffMs = date.getTime() - Date.now();
   const absMs = Math.abs(diffMs);
   if (absMs < 60_000) return t("tracking.justNow");
-  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
     ["day", 86_400_000],
     ["hour", 3_600_000],
     ["minute", 60_000],

@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Linking, Text, View } from "react-native";
-import type { GestureResponderEvent } from "react-native";
-import { CameraView, useCameraPermissions } from "expo-camera";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Camera, useCameraDevice, useCameraPermission } from "react-native-vision-camera";
 
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { ChatThreadScreen } from "@/features/chat/ChatThreadScreen";
@@ -11,8 +10,14 @@ import { getLocale, t } from "@/lib/i18n";
 import { triggerSelectionHaptic } from "@/lib/haptics";
 
 import { useScannerTheme } from "@/features/scans/components/scannerStyles";
-import { SHUTTER_BLACKOUT_MS, getScannerCopy } from "@/features/scans/components/newScanData";
-import type { CameraFocusPoint } from "@/features/scans/components/newScanData";
+import {
+  SHUTTER_BLACKOUT_MS,
+  cameraDefaultZoom,
+  cameraZoomLevelsForDevice,
+  clampCameraZoom,
+  getScannerCopy,
+} from "@/features/scans/components/newScanData";
+import type { CameraFocusPoint, CameraTapPoint } from "@/features/scans/components/newScanData";
 import { useScanUpload } from "@/features/scans/components/useScanUpload";
 import { ScannerAppBar } from "@/features/scans/components/ScannerAppBar";
 import { ScannerCamera } from "@/features/scans/components/ScannerCamera";
@@ -34,25 +39,40 @@ export function NewScanScreen() {
 
   // Live-camera UI state. Stays in the screen because it drives the camera
   // preview, torch, and shutter directly; captures flow into `upload`.
-  const cameraRef = useRef<CameraView>(null);
+  const cameraRef = useRef<Camera>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shutterFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const cameraPermission = useCameraPermission();
+  const cameraDevice = useCameraDevice("back", {
+    physicalDevices: ["ultra-wide-angle-camera", "wide-angle-camera", "telephoto-camera"],
+  });
+  const { hasPermission, requestPermission } = cameraPermission;
+  const defaultCameraZoom = useMemo(
+    () => clampCameraZoom(cameraDefaultZoom(cameraDevice), cameraDevice),
+    [cameraDevice],
+  );
+  const cameraZoomLevels = useMemo(
+    () => cameraZoomLevelsForDevice(cameraDevice),
+    [cameraDevice],
+  );
+  const defaultCameraZoomRef = useRef(defaultCameraZoom);
   const [torchOn, setTorchOn] = useState(false);
   const [capturing, setCapturing] = useState(false);
-  const [cameraZoom, setCameraZoom] = useState(0);
-  const [focusPulse, setFocusPulse] = useState(false);
+  const [cameraZoom, setCameraZoom] = useState(1);
   const [focusPoint, setFocusPoint] = useState<CameraFocusPoint | null>(null);
   const [shutterBlackout, setShutterBlackout] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
+  useEffect(() => {
+    defaultCameraZoomRef.current = defaultCameraZoom;
+  }, [defaultCameraZoom]);
+
   // Reset the camera UI on `fresh` entry (document state resets inside the hook).
   useEffect(() => {
-    setCameraZoom(0);
+    setCameraZoom(defaultCameraZoomRef.current);
     setFocusPoint(null);
-    setFocusPulse(false);
     setShutterBlackout(false);
     setPermissionDenied(false);
   }, [params.fresh, params.pending]);
@@ -67,21 +87,34 @@ export function NewScanScreen() {
   // Ask for camera permission on entry so the live preview can show immediately.
   // If the user previously hard-denied it, the permission screen kicks in below.
   useEffect(() => {
-    if (cameraPermission && !cameraPermission.granted && cameraPermission.canAskAgain) {
-      void requestCameraPermission();
-    }
-  }, [cameraPermission?.granted, cameraPermission?.canAskAgain]);
+    if (hasPermission) return;
+    let alive = true;
+    void requestPermission().then((granted) => {
+      if (alive && !granted) setPermissionDenied(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [hasPermission, requestPermission]);
 
-  function handleCameraTap(event: GestureResponderEvent) {
+  useEffect(() => {
+    setCameraZoom((current) => clampCameraZoom(current, cameraDevice));
+  }, [cameraDevice]);
+
+  useEffect(() => {
+    if (!cameraDevice) return;
+    setCameraZoom(defaultCameraZoom);
+  }, [cameraDevice, defaultCameraZoom]);
+
+  function handleCameraTap(point: CameraTapPoint) {
     if (!cameraReady) return;
-    const { locationX, locationY } = event.nativeEvent;
     triggerSelectionHaptic();
-    setFocusPulse(false);
-    setFocusPoint({ x: locationX, y: locationY, key: Date.now() });
-    requestAnimationFrame(() => setFocusPulse(true));
+    setFocusPoint({ x: point.x, y: point.y, key: Date.now() });
+    if (cameraDevice?.supportsFocus) {
+      void cameraRef.current?.focus(point).catch(() => {});
+    }
     if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
     focusTimerRef.current = setTimeout(() => {
-      setFocusPulse(false);
       setFocusPoint(null);
       focusTimerRef.current = null;
     }, 850);
@@ -102,13 +135,16 @@ export function NewScanScreen() {
       upload.setError(null);
 
       // Ensure camera permission right before capturing.
-      let granted = cameraPermission?.granted ?? false;
+      let granted = hasPermission;
       if (!granted) {
-        const result = await requestCameraPermission();
-        granted = result.granted;
+        granted = await requestPermission();
       }
       if (!granted) {
         setPermissionDenied(true);
+        return;
+      }
+      if (!cameraDevice) {
+        upload.setError(t("scan.scannerUnavailable"));
         return;
       }
 
@@ -116,10 +152,11 @@ export function NewScanScreen() {
       if (availableSlots <= 0) return;
 
       setCapturing(true);
-      const photo = await cameraRef.current?.takePictureAsync({ quality: 0.9 });
-      if (photo?.uri) {
+      const photo = await cameraRef.current?.takePhoto({ flash: "off", enableShutterSound: false });
+      if (photo?.path) {
+        const uri = photo.path.startsWith("file://") ? photo.path : `file://${photo.path}`;
         upload.appendFiles(
-          [{ uri: photo.uri, name: `scan-${Date.now()}.jpg`, mimeType: "image/jpeg" }],
+          [{ uri, name: `scan-${Date.now()}.jpg`, mimeType: "image/jpeg" }],
           availableSlots,
         );
       }
@@ -131,11 +168,10 @@ export function NewScanScreen() {
   }
 
   const { files, maxPages, isPro, limitReached, nearLimit } = upload;
-  const cameraReady = cameraPermission?.granted ?? false;
-  // Show the dedicated permission screen when access was hard-denied (can't ask again)
-  // or the user explicitly hit a denial while capturing.
-  const showPermissionScreen =
-    permissionDenied || (!!cameraPermission && !cameraPermission.granted && !cameraPermission.canAskAgain);
+  const cameraReady = hasPermission && Boolean(cameraDevice);
+  // VisionCamera v4 reports granted/not granted, so show the dedicated
+  // permission screen after a concrete denied request.
+  const showPermissionScreen = permissionDenied;
   const showPendingChat = upload.activePendingId !== null;
 
   if (showPermissionScreen) {
@@ -165,8 +201,11 @@ export function NewScanScreen() {
         maxPages={maxPages}
         isPro={isPro}
         limitReached={limitReached}
-        torchOn={torchOn}
-        onToggleTorch={() => setTorchOn((on) => !on)}
+        torchOn={torchOn && Boolean(cameraDevice?.hasTorch)}
+        onToggleTorch={() => {
+          if (!cameraDevice?.hasTorch) return;
+          setTorchOn((on) => !on);
+        }}
         onClose={() => router.back()}
         topInset={insets.top}
       />
@@ -177,16 +216,17 @@ export function NewScanScreen() {
         files={files}
         limitReached={limitReached}
         cameraRef={cameraRef}
+        cameraDevice={cameraDevice}
         cameraReady={cameraReady}
         zoom={cameraZoom}
-        focusPulse={focusPulse}
+        zoomLevels={cameraZoomLevels}
         focusPoint={focusPoint}
         shutterBlackout={shutterBlackout}
-        torchOn={torchOn}
+        torchOn={torchOn && Boolean(cameraDevice?.hasTorch)}
         flashPill={upload.pillFlash ? { label: upload.pillFlash.label, visible: true } : undefined}
         pdfRendering={upload.pdfRendering}
         onCameraTap={handleCameraTap}
-        onZoomChange={setCameraZoom}
+        onZoomChange={(nextZoom) => setCameraZoom(clampCameraZoom(nextZoom, cameraDevice))}
       >
         {files.length > 0 ? (
           <ThumbnailStrip

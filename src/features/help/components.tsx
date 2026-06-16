@@ -1,13 +1,16 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logger } from "@/lib/logger";
 import type { ComponentProps, ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, type StyleProp, type ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 
 import { Icon, type IconName } from "@/components/Icon";
+import { SelectableText } from "@/components/SelectableText";
 import { fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { ProBlurSection } from "@/features/help/ProBlurSection";
 import { HELP_TEXT_SCALE } from "@/features/help/constants";
+import { triggerSelectionHaptic } from "@/lib/haptics";
 import { t } from "@/lib/i18n";
 import type {
   CtaAction,
@@ -224,6 +227,55 @@ export function ScanCtaCard({ cta, onPress }: {
   );
 }
 
+// Joins an optional block title with its body/items into one clipboard string.
+function blockPlainText(title: string | null | undefined, lines: string[]) {
+  const out: string[] = [];
+  const heading = title?.trim();
+  if (heading) out.push(heading);
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (trimmed) out.push(trimmed);
+  });
+  return out.join("\n");
+}
+
+function GuideCopyButton({ text }: { text: string }) {
+  const colors = useColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+  }, []);
+
+  const handleCopy = useCallback(async () => {
+    const value = text.trim();
+    if (!value) return;
+    try {
+      await Clipboard.setStringAsync(value);
+    } catch {
+      return;
+    }
+    triggerSelectionHaptic();
+    setCopied(true);
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+    resetTimer.current = setTimeout(() => setCopied(false), 1500);
+  }, [text]);
+
+  return (
+    <Pressable
+      onPress={handleCopy}
+      hitSlop={10}
+      accessibilityRole="button"
+      accessibilityLabel={t(copied ? "chat.copied" : "chat.copy")}
+      style={({ pressed }) => [styles.guideCopyBtn, pressed && styles.pressed]}
+    >
+      <Icon name={copied ? "check" : "copy"} size={15} color={copied ? colors.green : colors.muted2} />
+    </Pressable>
+  );
+}
+
 export function WarningCard({ title, body, info = false }: {
   title?: string | null;
   body: string;
@@ -235,9 +287,10 @@ export function WarningCard({ title, body, info = false }: {
     <View style={[styles.warningCard, info && styles.infoCard]}>
       <Ionicons name={info ? "information-circle-outline" : "alert-circle-outline"} size={22} color={info ? colors.muted2 : colors.amberDark} />
       <View style={styles.warningBody}>
-        {title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.warningTitle}>{title}</Text> : null}
-        <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.warningText}>{body}</Text>
+        {title ? <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.warningTitle}>{title}</SelectableText> : null}
+        <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.warningText}>{body}</SelectableText>
       </View>
+      <GuideCopyButton text={blockPlainText(title, [body])} />
     </View>
   );
 }
@@ -247,14 +300,19 @@ export function StepsList({ title, items }: { title?: string | null; items: stri
   const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <View style={styles.contentCard}>
-      {title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{title}</Text> : null}
+      <View style={styles.blockHeader}>
+        <View style={styles.blockHeaderTitle}>
+          {title ? <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{title}</SelectableText> : null}
+        </View>
+        <GuideCopyButton text={blockPlainText(title, items.map((item, index) => `${index + 1}. ${item}`))} />
+      </View>
       <View style={styles.listBlock}>
         {items.map((item, index) => (
           <View key={`${index}-${item}`} style={styles.stepRow}>
             <View style={styles.stepNumber}>
               <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.stepNumberText}>{index + 1}</Text>
             </View>
-            <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{item}</Text>
+            <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{item}</SelectableText>
           </View>
         ))}
       </View>
@@ -267,12 +325,17 @@ export function ChecklistList({ title, items }: { title?: string | null; items: 
   const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <View style={styles.contentCard}>
-      {title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{title}</Text> : null}
+      <View style={styles.blockHeader}>
+        <View style={styles.blockHeaderTitle}>
+          {title ? <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{title}</SelectableText> : null}
+        </View>
+        <GuideCopyButton text={blockPlainText(title, items.map((item) => `• ${item}`))} />
+      </View>
       <View style={styles.listBlock}>
         {items.map((item, index) => (
           <View key={`${index}-${item}`} style={styles.checkRow}>
             <Ionicons name="checkmark-outline" size={24} color={colors.primary} />
-            <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{item}</Text>
+            <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{item}</SelectableText>
           </View>
         ))}
       </View>
@@ -295,8 +358,13 @@ export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
         if (section.type === "text") {
           rendered = (
             <View style={styles.contentCard}>
-              {section.title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.eyebrow}>{section.title}</Text> : null}
-              <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{section.body}</Text>
+              <View style={styles.blockHeader}>
+                <View style={styles.blockHeaderTitle}>
+                  {section.title ? <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.eyebrow}>{section.title}</SelectableText> : null}
+                </View>
+                <GuideCopyButton text={blockPlainText(section.title, [section.body])} />
+              </View>
+              <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{section.body}</SelectableText>
             </View>
           );
         } else if (section.type === "steps") {
@@ -308,7 +376,7 @@ export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
         } else {
           rendered = (
             <View style={styles.ctaSection}>
-              {section.title ? <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{section.title}</Text> : null}
+              {section.title ? <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentTitle}>{section.title}</SelectableText> : null}
               {section.actions.map((action) => (
                 <CtaActionButton key={action} action={action} onPress={() => onAction(action)} />
               ))}
@@ -316,56 +384,18 @@ export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
           );
         }
 
-        // warning/cta are always open regardless of the pro_only flag.
-        const gated = section.pro_only && section.type !== "warning" && section.type !== "cta";
-        if (gated && plan === "free") {
-          // Build the section body WITHOUT the outer contentCard wrapper
-          // and WITHOUT a title — ProBlurSection provides both. The body
-          // is what BlurView blurs.
-          let body: ReactNode;
-          if (section.type === "text") {
-            body = (
-              <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
-                {section.body}
-              </Text>
-            );
-          } else if (section.type === "steps") {
-            body = (
-              <View style={styles.listBlock}>
-                {section.items.map((item, i) => (
-                  <View key={`${i}-${item}`} style={styles.stepRow}>
-                    <View style={styles.stepNumber}>
-                      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.stepNumberText}>
-                        {i + 1}
-                      </Text>
-                    </View>
-                    <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
-                      {item}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            );
-          } else {
-            // checklist
-            body = (
-              <View style={styles.listBlock}>
-                {section.items.map((item, i) => (
-                  <View key={`${i}-${item}`} style={styles.checkRow}>
-                    <Ionicons name="checkmark-outline" size={24} color={colors.primary} />
-                    <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
-                      {item}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            );
-          }
-          return (
-            <ProBlurSection key={key} title={section.title ?? null}>
-              {body}
-            </ProBlurSection>
-          );
+        // warning/cta are always open regardless of gating flags. A section is
+        // gated when the backend already stripped it (`locked`, authoritative —
+        // only ever set for free users) or when it's `pro_only` and this is a
+        // free user. `locked` is the stronger contract: trust it directly.
+        const gateable = section.type !== "warning" && section.type !== "cta";
+        const gated = gateable && (section.locked || (section.pro_only && plan === "free"));
+        if (gated) {
+          // SECURITY: never pass section.body/items into the tree here. For
+          // free users the backend already strips them (they arrive empty),
+          // and the real Pro content must never be rendered even as blurred
+          // nodes. ProBlurSection draws a content-free skeleton + upgrade gate.
+          return <ProBlurSection key={key} title={section.title ?? null} />;
         }
         return <View key={key}>{rendered}</View>;
       })}
@@ -694,6 +724,19 @@ function createStyles(colors: ColorPalette) {
       backgroundColor: colors.surface,
       padding: 16,
       gap: 12
+    },
+    blockHeader: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 8
+    },
+    blockHeaderTitle: {
+      flex: 1
+    },
+    guideCopyBtn: {
+      padding: 4,
+      borderRadius: 8,
+      alignSelf: "flex-start"
     },
     eyebrow: {
       color: colors.primary,

@@ -2,6 +2,11 @@
 module.exports = {
   preset: 'jest-expo',
   testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],
+  // .claude/worktrees holds sibling git worktrees (gitignored, local-only).
+  // Without these ignores Jest runs every test 2–3× from stale worktree copies
+  // and hits haste module-naming collisions.
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/.claude/'],
+  modulePathIgnorePatterns: ['<rootDir>/.claude/'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },

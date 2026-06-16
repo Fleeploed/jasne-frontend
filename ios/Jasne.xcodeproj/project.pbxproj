@@ -12,6 +12,7 @@
 		13B07FC11A68108700A75B9A /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB71A68108700A75B9A /* main.m */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		5FA881650B6E4DD19963CE51 /* noop-file.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDBAB070ED70410FA97176E2 /* noop-file.swift */; };
+		7B1000010000000000000001 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 7B1000020000000000000002 /* InfoPlist.strings */; };
 		8149BC5F782F095BE1730D5A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B66E4B83D6FE617179A7128E /* PrivacyInfo.xcprivacy */; };
 		96905EF65AED1B983A6B3ABC /* libPods-Jasne.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 58EEBF8E8E6FB1BC6CAF49B5 /* libPods-Jasne.a */; };
 		B18059E884C0ABDD17F3DC3D /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC715A2D49A985799AEE119 /* ExpoModulesProvider.swift */; };
@@ -29,6 +30,10 @@
 		5BC38DA20C4441EBA218E94F /* Jasne-Bridging-Header.h */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.c.h; name = "Jasne-Bridging-Header.h"; path = "Jasne/Jasne-Bridging-Header.h"; sourceTree = "<group>"; };
 		6C2E3173556A471DD304B334 /* Pods-Jasne.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Jasne.debug.xcconfig"; path = "Target Support Files/Pods-Jasne/Pods-Jasne.debug.xcconfig"; sourceTree = "<group>"; };
 		7A4D352CD337FB3A3BF06240 /* Pods-Jasne.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Jasne.release.xcconfig"; path = "Target Support Files/Pods-Jasne/Pods-Jasne.release.xcconfig"; sourceTree = "<group>"; };
+		7B1000030000000000000003 /* cs */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = cs; path = Jasne/cs.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		7B1000040000000000000004 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = Jasne/en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		7B1000050000000000000005 /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = Jasne/ru.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		7B1000060000000000000006 /* uk */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = uk; path = Jasne/uk.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Jasne/SplashScreen.storyboard; sourceTree = "<group>"; };
 		B66E4B83D6FE617179A7128E /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Jasne/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
@@ -57,6 +62,7 @@
 				13B07FB01A68108700A75B9A /* AppDelegate.mm */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
+				7B1000020000000000000002 /* InfoPlist.strings */,
 				13B07FB71A68108700A75B9A /* main.m */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
 				FDBAB070ED70410FA97176E2 /* noop-file.swift */,
@@ -205,6 +211,7 @@
 			files = (
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
+				7B1000010000000000000001 /* InfoPlist.strings in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
 				8149BC5F782F095BE1730D5A /* PrivacyInfo.xcprivacy in Resources */,
 			);
@@ -356,6 +363,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		7B1000020000000000000002 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				7B1000030000000000000003 /* cs */,
+				7B1000040000000000000004 /* en */,
+				7B1000050000000000000005 /* ru */,
+				7B1000060000000000000006 /* uk */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logger } from "@/lib/logger";
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -126,6 +126,7 @@ export function HelpGuideScreen() {
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[styles.content, { paddingBottom: Math.max(32, insets.bottom + 24) }]}
+          keyboardShouldPersistTaps="always"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

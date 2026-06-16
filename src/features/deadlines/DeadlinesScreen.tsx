@@ -5,7 +5,7 @@ import { useScrollToTop } from "@react-navigation/native";
 import { AppIcon } from "@/components/AppIcon";
 import { TrackingCard } from "@/components/tracking/TrackingCard";
 import { EmptyState, ErrorText, Screen, useColors } from "@/components/ui";
-import { completeDeadline, deleteDeadline, listDeadlines, reactivateDeadline } from "@/features/deadlines/deadlinesApi";
+import { completeDeadline, deleteDeadline, listAllDeadlines, reactivateDeadline } from "@/features/deadlines/deadlinesApi";
 import { exportDeadlineToCalendar } from "@/features/deadlines/calendarExport";
 import { getLimits } from "@/features/scans/scansApi";
 import { useTrackings } from "@/hooks/useTrackings";
@@ -100,9 +100,11 @@ export function DeadlinesScreen() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      // load all (active + completed) so user can see what's done
+      // load all (active + completed) so user can see what's done.
+      // listAllDeadlines paginates past the 50-row page size so users with
+      // many deadlines see the full list and accurate urgency/done counts.
       const [all, limits] = await Promise.all([
-        listDeadlines(false),
+        listAllDeadlines(false),
         getLimits().catch(() => null),
       ]);
       if (!aliveRef.current) return;

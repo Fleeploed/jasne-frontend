@@ -169,6 +169,29 @@ export const createScannerStyles = (scanner: ScannerPalette) => StyleSheet.creat
   zoomControlsRaised: {
     bottom: 100,
   },
+  zoomReadout: {
+    position: "absolute",
+    bottom: 72,
+    alignSelf: "center",
+    minWidth: 56,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    backgroundColor: "rgba(0,0,0,0.58)",
+    borderWidth: 1,
+    borderColor: "rgba(244,239,230,0.12)",
+  },
+  zoomReadoutRaised: {
+    bottom: 148,
+  },
+  zoomReadoutText: {
+    color: scanner.stageInk,
+    fontFamily: fonts.bodySemiBold,
+    ...typeStyles.caption1,
+    fontWeight: "600",
+  },
   zoomButton: {
     minWidth: 42,
     height: 34,
@@ -338,7 +361,8 @@ export const createScannerStyles = (scanner: ScannerPalette) => StyleSheet.creat
 });
 
 export const createSheetStyles = (scanner: ScannerPalette) => StyleSheet.create({
-  overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(10,9,7,0.50)" },
+  root: { flex: 1, justifyContent: "flex-end" },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(10,9,7,0.60)" },
   sheet: { backgroundColor: scanner.surface2, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 28 },
   handle: { width: 36, height: 4, borderRadius: 999, backgroundColor: scanner.ink3, alignSelf: "center", marginTop: 10 },
   sectionLabel: { paddingHorizontal: 22, paddingTop: 16, paddingBottom: 8, color: scanner.ink4, fontFamily: fonts.bodyExtraBold, ...typeStyles.sectionHeader, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase" },

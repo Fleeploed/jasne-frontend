@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Platform, StyleSheet, TextInput, type StyleProp, type TextInputProps, type TextStyle } from "react-native";
+import { StyleSheet, TextInput, type StyleProp, type TextInputProps, type TextStyle } from "react-native";
 
 type SelectableTextProps = Omit<TextInputProps, "children" | "editable" | "multiline" | "onChangeText" | "value"> & {
   children?: ReactNode;
@@ -7,32 +7,36 @@ type SelectableTextProps = Omit<TextInputProps, "children" | "editable" | "multi
   style?: StyleProp<TextStyle>;
 };
 
-export function SelectableText({ children, value, style, scrollEnabled = false, ...props }: SelectableTextProps) {
+const DEFAULT_SELECTION_COLOR = "#6FA0E6";
+
+export function SelectableText({
+  children,
+  value,
+  style,
+  scrollEnabled = false,
+  selectTextOnFocus = false,
+  selectionColor = DEFAULT_SELECTION_COLOR,
+  ...props
+}: SelectableTextProps) {
   const text = value ?? textFromChildren(children);
-  const { onPressIn, ...inputProps } = props;
 
   return (
     <TextInput
-      {...inputProps}
+      {...props}
       value={text}
       multiline
-      editable={Platform.OS !== "ios"}
-      caretHidden
+      editable
       showSoftInputOnFocus={false}
-      inputMode="none"
       contextMenuHidden={false}
       scrollEnabled={scrollEnabled}
-      selectTextOnFocus={false}
+      selectionColor={selectionColor}
+      selectTextOnFocus={selectTextOnFocus}
       autoCorrect={false}
       spellCheck={false}
       autoComplete="off"
       importantForAutofill="no"
       underlineColorAndroid="transparent"
       onChangeText={() => undefined}
-      onPressIn={(event) => {
-        event.stopPropagation();
-        onPressIn?.(event);
-      }}
       style={[styles.base, style]}
     />
   );

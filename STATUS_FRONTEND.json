@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "meta": {
     "project": "Jasne frontend",
-    "snapshot_date": "2026-06-15",
+    "snapshot_date": "2026-06-16T19:22:02+02:00",
     "repo_path": "/Users/alisheribrayev/Documents/Jasne/jasne-frontend",
     "app_name": "Jasne",
     "current_version": "0.1.0",
@@ -23,8 +23,8 @@
       "expo_go_status": "partial only",
       "expo_go_notes": [
         "Core JS screens can run in Expo Go.",
-        "In-app camera (react-native-vision-camera), custom URL schemes, OAuth redirects, and password reset links should be tested in a development build.",
-        "Camera capture uses react-native-vision-camera live preview inside the app UI; the native VisionKit document scanner was removed (no custom UI possible over it). Requires New Architecture + dev build."
+        "In-app camera (expo-camera), custom URL schemes, OAuth redirects, and password reset links should be tested in a development build.",
+        "Camera capture uses expo-camera live preview inside the app UI; native iOS/Android project files are the source of truth for app identity, permissions, icons, orientation, and localized permission strings. Requires New Architecture + dev build."
       ],
       "added_packages_this_session": [
         "yaml ^2.9.0 (parse bundled terms.yaml for the Terms of Service screen)",
@@ -42,7 +42,8 @@
       "android_package": "app.jasne.mobile",
       "orientation": "portrait",
       "supports_tablet": false,
-      "user_interface_style": "automatic"
+      "user_interface_style": "automatic",
+      "source_of_truth": "Native project files under ios/ and android/ are authoritative. app.json intentionally keeps only Expo metadata, typed routes, EAS project id, owner, and newArchEnabled so Expo Doctor does not report unsynced native config in the bare project."
     },
     "supabase": {
       "project_id": "ndestbxknbgaxxdjoqkv",
@@ -104,13 +105,26 @@
       "eslint_version": "8.57.1 (ESLint 10 requires flat config, incompatible with eslint-config-expo)",
       "react_hooks_plugin": "4.6.x (v7 adds React Compiler rules that false-positive on non-Compiler projects)",
       "test_suites": [
-        "src/lib/__tests__/sse.test.ts (21 tests — parseSseChunk, consumeSseText)",
-        "src/lib/__tests__/apiErrors.test.ts (16 tests — parseErrorBody, isRecord)",
-        "src/lib/__tests__/i18n.test.ts (33 tests — normalizeLocale, pluralize, Czech/Russian/English forms, formatLocalizedMonthAfterIn)",
-        "src/lib/__tests__/queryClient.test.ts (11 tests — shouldRetry: 4xx never, 5xx up to 3)",
-        "src/features/chat/__tests__/oampIdentifier.test.ts (10 tests — extractOampIdentifier, normalizeOampIdentifier)"
+        "src/lib/__tests__/sse.test.ts (SSE parser)",
+        "src/lib/__tests__/apiErrors.test.ts (error-body parser)",
+        "src/lib/__tests__/i18n.test.ts (locale/plural/month helpers)",
+        "src/lib/__tests__/queryClient.test.ts (shouldRetry)",
+        "src/lib/__tests__/userScopedCache.test.ts (offline write-through cache)",
+        "src/features/chat/__tests__/oampIdentifier.test.ts (OAMP id extract/normalize)",
+        "src/features/deadlines/__tests__/calendarExport.test.ts (.ics builder)",
+        "src/features/deadlines/__tests__/deadlinesData.test.ts (NEW — deadline grouping/urgency)",
+        "src/features/deadlines/__tests__/listAllDeadlines.test.ts (NEW)",
+        "src/components/__tests__/Icon.test.tsx (NEW — Icon glyph map)",
+        "src/features/help/__tests__/HelpContentRenderer.test.tsx (NEW — pro-gating render)",
+        "src/features/help/__tests__/proHelpGating.test.tsx (NEW — gating logic)",
+        "src/features/deadlines/__tests__/DeadlinesScreen.load.test.tsx (NEW — paginated deadline screen load)",
+        "src/features/scans/__tests__/pendingScanStore.test.ts (NEW)",
+        "src/features/scans/__tests__/scansApi.test.ts (NEW — incl. deleteFromStorage)",
+        "src/features/scans/__tests__/shouldCleanupUploadedStorage.test.ts (NEW — upload cleanup decision helper)"
       ],
-      "ci": ".github/workflows/ci.yml — 3 parallel jobs: typecheck, lint, test (coverage artifact)"
+      "ci": ".github/workflows/ci.yml — 3 parallel jobs: typecheck, lint, test (coverage artifact)",
+      "counts": "16 suites / 208 tests (jest no longer scans .claude worktrees — fe-fix-89)",
+      "current_state": "Fully green (fe-fix-93): typecheck 0; lint 0 errors / 0 warnings; jest 16 suites / 208 tests all passing; npx expo-doctor now reports 18/18 checks passed after moving bare native config out of app.json and into native source-of-truth files. iOS export smoke, xcodebuild project listing, and Android assembleDebug all pass."
     }
   },
   "frontend": {
@@ -126,7 +140,7 @@
         "expo-document-picker",
         "expo-file-system"
       ],
-      "camera": "react-native-vision-camera (live preview, in-app UI)",
+      "camera": "expo-camera (live preview, in-app UI)",
       "styling": "React Native StyleSheet + shared color tokens in src/components/ui.tsx",
       "i18n": "local dictionary in src/lib/i18n.ts"
     },
@@ -639,7 +653,7 @@
         ],
         "notes": [
           "Sentry auth token is build-only and must not be stored in app.json or exposed with EXPO_PUBLIC_*.",
-          "Sentry plugin org/project are explicit in app.json, so expo config no longer warns about missing organization/project.",
+          "Sentry runtime is initialized from EXPO_PUBLIC_SENTRY_DSN; source-map upload/build secrets remain env-only. app.json no longer carries config plugins because this is a bare project with native ios/ and android/ directories.",
           "Sentry should be used for crashes/errors; PostHog should be used for product analytics."
         ]
       }
@@ -680,7 +694,7 @@
     "ios_export_smoke": "npx expo export --platform ios --output-dir /private/tmp/jasne-frontend-export"
   },
   "tested_locally": {
-    "date": "2026-06-13",
+    "date": "2026-06-16",
     "environment": "MacBook Air Alisher, Expo SDK 52, iOS Simulator",
     "checks": [
       {
@@ -717,6 +731,41 @@
         "command": "npm run typecheck",
         "status": "passed",
         "purpose": "TypeScript compile after chat selectable text and long-press copy ActionSheet update on 2026-06-13"
+      },
+      {
+        "command": "npx expo-doctor",
+        "status": "passed",
+        "purpose": "18/18 Expo Doctor checks passed after removing bare native config fields from app.json"
+      },
+      {
+        "command": "npm run typecheck",
+        "status": "passed",
+        "purpose": "TypeScript compile after native config/status cleanup"
+      },
+      {
+        "command": "npm run lint",
+        "status": "passed",
+        "purpose": "ESLint after native config/status cleanup"
+      },
+      {
+        "command": "npm test -- --runInBand",
+        "status": "passed",
+        "purpose": "16 suites / 208 tests after native config/status cleanup"
+      },
+      {
+        "command": "npx expo export --platform ios --output-dir /private/tmp/jasne-export-review-native-config",
+        "status": "passed",
+        "purpose": "iOS Metro export smoke after app.json native-field cleanup"
+      },
+      {
+        "command": "xcodebuild -list -project ios/Jasne.xcodeproj",
+        "status": "passed",
+        "purpose": "Xcode project still opens and exposes the Jasne scheme after adding localized InfoPlist.strings"
+      },
+      {
+        "command": "./gradlew app:assembleDebug",
+        "status": "passed",
+        "purpose": "Android native debug build succeeds after adding localized resource strings"
       }
     ],
     "manual_flows_observed": [
@@ -1168,6 +1217,31 @@
       "id": "fe-fix-88",
       "area": "Offline write-through cache (scans & deadlines)",
       "fix": "Documents (ScanListScreen) and deadlines (DeadlinesScreen) fetch manually via useState/useEffect, so the RQ persister (fe-fix-87) didn't cover them. Added a user-scoped AsyncStorage write-through cache so both render instantly on cold start and stay readable offline behind the existing OfflineBanner. src/lib/userScopedCache.ts: generic createUserScopedCache<T> mirroring profileCache — single key tagged with owning userId so a different account on the device never reads someone else's snapshot (6 unit tests in userScopedCache.test.ts). scanListCache (scans+deadlines+counts+limits) / deadlinesCache (deadlines+plan): thin typed instances. Both screens hydrate from snapshot on mount via useAuth() userId (only fills empty state — a landed network load always wins) and write through on every successful load(). session.ts signOutOnce(): clears both caches alongside existing local-cache wipes. All 202 tests pass."
+    },
+    {
+      "id": "fe-fix-89",
+      "area": "Green checks: lint error + jest worktree dedup + warning cleanup",
+      "fix": "Lint went 1 error + 29 warnings -> 0 problems; typecheck 0; 111 tests pass. (1) Icon.tsx: removed duplicate 'copy' union member + the unreachable 2nd `case 'copy'` (switch matched the first; rendered glyph unchanged) — was the only error blocking CI lint. (2) jest.config.js: added testPathIgnorePatterns + modulePathIgnorePatterns for <rootDir>/.claude/ — sibling git worktrees there (gitignored, local-only) made Jest run every test 2-3x with haste-collision risk; true count is 7 suites/111 tests (the earlier 202 was worktree inflation). (3) Removed real dead code: 15 superseded inline OAMP-status components/helpers in HelpStatusScreen (replaced by OampStatusResultBody) + unused imports (ProfileScreen ActivityIndicator, HelpGuide Text, ProBlur Platform, chatStyles 3 type imports) + unused locals (planLabel, displayQuestionLimit, OampStatusResultScreen styles/colors). (4) array-type Array<T>->T[] (TrackingCard, OnboardingScreen). (5) Hook deps real fixes: added stable setMessages setter to 3 ChatThreadScreen effects, dropped unused item.id dep in DeadlineCard. (6) Hook deps intentional -> eslint-disable-next-line + reason (NOT silenced in .eslintrc): useOampHours keeps `locale` so t() re-translates on language switch (removing = i18n bug), MessageBubble keeps serialized pathsKey, NewScanScreen keeps narrow permission-field deps. (7) logger.ts file-level eslint-disable no-console (sanctioned console boundary); test files import/first disabled where jest.mock must precede imports. Net -219 lines."
+    },
+    {
+      "id": "fe-fix-90",
+      "area": "Storage cleanup for orphaned uploads (scans)",
+      "fix": "Closed a storage leak: if uploadToStorage() succeeded but the scan never produced a record, the uploaded objects orphaned in the `documents` bucket forever. New scansApi.deleteFromStorage(paths): best-effort removal via supabase.storage.from('documents').remove(paths) — never throws (runs on the failure path, must not mask the original error), logs only in __DEV__, operates strictly on storage keys (never the user's local files). useScanUpload.startScan(): lifted uploadedPaths out of the inner try-scope and added cleanup in a finally guarded by !getPendingScanById(localId)?.scanId. Chose finally over catch deliberately — handleScanEvent's SSE 'error' event sets the pending record's error WITHOUT throwing, so a catch-only cleanup would miss backend-side processing failures (the more common orphan source); finally + the scanId guard covers both the thrown path (network/abort) and the error-event path while never deleting objects a created scan still references. typecheck clean on changed files. NOTE (not closed by this FE change): requires a DELETE RLS policy on bucket `documents` ((storage.foldername(name))[1] = auth.uid()::text) or remove() silently no-ops; partial failure inside uploadToStorage itself (Nth of M files fails) still leaves earlier objects untracked — separate gap."
+    },
+    {
+      "id": "fe-fix-91",
+      "area": "Close Pro Help leakage in ProBlurSection",
+      "fix": "ProBlurSection.tsx: removed children parameter — no longer renders real Pro content as blurred nodes. Instead draws a content-free skeleton (4 placeholder bars) behind the blur + upgrade gate. ProBlurSection title prop stays (for the readable header). components.tsx HelpContentRenderer: simplified the gated-section path — no longer builds actual body/items for free users (the big block at line 325-362 with text/steps/checklist body builders is gone). Now just <ProBlurSection key={key} title={section.title ?? null} /> so the React tree never contains Pro strings. Backend (routers/help.py, models/help_schemas.py) already strips body/items on the API side (security gate), so the frontend defense-in-depth ensures Pro content never renders even if a backend bug leaks it. Added src/features/help/__tests__/HelpContentRenderer.test.tsx: 2 render tests using react-test-renderer (RTL v14 incompatible with React 18.3) proving free render has zero Pro strings even when passed an unstripped payload, and pro render shows the real content. All 113 FE tests pass."
+    },
+    {
+      "id": "fe-fix-92",
+      "area": "Unit-test expansion + finalize pro-gating / storage-cleanup (commit 01c8dd3)",
+      "fix": "Added 7 new test suites (+~1075 lines) taking the project to 14 suites / 198 tests, all green: components/__tests__/Icon.test.tsx (glyph map), deadlines/__tests__/deadlinesData.test.ts (grouping/urgency) + listAllDeadlines.test.ts, help/__tests__/HelpContentRenderer.test.tsx + proHelpGating.test.tsx (pro_only gating render), scans/__tests__/pendingScanStore.test.ts + scansApi.test.ts (uploadToStorage + deleteFromStorage). Two test-only bugs fixed in the process: (1) scansApi.test.ts supabase mock captured mockFrom by value during the factory's TDZ so storage.from was undefined at call time — fixed with a lazy wrapper `from: (...args) => mockFrom(...args)` that reads the const at call time (this was the source of the intermittent 'deleteFromStorage 0 calls' failure). (2) Cleared two @typescript-eslint/no-require-imports warnings — proHelpGating now stubs BlurView as () => null (matching HelpContentRenderer), pendingScanStore's intentional dynamic re-import (to re-run hydrate() with fresh AsyncStorage) carries a justified eslint-disable. types.ts: Section variants gained a `locked?: boolean` flag (backend sets it + empties body/items for free users on pro_only sections; client renders ProBlurSection). Verified independently: typecheck 0, lint 0 problems, jest 198/198 stable across repeated runInBand + parallel runs."
+    },
+    {
+      "id": "fe-fix-93",
+      "area": "Bare native config + permission localization",
+      "fix": "Resolved the remaining Expo Doctor failure in the bare project. app.json now intentionally keeps only Expo metadata, newArchEnabled, typedRoutes, EAS project id, and owner; native app identity/config stays in ios/ and android/ as source of truth. Added localized iOS InfoPlist.strings for cs/en/ru/uk with NSCameraUsageDescription and NSPhotoLibraryUsageDescription, registered the InfoPlist.strings variant group in ios/Jasne.xcodeproj/project.pbxproj, and added Android resource strings in values, values-cs, values-ru, and values-uk for camera/photo permission rationale text. Verified: npx expo-doctor 18/18, npm run typecheck, npm run lint, npm test -- --runInBand (16 suites / 208 tests), npx expo export --platform ios, xcodebuild -list -project ios/Jasne.xcodeproj, and ./gradlew app:assembleDebug."
     }
   ],
   "known_issues_and_risks": [
@@ -1180,7 +1254,7 @@
     {
       "area": "Expo Go",
       "status": "limited",
-      "detail": "Custom URL schemes and the in-app camera (react-native-vision-camera) are not reliable in Expo Go.",
+      "detail": "Custom URL schemes, OAuth redirects, password reset links, and the in-app camera flow must be verified in a development/native build; Expo Go is only a partial JS-screen check.",
       "mitigation": "Use npx expo run:ios or EAS development build."
     },
     {
@@ -1250,8 +1324,8 @@
     {
       "area": "Native rebuild required",
       "status": "action needed before testing",
-      "detail": "expo-secure-store (session storage) and expo-clipboard (copy buttons) are native modules added this session. A Metro/JS reload is not enough — the app must be rebuilt or the copy action and secure session will not work.",
-      "mitigation": "Run npx expo install (already in package.json) then npx expo run:ios / run:android, or trigger an EAS development build."
+      "detail": "Native project files changed this session: iOS localized InfoPlist.strings were added to the Xcode project, Android localized resource strings were added, and app.json no longer carries native config fields. A Metro/JS reload is not enough to see native permission-string changes.",
+      "mitigation": "Reinstall a native development build with npx expo run:ios / run:android, or trigger an EAS development build. Verified locally: xcodebuild -list and ./gradlew app:assembleDebug pass."
     }
   ],
   "next_steps": {

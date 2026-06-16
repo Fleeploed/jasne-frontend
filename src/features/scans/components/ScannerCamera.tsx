@@ -1,22 +1,37 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { RefObject } from "react";
-import { PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
-import type { GestureResponderEvent } from "react-native";
-import { CameraView } from "expo-camera";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode, Ref, RefObject } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Gesture, GestureDetector, type GestureType } from "react-native-gesture-handler";
+import Reanimated, { runOnJS, useAnimatedProps, useSharedValue } from "react-native-reanimated";
+import { Camera, type CameraDevice, type CameraProps } from "react-native-vision-camera";
 import { Icon } from "@/components/Icon";
 import type { PickedUpload } from "@/features/scans/scansApi";
 import { triggerSelectionHaptic } from "@/lib/haptics";
 import { useScannerTheme } from "@/features/scans/components/scannerStyles";
-import { CAMERA_ZOOM_LEVELS, clampCameraZoom } from "@/features/scans/components/newScanData";
-import type { CameraFocusPoint, CameraZoomLevel, ScannerCopy } from "@/features/scans/components/newScanData";
+import {
+  CAMERA_ZOOM_HIDE_DELAY_MS,
+  CAMERA_ZOOM_SWIPE_ACTIVATE_DX,
+  CAMERA_ZOOM_SWIPE_DISTANCE,
+  cameraDefaultZoom,
+  cameraDisplayZoomForNative,
+  cameraZoomBounds,
+  clampCameraZoom,
+  formatCameraZoomLabel,
+  nearestCameraZoomLevel,
+} from "@/features/scans/components/newScanData";
+import type { CameraFocusPoint, CameraTapPoint, CameraZoomLevel, ScannerCopy } from "@/features/scans/components/newScanData";
+
+Reanimated.addWhitelistedNativeProps({ zoom: true });
+const ReanimatedCamera = Reanimated.createAnimatedComponent(Camera);
 
 export function ScannerCamera({
   copy,
   files,
   cameraRef,
+  cameraDevice,
   cameraReady,
   zoom,
-  focusPulse,
+  zoomLevels,
   focusPoint,
   shutterBlackout,
   torchOn,
@@ -30,61 +45,162 @@ export function ScannerCamera({
   isPro: boolean;
   files: PickedUpload[];
   limitReached: boolean;
-  cameraRef: RefObject<CameraView | null>;
+  cameraRef: RefObject<Camera | null>;
+  cameraDevice?: CameraDevice;
   cameraReady: boolean;
   zoom: number;
-  focusPulse: boolean;
+  zoomLevels: CameraZoomLevel[];
   focusPoint: CameraFocusPoint | null;
   shutterBlackout: boolean;
   torchOn: boolean;
   flashPill?: { label: string; visible: boolean };
   pdfRendering?: boolean;
-  onCameraTap: (event: GestureResponderEvent) => void;
+  onCameraTap: (point: CameraTapPoint) => void;
   onZoomChange: (zoom: number) => void;
-  children?: React.ReactNode;
+  children?: ReactNode;
 }) {
   const { scanner, scannerStyles } = useScannerTheme();
-  const zoomRef = useRef(zoom);
-  const zoomStartRef = useRef(zoom);
+  const zoomHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [zoomGestureActive, setZoomGestureActive] = useState(false);
+  const [gestureZoomDisplay, setGestureZoomDisplay] = useState(() => cameraDisplayZoomForNative(zoom, cameraDevice));
+  const zoomBounds = useMemo(
+    () => cameraZoomBounds(cameraDevice),
+    [cameraDevice],
+  );
+  const zoomValue = useSharedValue(zoom);
+  const zoomStartValue = useSharedValue(zoom);
+  const zoomMinValue = useSharedValue(zoomBounds.minZoom);
+  const zoomMaxValue = useSharedValue(zoomBounds.maxZoom);
+  const zoomNeutralValue = useSharedValue(cameraDefaultZoom(cameraDevice));
+  const zoomReadoutValue = useSharedValue(cameraDisplayZoomForNative(zoom, cameraDevice));
 
   useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
+    const clamped = clampCameraZoom(zoom, cameraDevice);
+    const displayZoom = cameraDisplayZoomForNative(clamped, cameraDevice);
+    zoomValue.value = clamped;
+    zoomNeutralValue.value = cameraDefaultZoom(cameraDevice);
+    zoomReadoutValue.value = displayZoom;
+    setGestureZoomDisplay(displayZoom);
+  }, [cameraDevice, zoom, zoomNeutralValue, zoomReadoutValue, zoomValue]);
 
-  const setGestureZoom = useCallback((nextZoom: number) => {
-    const clamped = clampCameraZoom(nextZoom);
-    if (Math.abs(clamped - zoomRef.current) < 0.006) return;
-    zoomRef.current = clamped;
-    onZoomChange(clamped);
-  }, [onZoomChange]);
+  useEffect(() => {
+    zoomMinValue.value = zoomBounds.minZoom;
+    zoomMaxValue.value = zoomBounds.maxZoom;
+    const clamped = Math.max(zoomBounds.minZoom, Math.min(zoomBounds.maxZoom, zoomValue.value));
+    const displayZoom = cameraDisplayZoomForNative(clamped, cameraDevice);
+    zoomValue.value = clamped;
+    zoomNeutralValue.value = cameraDefaultZoom(cameraDevice);
+    zoomReadoutValue.value = displayZoom;
+    setGestureZoomDisplay(displayZoom);
+  }, [cameraDevice, zoomBounds.maxZoom, zoomBounds.minZoom, zoomMaxValue, zoomMinValue, zoomNeutralValue, zoomReadoutValue, zoomValue]);
 
-  const cameraPanResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_, { dx, dy }) =>
-          Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx) * 1.25,
-        onPanResponderGrant: () => {
-          zoomStartRef.current = zoomRef.current;
-        },
-        onPanResponderMove: (_, { dy }) => {
-          setGestureZoom(zoomStartRef.current - dy / 780);
-        },
+  useEffect(() => () => {
+    if (zoomHideTimerRef.current) clearTimeout(zoomHideTimerRef.current);
+  }, []);
+
+  const animatedCameraProps = useAnimatedProps<CameraProps>(() => ({
+    zoom: zoomValue.value,
+  }));
+
+  const showZoomReadout = useCallback(() => {
+    if (zoomHideTimerRef.current) {
+      clearTimeout(zoomHideTimerRef.current);
+      zoomHideTimerRef.current = null;
+    }
+    setZoomGestureActive(true);
+  }, []);
+
+  const hideZoomReadoutSoon = useCallback(() => {
+    if (zoomHideTimerRef.current) clearTimeout(zoomHideTimerRef.current);
+    zoomHideTimerRef.current = setTimeout(() => {
+      setZoomGestureActive(false);
+      zoomHideTimerRef.current = null;
+    }, CAMERA_ZOOM_HIDE_DELAY_MS);
+  }, []);
+
+  const updateGestureZoomReadout = useCallback((nextZoom: number) => {
+    setGestureZoomDisplay(nextZoom);
+  }, []);
+
+  const settleGestureZoom = useCallback((nextZoom: number) => {
+    const clamped = clampCameraZoom(nextZoom, cameraDevice);
+    const nearest = nearestCameraZoomLevel(clamped, zoomLevels);
+    const settled = Math.abs(nearest.value - clamped) < 0.08 ? nearest.value : clamped;
+    const displayZoom = cameraDisplayZoomForNative(settled, cameraDevice);
+    zoomValue.value = settled;
+    zoomNeutralValue.value = cameraDefaultZoom(cameraDevice);
+    zoomReadoutValue.value = displayZoom;
+    setGestureZoomDisplay(displayZoom);
+    if (Math.abs(settled - zoom) >= 0.006) {
+      onZoomChange(settled);
+    }
+    hideZoomReadoutSoon();
+  }, [cameraDevice, hideZoomReadoutSoon, onZoomChange, zoom, zoomLevels, zoomNeutralValue, zoomReadoutValue, zoomValue]);
+
+  const createHorizontalZoomGesture = useCallback(() =>
+    Gesture.Pan()
+      .activeOffsetX([-CAMERA_ZOOM_SWIPE_ACTIVATE_DX, CAMERA_ZOOM_SWIPE_ACTIVATE_DX])
+      .failOffsetY([-28, 28])
+      .onBegin(() => {
+        zoomStartValue.value = zoomValue.value;
+      })
+      .onStart(() => {
+        runOnJS(showZoomReadout)();
+      })
+      .onUpdate((event) => {
+        const range = zoomMaxValue.value - zoomMinValue.value;
+        const nextZoom = Math.max(
+          zoomMinValue.value,
+          Math.min(zoomMaxValue.value, zoomStartValue.value + (event.translationX / CAMERA_ZOOM_SWIPE_DISTANCE) * range),
+        );
+        const displayZoom = nextZoom / Math.max(zoomNeutralValue.value, 0.1);
+        const readoutZoom = Math.round(displayZoom * 10) / 10;
+        zoomValue.value = nextZoom;
+        if (Math.abs(readoutZoom - zoomReadoutValue.value) >= 0.05) {
+          zoomReadoutValue.value = readoutZoom;
+          runOnJS(updateGestureZoomReadout)(readoutZoom);
+        }
+      })
+      .onFinalize(() => {
+        runOnJS(settleGestureZoom)(zoomValue.value);
       }),
-    [setGestureZoom],
+    [settleGestureZoom, showZoomReadout, updateGestureZoomReadout, zoomMaxValue, zoomMinValue, zoomNeutralValue, zoomReadoutValue, zoomStartValue, zoomValue],
+  );
+
+  const cameraTapGesture = useMemo(
+    () =>
+      Gesture.Tap()
+        .maxDistance(CAMERA_ZOOM_SWIPE_ACTIVATE_DX)
+        .onEnd((event, success) => {
+          if (!success) return;
+          runOnJS(onCameraTap)({ x: event.x, y: event.y });
+        }),
+    [onCameraTap],
+  );
+
+  const cameraGesture = useMemo(
+    () => Gesture.Exclusive(createHorizontalZoomGesture(), cameraTapGesture),
+    [cameraTapGesture, createHorizontalZoomGesture],
+  );
+
+  const zoomControlGesture = useMemo(
+    () => createHorizontalZoomGesture(),
+    [createHorizontalZoomGesture],
   );
 
   return (
     <View style={scannerStyles.camera}>
-      {cameraReady ? (
-        <CameraView
-          ref={cameraRef as React.Ref<CameraView>}
+      {cameraReady && cameraDevice ? (
+        <ReanimatedCamera
+          ref={cameraRef as Ref<Camera>}
           style={StyleSheet.absoluteFill}
-          facing="back"
-          enableTorch={torchOn}
-          zoom={zoom}
-          autofocus={focusPulse ? "on" : "off"}
-          animateShutter={false}
+          device={cameraDevice}
+          isActive={cameraReady}
+          photo
+          photoQualityBalance="balanced"
+          animatedProps={animatedCameraProps}
+          torch={torchOn ? "on" : "off"}
+          lowLightBoost={cameraDevice.supportsLowLightBoost}
         />
       ) : (
         <View style={scannerStyles.emptyState}>
@@ -95,20 +211,27 @@ export function ScannerCamera({
 
       {cameraReady ? (
         <>
-          <Pressable
-            {...cameraPanResponder.panHandlers}
-            accessibilityRole="button"
-            accessibilityLabel={copy.pointCamera}
-            onPress={onCameraTap}
-            style={StyleSheet.absoluteFill}
-          />
+          <GestureDetector gesture={cameraGesture}>
+            <View
+              collapsable={false}
+              accessibilityRole="button"
+              accessibilityLabel={copy.pointCamera}
+              style={StyleSheet.absoluteFill}
+            />
+          </GestureDetector>
           {focusPoint ? <FocusMarker point={focusPoint} /> : null}
           <ZoomControls
-            levels={CAMERA_ZOOM_LEVELS}
+            levels={zoomLevels}
             value={zoom}
             hasFiles={files.length > 0}
+            gesture={zoomControlGesture}
             onChange={onZoomChange}
           />
+          {zoomGestureActive ? (
+            <View pointerEvents="none" style={[scannerStyles.zoomReadout, files.length > 0 && scannerStyles.zoomReadoutRaised]}>
+              <Text style={scannerStyles.zoomReadoutText}>{formatCameraZoomLabel(gestureZoomDisplay)}</Text>
+            </View>
+          ) : null}
         </>
       ) : null}
 
@@ -157,16 +280,18 @@ export function ZoomControls({
   levels,
   value,
   hasFiles,
+  gesture,
   onChange,
 }: {
   levels: CameraZoomLevel[];
   value: number;
   hasFiles: boolean;
+  gesture?: GestureType;
   onChange: (zoom: number) => void;
 }) {
   const { scannerStyles } = useScannerTheme();
-  return (
-    <View style={[scannerStyles.zoomControls, hasFiles && scannerStyles.zoomControlsRaised]}>
+  const controls = (
+    <View collapsable={false} style={[scannerStyles.zoomControls, hasFiles && scannerStyles.zoomControlsRaised]}>
       {levels.map((level) => {
         const active = Math.abs(value - level.value) < 0.01;
         return (
@@ -189,4 +314,5 @@ export function ZoomControls({
       })}
     </View>
   );
+  return gesture ? <GestureDetector gesture={gesture}>{controls}</GestureDetector> : controls;
 }

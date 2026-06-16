@@ -67,6 +67,7 @@ export function ChatComposer({
   questionsUsed,
   questionsMax,
   onSend,
+  onStop,
   colors,
   styles,
 }: {
@@ -80,6 +81,7 @@ export function ChatComposer({
   questionsUsed: number;
   questionsMax: number;
   onSend: () => void;
+  onStop?: () => void;
   colors: ColorPalette;
   styles: ChatStyles;
 }) {
@@ -94,10 +96,9 @@ export function ChatComposer({
         placeholderTextColor={colors.muted2}
         editable={editable}
         autoCapitalize="sentences"
-        returnKeyType="send"
-        onSubmitEditing={() => {
-          if (!disabled && !streaming) onSend();
-        }}
+        multiline
+        submitBehavior="newline"
+        textAlignVertical="top"
         style={styles.composerInput}
       />
       {showCounter ? (
@@ -108,26 +109,35 @@ export function ChatComposer({
         disabled={disabled}
         muted={muted}
         onPress={onSend}
+        onStop={onStop}
         colors={colors}
       />
     </View>
   );
 }
 
-export function SendButton({ streaming, disabled, muted = false, onPress, colors }: {
+export function SendButton({ streaming, disabled, muted = false, onPress, onStop, colors }: {
   streaming: boolean;
   disabled: boolean;
   muted?: boolean;
   onPress: () => void;
+  onStop?: () => void;
   colors: ColorPalette;
 }) {
-  const backgroundColor = streaming && muted ? colors.surface2 : disabled ? colors.surface2 : colors.primary;
-  const iconColor = streaming && muted ? colors.muted3 : disabled ? colors.muted3 : colors.textOnAccent;
+  // Chat answer is streaming and can be cancelled → active stop button.
+  // A scan still processing (muted) shows a non-interactive muted square.
+  const stoppable = streaming && !muted && Boolean(onStop);
+  const accent = stoppable || (!streaming && !disabled);
+  const backgroundColor = accent ? colors.primary : colors.surface2;
+  const iconColor = accent ? colors.textOnAccent : colors.muted3;
+  const pressDisabled = stoppable ? false : disabled || streaming;
 
   return (
     <Pressable
-      onPress={onPress}
-      disabled={disabled || streaming}
+      onPress={stoppable ? onStop : onPress}
+      disabled={pressDisabled}
+      accessibilityRole="button"
+      accessibilityLabel={stoppable ? t("chat.stop") : t("chat.send")}
       style={({ pressed }) => ({
         width: 36,
         height: 36,
@@ -147,4 +157,3 @@ export function SendButton({ streaming, disabled, muted = false, onPress, colors
     </Pressable>
   );
 }
-
