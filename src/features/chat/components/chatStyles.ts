@@ -551,7 +551,7 @@ export function createStyles(colors: ColorPalette) {
     infoBlockText: {
       color: colors.text,
       fontFamily: fonts.body,
-      ...typeStyles.rowMeta,
+      ...typeStyles.rowSecondary,
     },
     bubble: { maxWidth: "84%", paddingHorizontal: 12, paddingVertical: 10 },
     userBubble: {
