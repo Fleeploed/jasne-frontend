@@ -43,6 +43,7 @@ function collectText(node: JsonNode | JsonNode[] | null): string[] {
   if (node == null) return [];
   if (typeof node === "string") return [node];
   if (Array.isArray(node)) return node.flatMap(collectText);
+  if (typeof node.props?.value === "string") return [node.props.value, ...collectText((node.children ?? null) as JsonNode[] | null)];
   return collectText((node.children ?? null) as JsonNode[] | null);
 }
 

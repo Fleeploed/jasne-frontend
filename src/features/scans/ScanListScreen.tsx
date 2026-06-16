@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Keyboard, LayoutAnimation, Platform, Pressable, RefreshControl, Text, TextInput, UIManager, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Keyboard, LayoutAnimation, Platform, Pressable, RefreshControl, Text, TextInput, UIManager, View, useWindowDimensions } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useScrollToTop } from "@react-navigation/native";
 
@@ -31,6 +31,7 @@ import {
   mergeScansById,
   normalizeCategoryKey,
   splitScans,
+  type DocumentCategoryFilter,
   type DocumentCategoryFilterKey,
   type ListRow,
   type MeasuredRect,
@@ -38,7 +39,7 @@ import {
 import { DocumentRow } from "@/features/scans/components/DocumentRow";
 import { DocumentContextMenu } from "@/features/scans/components/DocumentContextMenu";
 import { PendingScanCard } from "@/features/scans/components/PendingScanCard";
-import { DocumentsEmpty, ListLoadingFooter, OfflineState, SearchEmpty } from "@/features/scans/components/ScanListEmptyStates";
+import { CategoryEmpty, DocumentsEmpty, ListLoadingFooter, OfflineState, SearchEmpty } from "@/features/scans/components/ScanListEmptyStates";
 import { DocumentCategoryFilterBar, HomeHeader } from "@/features/scans/components/ScanListHeader";
 
 // Enable LayoutAnimation on Android (iOS has it by default).
@@ -46,7 +47,13 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+type ScanListPage = {
+  filter: DocumentCategoryFilter;
+  rows: ListRow[];
+};
+
 export function ScanListScreen() {
+  const { width: screenWidth } = useWindowDimensions();
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const categoryStyleList = useMemo(() => getCategoryStyles(colors), [colors]);
@@ -75,8 +82,10 @@ export function ScanListScreen() {
   } | null>(null);
   const [pendingScans, setPendingScans] = useState<PendingScanRecord[]>(() => getPendingScanList());
   const searchInputRef = useRef<TextInput>(null);
-  const listRef = useRef<FlatList<ListRow>>(null);
-  useScrollToTop(listRef);
+  const activeListRef = useRef<FlatList<ListRow>>(null);
+  const pagerRef = useRef<FlatList<ScanListPage>>(null);
+  const lastPageWidthRef = useRef(0);
+  useScrollToTop(activeListRef);
 
   useEffect(() => {
     const unsubscribe = subscribePendingScan(() => setPendingScans(getPendingScanList()));
@@ -241,17 +250,67 @@ export function ScanListScreen() {
       !categoryFilters.some((filter) => filter.key === selectedCategoryFilter)
     ) {
       setSelectedCategoryFilter("all");
+      requestAnimationFrame(() => {
+        pagerRef.current?.scrollToIndex({ index: 0, animated: false });
+      });
     }
   }, [categoryFilters, selectedCategoryFilter]);
 
-  const filteredScans = useMemo(
-    () => filterScansByDocumentCategory(searchedScans, selectedCategoryFilter),
-    [searchedScans, selectedCategoryFilter]
+  const categoryPages = useMemo<ScanListPage[]>(
+    () =>
+      categoryFilters.map((filter) => ({
+        filter,
+        rows: splitScans(
+          filterScansByDocumentCategory(searchedScans, filter.key),
+          deadlines,
+          pinnedIds,
+        ).rows,
+      })),
+    [categoryFilters, deadlines, pinnedIds, searchedScans],
   );
-  const sections = useMemo(
-    () => splitScans(filteredScans, deadlines, pinnedIds),
-    [deadlines, filteredScans, pinnedIds]
-  );
+
+  const selectedPageIndex = useMemo(() => {
+    const index = categoryPages.findIndex((page) => page.filter.key === selectedCategoryFilter);
+    return index >= 0 ? index : 0;
+  }, [categoryPages, selectedCategoryFilter]);
+  const selectedPage = categoryPages[selectedPageIndex] ?? categoryPages[0] ?? null;
+  const allPage = categoryPages[0] ?? null;
+  const pageWidth = Math.max(1, screenWidth);
+
+  useEffect(() => {
+    if (!categoryPages.length) return;
+    if (lastPageWidthRef.current === pageWidth) return;
+    lastPageWidthRef.current = pageWidth;
+    requestAnimationFrame(() => {
+      pagerRef.current?.scrollToIndex({
+        index: selectedPageIndex,
+        animated: false,
+      });
+    });
+  }, [categoryPages.length, pageWidth, selectedPageIndex]);
+
+  useEffect(() => {
+    if (!selectedPage || selectedPage.filter.key === "all") return;
+    if (selectedPage.rows.length > 0 || selectedPage.filter.count <= 0) return;
+    if (!hasMoreScans || loading || loadingMoreScans || refreshing) return;
+    void loadMoreScans();
+  }, [hasMoreScans, loadMoreScans, loading, loadingMoreScans, refreshing, selectedPage]);
+
+  const selectCategoryFilter = useCallback((filter: DocumentCategoryFilterKey) => {
+    setSelectedCategoryFilter(filter);
+    const index = categoryPages.findIndex((page) => page.filter.key === filter);
+    if (index >= 0) {
+      pagerRef.current?.scrollToIndex({ index, animated: true });
+    }
+  }, [categoryPages]);
+
+  const handleCategoryPageMomentumEnd = useCallback((event: { nativeEvent: { contentOffset: { x: number } } }) => {
+    const nextIndex = Math.max(0, Math.min(categoryPages.length - 1, Math.round(event.nativeEvent.contentOffset.x / pageWidth)));
+    const nextFilter = categoryPages[nextIndex]?.filter.key;
+    if (nextFilter && nextFilter !== selectedCategoryFilter) {
+      setSelectedCategoryFilter(nextFilter);
+    }
+  }, [categoryPages, pageWidth, selectedCategoryFilter]);
 
   if (loading) {
     return (
@@ -273,7 +332,7 @@ export function ScanListScreen() {
   // The empty state lives below the pending-stack header. While a scan is in
   // flight the user *does* have a document — suppress the "you have nothing"
   // placeholder so the two states aren't shown simultaneously.
-  const isEmpty = sections.rows.length === 0 && !hasPending;
+  const isEmpty = (allPage?.rows.length ?? 0) === 0 && !hasPending;
   // Show the offline state instead of the regular empty state when the load
   // failed and we have no cached scans — otherwise the user sees both the
   // raw API error AND the "scan your first document" pitch at the same time.
@@ -315,92 +374,137 @@ export function ScanListScreen() {
           filters={categoryFilters}
           selected={selectedCategoryFilter}
           styles={styles}
-          onSelect={setSelectedCategoryFilter}
+          onSelect={selectCategoryFilter}
         />
       ) : null}
       <FlatList
-        ref={listRef}
-        data={sections.rows}
-        keyExtractor={(item) => item.key}
-        contentContainerStyle={[styles.list, isEmpty && styles.listEmpty]}
-        onEndReached={loadMoreScans}
-        onEndReachedThreshold={0.35}
-        ListFooterComponent={loadingMoreScans ? <ListLoadingFooter color={colors.primary} styles={styles} /> : null}
-        refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
-        ListHeaderComponent={
-          hasPending ? (
-            <View style={styles.pendingStack}>
-              {activePendingScans.map((p) => (
-                <PendingScanCard
-                  key={p.localId}
-                  pending={p}
-                  colors={colors}
-                  styles={styles}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/scan/new",
-                      params: { pending: p.localId, fresh: String(Date.now()) },
-                    })
-                  }
-                />
-              ))}
-              {interruptedPendingScans.map((p) => (
-                <PendingScanCard
-                  key={p.localId}
-                  pending={p}
-                  interrupted
-                  colors={colors}
-                  styles={styles}
-                  onPress={() => removePendingScanById(p.localId)}
-                />
-              ))}
-            </View>
-          ) : null
-        }
-        ListEmptyComponent={
-          search.trim() ? (
-            <SearchEmpty query={search.trim()} colors={colors} styles={styles} />
-          ) : showOfflineState ? (
-            <OfflineState
-              onRetry={() => {
-                setLoading(true);
-                void load();
-              }}
-              colors={colors}
-              styles={styles}
-            />
-          ) : showEmptyPlaceholder ? (
-            <DocumentsEmpty
-              limits={limits}
-              scanDisabled={scanDisabled}
-              onScan={openNewScan}
-              colors={colors}
-              styles={styles}
-            />
-          ) : null
-        }
-        renderItem={({ item }) => {
-          if (item.type === "section") return <Text style={styles.sectionHeader}>{item.title}</Text>;
+        ref={pagerRef}
+        data={categoryPages}
+        keyExtractor={(page) => page.filter.key}
+        horizontal
+        pagingEnabled
+        bounces={false}
+        overScrollMode="never"
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        scrollEnabled={showCategoryFilters}
+        style={styles.categoryPager}
+        extraData={selectedPageIndex}
+        initialNumToRender={1}
+        maxToRenderPerBatch={2}
+        windowSize={3}
+        removeClippedSubviews
+        getItemLayout={(_, index) => ({ length: pageWidth, offset: pageWidth * index, index })}
+        onMomentumScrollEnd={handleCategoryPageMomentumEnd}
+        onScrollToIndexFailed={(info) => {
+          pagerRef.current?.scrollToOffset({ offset: info.index * pageWidth, animated: false });
+        }}
+        renderItem={({ item: page, index: pageIndex }) => {
+          const shouldRenderPageContent = !showCategoryFilters || Math.abs(pageIndex - selectedPageIndex) <= 1;
+          if (!shouldRenderPageContent) {
+            return <View style={[styles.categoryPage, { width: pageWidth }]} />;
+          }
+
+          const isAllPage = page.filter.key === "all";
+          const hasPageHeader = isAllPage && hasPending;
+          const pageHasVisibleContent = page.rows.length > 0 || hasPageHeader;
+
           return (
-            <DocumentRow
-              item={item.scan}
-              deadline={item.deadline}
-              pinned={item.pinned}
-              query={search}
-              colors={colors}
-              styles={styles}
-              categoryStyleList={categoryStyleList}
-              onLongPress={(rect) => {
-                triggerLongPressHaptic();
-                setDocumentMenu({
-                  scan: item.scan,
-                  deadline: item.deadline,
-                  pinned: item.pinned,
-                  query: search,
-                  rect,
-                });
-              }}
-            />
+            <View style={[styles.categoryPage, { width: pageWidth }]}>
+              <FlatList
+                ref={page.filter.key === selectedCategoryFilter ? activeListRef : undefined}
+                data={page.rows}
+                keyExtractor={(item) => item.key}
+                contentContainerStyle={[styles.list, !pageHasVisibleContent && styles.listEmpty]}
+                onEndReached={page.filter.key === selectedCategoryFilter ? loadMoreScans : undefined}
+                onEndReachedThreshold={0.35}
+                initialNumToRender={8}
+                maxToRenderPerBatch={8}
+                windowSize={7}
+                removeClippedSubviews
+                keyboardShouldPersistTaps="handled"
+                ListFooterComponent={loadingMoreScans && page.filter.key === selectedCategoryFilter ? <ListLoadingFooter color={colors.primary} styles={styles} /> : null}
+                refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
+                ListHeaderComponent={
+                  hasPageHeader ? (
+                    <View style={styles.pendingStack}>
+                      {activePendingScans.map((p) => (
+                        <PendingScanCard
+                          key={p.localId}
+                          pending={p}
+                          colors={colors}
+                          styles={styles}
+                          onPress={() =>
+                            router.push({
+                              pathname: "/scan/new",
+                              params: { pending: p.localId, fresh: String(Date.now()) },
+                            })
+                          }
+                        />
+                      ))}
+                      {interruptedPendingScans.map((p) => (
+                        <PendingScanCard
+                          key={p.localId}
+                          pending={p}
+                          interrupted
+                          colors={colors}
+                          styles={styles}
+                          onPress={() => removePendingScanById(p.localId)}
+                        />
+                      ))}
+                    </View>
+                  ) : null
+                }
+                ListEmptyComponent={
+                  search.trim() ? (
+                    <SearchEmpty query={search.trim()} colors={colors} styles={styles} />
+                  ) : showOfflineState && isAllPage ? (
+                    <OfflineState
+                      onRetry={() => {
+                        setLoading(true);
+                        void load();
+                      }}
+                      colors={colors}
+                      styles={styles}
+                    />
+                  ) : showEmptyPlaceholder && isAllPage ? (
+                    <DocumentsEmpty
+                      limits={limits}
+                      scanDisabled={scanDisabled}
+                      onScan={openNewScan}
+                      colors={colors}
+                      styles={styles}
+                    />
+                  ) : !isAllPage ? (
+                    <CategoryEmpty category={page.filter.label} colors={colors} styles={styles} />
+                  ) : null
+                }
+                renderItem={({ item }) => {
+                  if (item.type === "section") return <Text style={styles.sectionHeader}>{item.title}</Text>;
+                  return (
+                    <DocumentRow
+                      item={item.scan}
+                      deadline={item.deadline}
+                      pinned={item.pinned}
+                      query={search}
+                      colors={colors}
+                      styles={styles}
+                      categoryStyleList={categoryStyleList}
+                      onLongPress={(rect) => {
+                        triggerLongPressHaptic();
+                        setDocumentMenu({
+                          scan: item.scan,
+                          deadline: item.deadline,
+                          pinned: item.pinned,
+                          query: search,
+                          rect,
+                        });
+                      }}
+                    />
+                  );
+                }}
+              />
+            </View>
           );
         }}
       />

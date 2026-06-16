@@ -15,7 +15,8 @@ export type CtaAction =
 
 // `locked` is set by the backend when a pro_only section is served to a free
 // user: body/items arrive empty and the client renders a blurred placeholder
-// instead of the real Pro content (see proGating.ts + ProBlurSection.tsx).
+// instead of the real Pro content. Gating lives in HelpContentRenderer
+// (components.tsx); the placeholder is ProBlurSection.tsx.
 export type Section =
   | { type: "text"; title?: string | null; body: string; pro_only?: boolean; locked?: boolean }
   | { type: "steps"; title?: string | null; items: string[]; pro_only?: boolean; locked?: boolean }

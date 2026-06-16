@@ -126,6 +126,7 @@ export function HelpGuideScreen() {
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[styles.content, { paddingBottom: Math.max(32, insets.bottom + 24) }]}
+          keyboardShouldPersistTaps="always"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

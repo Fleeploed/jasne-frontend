@@ -22,7 +22,7 @@ import {
 import { t } from "@/lib/i18n";
 import type { UserPlan } from "@/lib/types";
 
-import { isPdfUpload, stepLabels, type ScannerCopy } from "./newScanData";
+import { isPdfUpload, shouldCleanupUploadedStorage, stepLabels, type ScannerCopy } from "./newScanData";
 
 type PdfPickerState = {
   uri: string;
@@ -320,23 +320,31 @@ export function useScanUpload({
 
       pushPendingProgressById(localId, t("scan.uploading"));
       let uploadedPaths: string[] | null = null;
+      // Set only when the backend streams an explicit `error` event (it doesn't
+      // throw). This distinguishes a backend failure — where no scan was
+      // persisted and the uploaded files are safe to delete — from a transport
+      // drop where the scan may already exist. See shouldCleanupUploadedStorage.
+      let backendErrored = false;
       try {
         uploadedPaths = await uploadToStorage(files);
         if (uploadedPaths.length !== files.length) {
           throw new Error(t("scan.uploadCountMismatch"));
         }
-        await streamScan(uploadedPaths, (event) => handleScanEvent(localId, event));
+        await streamScan(uploadedPaths, (event) => {
+          if (event.type === "error") backendErrored = true;
+          handleScanEvent(localId, event);
+        });
       } catch (scanError) {
         const message = scanError instanceof Error ? scanError.message : t("scan.failed");
         // Don't setError here — component may have unmounted while streaming.
         updatePendingScanById(localId, { error: message, active: false });
       } finally {
-        // If the upload succeeded but no scan record came back (stream threw or
-        // the backend streamed an error event — which doesn't throw), the
-        // uploaded objects would orphan in storage. Best-effort cleanup; never
-        // touches the user's local files. Skip when a scan was created, since
-        // the record references these same objects.
-        if (uploadedPaths?.length && !getPendingScanById(localId)?.scanId) {
+        // Best-effort cleanup of orphaned storage objects; never touches the
+        // user's local files. Only runs on an explicit backend error — a
+        // transport/SSE drop is ambiguous (the scan may exist and reference
+        // these objects), so we keep the files and rely on backend cleanup.
+        const scanCreated = Boolean(getPendingScanById(localId)?.scanId);
+        if (uploadedPaths && shouldCleanupUploadedStorage({ uploadedPaths, scanCreated, backendErrored })) {
           void deleteFromStorage(uploadedPaths);
         }
       }

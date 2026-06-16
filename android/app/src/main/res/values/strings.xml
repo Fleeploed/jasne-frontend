@@ -1,3 +1,5 @@
 <resources>
   <string name="app_name">Jasne</string>
+  <string name="camera_permission_message">Jasne needs camera access to scan documents.</string>
+  <string name="photo_library_permission_message">Jasne needs photo library access to choose documents.</string>
 </resources>
