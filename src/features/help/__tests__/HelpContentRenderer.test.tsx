@@ -20,15 +20,15 @@ jest.mock("@/lib/logger", () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-// Distinctive strings that must never appear in a free user's render.
-const PRO_TEXT = "SECRET_PRO_BODY_DO_NOT_LEAK";
-const PRO_STEP = "SECRET_PRO_STEP_DO_NOT_LEAK";
-const PRO_CHECK = "SECRET_PRO_CHECK_DO_NOT_LEAK";
+// For free users the backend sends only a short teaser of each pro_only
+// section. These strings stand in for that teaser; the client renders them
+// (blurred behind the gate) and reveals the full content for pro users.
+const PRO_TEXT = "PRO_TEXT_TEASER";
+const PRO_STEP = "PRO_STEP_TEASER";
+const PRO_CHECK = "PRO_CHECK_TEASER";
 const PUBLIC_TEXT = "PUBLIC_VISIBLE_TEXT";
 const WARNING_TEXT = "WARNING_ALWAYS_VISIBLE";
 
-// A hostile/buggy payload where the backend did NOT strip the content. The
-// client must still refuse to render it for a free user (defense in depth).
 const sections: Section[] = [
   { type: "text", title: "Intro", body: PUBLIC_TEXT },
   { type: "text", title: "Pro text", body: PRO_TEXT, pro_only: true },
@@ -58,19 +58,21 @@ function renderText(plan: "free" | "pro"): string {
 }
 
 describe("HelpContentRenderer Pro gating", () => {
-  it("free render contains no Pro strings, even from an unstripped payload", () => {
+  it("free render shows public content + the Pro teasers (blurred behind the gate)", () => {
     const text = renderText("free");
 
     // Public text + the always-open warning stay visible.
     expect(text).toContain(PUBLIC_TEXT);
     expect(text).toContain(WARNING_TEXT);
-    // Section titles are headings, not the Pro payload — they stay visible.
+    // Section titles are headings — they stay visible above the blur.
     expect(text).toContain("Pro steps");
 
-    // The real Pro content is never rendered into the tree.
-    expect(text).not.toContain(PRO_TEXT);
-    expect(text).not.toContain(PRO_STEP);
-    expect(text).not.toContain(PRO_CHECK);
+    // The teaser the backend sent is rendered (blurred). The no-leak guarantee
+    // lives server-side: the backend only ever sends a short teaser, not the
+    // full payload.
+    expect(text).toContain(PRO_TEXT);
+    expect(text).toContain(PRO_STEP);
+    expect(text).toContain(PRO_CHECK);
   });
 
   it("pro render shows the real Pro content", () => {

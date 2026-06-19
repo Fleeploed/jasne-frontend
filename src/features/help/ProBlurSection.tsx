@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
@@ -10,26 +10,33 @@ import { getProPackages } from "@/lib/purchases";
 
 import { HELP_TEXT_SCALE } from "@/features/help/constants";
 
-// Widths for the fake skeleton bars behind the blur. Purely decorative — they
-// carry no real content, just give the BlurView something to blur so the gate
-// reads as "there is locked content here".
-const SKELETON_BAR_WIDTHS = ["92%", "78%", "85%", "60%"] as const;
+// Decorative "text" behind the blur — grouped into paragraph-like blocks so the
+// gate reads as "there's real text here, just out of reach". Purely cosmetic:
+// these bars carry NO real content (see SECURITY note below). Each inner array
+// is one paragraph; widths mimic ragged line endings of real prose.
+const SKELETON_PARAGRAPHS = [
+  ["96%", "88%", "92%", "54%"],
+  ["90%", "97%", "72%"],
+  ["94%", "83%", "89%", "61%"],
+] as const;
 
 /**
  * Pro-only Help section, rendered for FREE users only. Pro users skip this
  * component entirely and render the real section.
  *
- * SECURITY: this component renders NO real Pro content. The backend strips
- * body/items from pro_only sections for free users (routers/help.py
- * `_gate_sections_for_plan`), so the real text never reaches the device. Here
- * we only draw a content-free skeleton + blur + upgrade gate. The blur is a
- * visual shell, never the protection mechanism.
+ * CONTENT: free users receive only a short real teaser of each pro_only
+ * section — the backend (routers/help.py `_gate_sections_for_plan`) sends the
+ * first line/chars and keeps the bulk server-side. We render that teaser
+ * (`children`) blurred behind the upgrade gate so it reads as real, locked
+ * content. If no teaser arrives we fall back to a content-free skeleton. The
+ * blur is a marketing/visual shell, never the protection mechanism — the gate
+ * is server-side.
  *
  * Layout:
  *   ┌─ contentCard ─────────────────────┐
  *   │ Title (full opacity — readable)   │
  *   │ ┌─ inner (position: relative) ──┐ │
- *   │ │ <fake skeleton bars — no text>│ │
+ *   │ │ <teaser content, or skeleton> │ │
  *   │ │ <BlurView absoluteFill>       │ │  ← native gaussian blur
  *   │ │ <Pro gate centered overlay>   │ │
  *   │ └────────────────────────────────┘ │
@@ -41,7 +48,7 @@ const SKELETON_BAR_WIDTHS = ["92%", "78%", "85%", "60%"] as const;
  * still degrade — that's acceptable; worst case is a darker translucent
  * panel, which still hides the content.
  */
-export function ProBlurSection({ title }: { title?: string | null }) {
+export function ProBlurSection({ title, children }: { title?: string | null; children?: ReactNode }) {
   const colors = useColors();
   const { scheme } = useThemePreference();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -71,16 +78,28 @@ export function ProBlurSection({ title }: { title?: string | null }) {
       ) : null}
 
       <View style={styles.inner}>
-        {/* Content-free skeleton — gives the card a natural height and
-            something for the BlurView to blur. No real text lives here. */}
-        <View style={styles.skeleton} pointerEvents="none">
-          {SKELETON_BAR_WIDTHS.map((width, i) => (
-            <View key={i} style={[styles.skeletonBar, { width }]} />
-          ))}
-        </View>
+        {children ? (
+          // Real teaser content (first line/chars from the backend), blurred
+          // below. pointerEvents="none" so taps fall through to the gate.
+          <View style={styles.teaser} pointerEvents="none">
+            {children}
+          </View>
+        ) : (
+          // No teaser arrived — content-free skeleton so the card keeps a
+          // natural height and the BlurView still has something to blur.
+          <View style={styles.skeleton} pointerEvents="none">
+            {SKELETON_PARAGRAPHS.map((lines, p) => (
+              <View key={p} style={styles.skeletonParagraph}>
+                {lines.map((width, i) => (
+                  <View key={i} style={[styles.skeletonBar, { width }]} />
+                ))}
+              </View>
+            ))}
+          </View>
+        )}
 
         <BlurView
-          intensity={20}
+          intensity={10}
           tint={scheme === "dark" ? "dark" : "light"}
           experimentalBlurMethod="dimezisBlurView"
           style={StyleSheet.absoluteFill}
@@ -141,16 +160,26 @@ function createStyles(colors: ColorPalette) {
       minHeight: 200,
       justifyContent: "center",
     },
+    teaser: {
+      ...StyleSheet.absoluteFillObject,
+      padding: 16,
+      justifyContent: "center",
+    },
     skeleton: {
       ...StyleSheet.absoluteFillObject,
       padding: 16,
-      gap: 12,
+      gap: 16,
       justifyContent: "center",
     },
+    skeletonParagraph: {
+      gap: 8,
+    },
     skeletonBar: {
-      height: 12,
-      borderRadius: 6,
-      backgroundColor: colors.borderSoft,
+      height: 10,
+      borderRadius: 5,
+      // Slightly stronger than borderSoft so the "text" stays faintly legible
+      // once the (now lighter) blur is applied — "чуть-чуть виден текст".
+      backgroundColor: colors.border,
     },
     overlay: {
       ...StyleSheet.absoluteFillObject,
