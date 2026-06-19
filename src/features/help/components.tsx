@@ -391,11 +391,52 @@ export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
         const gateable = section.type !== "warning" && section.type !== "cta";
         const gated = gateable && (section.locked || (section.pro_only && plan === "free"));
         if (gated) {
-          // SECURITY: never pass section.body/items into the tree here. For
-          // free users the backend already strips them (they arrive empty),
-          // and the real Pro content must never be rendered even as blurred
-          // nodes. ProBlurSection draws a content-free skeleton + upgrade gate.
-          return <ProBlurSection key={key} title={section.title ?? null} />;
+          // For free users the backend sends only a short teaser (first
+          // line/chars) of the Pro content — never the full payload. We render
+          // that teaser blurred behind the upgrade gate. Title is passed
+          // separately (rendered crisp above the blur), so the teaser node here
+          // omits it to avoid a duplicate heading. If no teaser arrived (empty
+          // body/items), ProBlurSection falls back to a content-free skeleton.
+          // Minimal, chrome-free teaser nodes: no contentCard background (it
+          // would hide the blur) and no copy button (the teaser is non-
+          // interactive behind the gate). Reuses the row styles for a real look.
+          let teaser: ReactNode = null;
+          if (section.type === "text" && section.body) {
+            teaser = (
+              <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
+                {section.body}
+              </SelectableText>
+            );
+          } else if (section.type === "steps" && section.items?.length) {
+            teaser = (
+              <View style={styles.listBlock}>
+                {section.items.map((item, i) => (
+                  <View key={`${i}-${item}`} style={styles.stepRow}>
+                    <View style={styles.stepNumber}>
+                      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.stepNumberText}>{i + 1}</Text>
+                    </View>
+                    <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{item}</SelectableText>
+                  </View>
+                ))}
+              </View>
+            );
+          } else if (section.type === "checklist" && section.items?.length) {
+            teaser = (
+              <View style={styles.listBlock}>
+                {section.items.map((item, i) => (
+                  <View key={`${i}-${item}`} style={styles.checkRow}>
+                    <Ionicons name="checkmark-outline" size={24} color={colors.primary} />
+                    <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{item}</SelectableText>
+                  </View>
+                ))}
+              </View>
+            );
+          }
+          return (
+            <ProBlurSection key={key} title={section.title ?? null}>
+              {teaser}
+            </ProBlurSection>
+          );
         }
         return <View key={key}>{rendered}</View>;
       })}
