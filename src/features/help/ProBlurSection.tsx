@@ -24,19 +24,19 @@ const SKELETON_PARAGRAPHS = [
  * Pro-only Help section, rendered for FREE users only. Pro users skip this
  * component entirely and render the real section.
  *
- * CONTENT: free users receive only a short real teaser of each pro_only
- * section — the backend (routers/help.py `_gate_sections_for_plan`) sends the
- * first line/chars and keeps the bulk server-side. We render that teaser
- * (`children`) blurred behind the upgrade gate so it reads as real, locked
- * content. If no teaser arrives we fall back to a content-free skeleton. The
- * blur is a marketing/visual shell, never the protection mechanism — the gate
- * is server-side.
+ * CONTENT: free users receive the full pro_only content from the backend
+ * (routers/help.py `_gate_sections_for_plan` flags it locked but keeps the
+ * body/items). We render that content (`children`) blurred behind the upgrade
+ * gate so it reads as real, locked content. If no content arrives we fall back
+ * to a content-free skeleton. The blur is a cosmetic shell, never a protection
+ * mechanism — sending the full text to free users is an accepted product
+ * tradeoff (see the backend gating note).
  *
  * Layout:
  *   ┌─ contentCard ─────────────────────┐
  *   │ Title (full opacity — readable)   │
  *   │ ┌─ inner (position: relative) ──┐ │
- *   │ │ <teaser content, or skeleton> │ │
+ *   │ │ <real content, or skeleton>   │ │
  *   │ │ <BlurView absoluteFill>       │ │  ← native gaussian blur
  *   │ │ <Pro gate centered overlay>   │ │
  *   │ └────────────────────────────────┘ │

@@ -20,12 +20,12 @@ jest.mock("@/lib/logger", () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-// For free users the backend sends only a short teaser of each pro_only
-// section. These strings stand in for that teaser; the client renders them
-// (blurred behind the gate) and reveals the full content for pro users.
-const PRO_TEXT = "PRO_TEXT_TEASER";
-const PRO_STEP = "PRO_STEP_TEASER";
-const PRO_CHECK = "PRO_CHECK_TEASER";
+// For free users the backend sends the full pro_only content flagged locked.
+// The client renders it (blurred behind the gate) for free users and crisp for
+// pro users.
+const PRO_TEXT = "PRO_TEXT_BODY";
+const PRO_STEP = "PRO_STEP_BODY";
+const PRO_CHECK = "PRO_CHECK_BODY";
 const PUBLIC_TEXT = "PUBLIC_VISIBLE_TEXT";
 const WARNING_TEXT = "WARNING_ALWAYS_VISIBLE";
 
@@ -58,7 +58,7 @@ function renderText(plan: "free" | "pro"): string {
 }
 
 describe("HelpContentRenderer Pro gating", () => {
-  it("free render shows public content + the Pro teasers (blurred behind the gate)", () => {
+  it("free render shows public content + the Pro content blurred behind the gate", () => {
     const text = renderText("free");
 
     // Public text + the always-open warning stay visible.
@@ -67,9 +67,8 @@ describe("HelpContentRenderer Pro gating", () => {
     // Section titles are headings — they stay visible above the blur.
     expect(text).toContain("Pro steps");
 
-    // The teaser the backend sent is rendered (blurred). The no-leak guarantee
-    // lives server-side: the backend only ever sends a short teaser, not the
-    // full payload.
+    // The full Pro content the backend sent is rendered (blurred). The blur is
+    // cosmetic, not a security boundary — an accepted product tradeoff.
     expect(text).toContain(PRO_TEXT);
     expect(text).toContain(PRO_STEP);
     expect(text).toContain(PRO_CHECK);
