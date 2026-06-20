@@ -18,13 +18,13 @@ jest.mock("@/lib/logger", () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-// The backend sends only a short teaser for gated sections; the client renders
-// whatever it receives, blurred behind the gate. So these "bodies" stand in for
-// that teaser and ARE expected to render (under the BlurView).
-const PRO_TEASER_BODY = "PRO_TEASER_BODY";
-const LOCKED_TEASER_BODY = "LOCKED_TEASER_BODY";
+// For gated sections the backend sends the full content flagged locked; the
+// client renders it blurred behind the gate. So these bodies ARE expected to
+// render (under the BlurView).
+const PRO_BODY = "PRO_BODY_VISIBLE";
+const LOCKED_BODY = "LOCKED_BODY_VISIBLE";
 const OPEN_ITEM = "PUBLIC_CHECKLIST_ITEM";
-const GATED_ITEM = "GATED_TEASER_ITEM";
+const GATED_ITEM = "GATED_ITEM_VISIBLE";
 const CTA_TITLE = "PRO_CTA_TITLE_VISIBLE";
 
 type JsonNode = ReactTestRendererJSON | string;
@@ -56,20 +56,19 @@ describe("HelpContentRenderer — gating edge cases", () => {
     expect(renderText(sections, "free")).toContain(OPEN_ITEM);
   });
 
-  it("renders a backend-locked teaser behind the gate, even without the pro_only flag", () => {
+  it("renders backend-locked content behind the gate, even without the pro_only flag", () => {
     // Contract: `locked` is the backend's authoritative gating signal. The
-    // teaser the backend chose to send is rendered (blurred) behind the gate;
-    // the client trusts the backend to have sent only a teaser, not the bulk.
-    const sections: Section[] = [{ type: "text", title: "Pro details", body: LOCKED_TEASER_BODY, locked: true }];
+    // content the backend sent is rendered (blurred) behind the gate.
+    const sections: Section[] = [{ type: "text", title: "Pro details", body: LOCKED_BODY, locked: true }];
     const rendered = renderText(sections, "free");
-    expect(rendered).toContain(LOCKED_TEASER_BODY); // teaser rendered under blur
+    expect(rendered).toContain(LOCKED_BODY); // content rendered under blur
     expect(rendered).toContain(t("help.pro.gateTitle")); // Pro gate rendered (ProBlurSection)
   });
 
-  it("renders a locked checklist's teaser for free and the full list for a pro user", () => {
+  it("renders a locked checklist's content for free and the full list for a pro user", () => {
     const free: Section[] = [{ type: "checklist", title: "Steps", items: [GATED_ITEM], pro_only: true, locked: true }];
     const freeRendered = renderText(free, "free");
-    expect(freeRendered).toContain(GATED_ITEM); // teaser rendered under blur
+    expect(freeRendered).toContain(GATED_ITEM); // content rendered under blur
     expect(freeRendered).toContain(t("help.pro.gateTitle")); // still gated
 
     // For a pro user the backend sends locked:false with the real items.
@@ -77,18 +76,18 @@ describe("HelpContentRenderer — gating edge cases", () => {
     expect(renderText(pro, "pro")).toContain(GATED_ITEM);
   });
 
-  it("shows a pro_only text teaser behind the gate for free, full body for pro", () => {
+  it("shows pro_only text behind the gate for free, full body for pro", () => {
     const sections: Section[] = [
       { type: "checklist", title: "Open list", items: [OPEN_ITEM] },
-      { type: "text", title: "Pro details", body: PRO_TEASER_BODY, pro_only: true },
+      { type: "text", title: "Pro details", body: PRO_BODY, pro_only: true },
     ];
 
     const free = renderText(sections, "free");
     expect(free).toContain(OPEN_ITEM); // public content untouched
-    expect(free).toContain(PRO_TEASER_BODY); // teaser rendered under blur
+    expect(free).toContain(PRO_BODY); // content rendered under blur
     expect(free).toContain(t("help.pro.gateTitle")); // gate present
 
     const pro = renderText(sections, "pro");
-    expect(pro).toContain(PRO_TEASER_BODY);
+    expect(pro).toContain(PRO_BODY);
   });
 });

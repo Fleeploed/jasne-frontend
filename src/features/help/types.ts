@@ -14,10 +14,11 @@ export type CtaAction =
   | "open_help_center";
 
 // `locked` is set by the backend when a pro_only section is served to a free
-// user: body/items arrive as a short teaser (first line/chars) and the client
-// renders it blurred behind the upgrade gate. The full Pro payload stays
-// server-side. Gating lives in HelpContentRenderer (components.tsx); the
-// blurred teaser shell is ProBlurSection.tsx.
+// user: the full body/items are kept and the client renders them blurred
+// behind the upgrade gate. The blur is cosmetic, not a security boundary —
+// sending the full text to free users is an accepted product tradeoff. Gating
+// lives in HelpContentRenderer (components.tsx); the blurred shell is
+// ProBlurSection.tsx.
 export type Section =
   | { type: "text"; title?: string | null; body: string; pro_only?: boolean; locked?: boolean }
   | { type: "steps"; title?: string | null; items: string[]; pro_only?: boolean; locked?: boolean }
