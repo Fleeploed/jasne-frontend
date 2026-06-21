@@ -4,6 +4,18 @@
     "slug": "jasne",
     "version": "0.1.0",
     "scheme": "jasne",
+    "icon": "./assets/icon.png",
+    "ios": {
+      "bundleIdentifier": "app.jasne.mobile",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "app.jasne.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#16458A"
+      }
+    },
     "newArchEnabled": true,
     "experiments": {
       "typedRoutes": true
