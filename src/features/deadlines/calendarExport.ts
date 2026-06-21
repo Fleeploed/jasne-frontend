@@ -1,8 +1,13 @@
+import * as Calendar from "expo-calendar";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import { Platform } from "react-native";
 
 import { t } from "@/lib/i18n";
 import type { DeadlineResponse } from "@/lib/types";
+
+/** Raised when the user hasn't granted calendar access. */
+export class CalendarPermissionError extends Error {}
 
 /**
  * Escapes a value for an iCalendar TEXT field per RFC 5545 §3.3.11:
@@ -83,6 +88,49 @@ export function buildDeadlineIcs(deadline: DeadlineResponse, now: Date = new Dat
   lines.push("END:VEVENT", "END:VCALENDAR");
   // RFC 5545 mandates CRLF line breaks.
   return lines.join("\r\n");
+}
+
+/** First writable calendar to add events to (the OS default on iOS). */
+async function getWritableCalendarId(): Promise<string | null> {
+  if (Platform.OS === "ios") {
+    const def = await Calendar.getDefaultCalendarAsync().catch(() => null);
+    if (def?.id) return def.id;
+  }
+  const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+  const writable = calendars.find((c) => c.allowsModifications);
+  return writable?.id ?? calendars[0]?.id ?? null;
+}
+
+/**
+ * Adds the deadline straight into the device calendar (Apple/Google) as an
+ * all-day event with an alarm per reminder day. Requests calendar permission
+ * first; throws CalendarPermissionError if the user declines so the caller can
+ * point them to Settings.
+ */
+export async function saveDeadlineToCalendar(deadline: DeadlineResponse): Promise<void> {
+  const { granted } = await Calendar.requestCalendarPermissionsAsync();
+  if (!granted) throw new CalendarPermissionError("calendar permission not granted");
+
+  const calendarId = await getWritableCalendarId();
+  if (!calendarId) throw new Error(t("deadlines.calendarShareUnavailable"));
+
+  const dateKey = deadline.due_date.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? deadline.due_date;
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const startDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+  const endDate = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+
+  const alarms = Array.from(new Set(deadline.reminder_days ?? []))
+    .filter((n) => Number.isFinite(n) && n >= 0)
+    .map((n) => ({ relativeOffset: -n * 24 * 60 }));
+
+  await Calendar.createEventAsync(calendarId, {
+    title: deadline.title?.trim() || t("common.document"),
+    startDate,
+    endDate,
+    allDay: true,
+    notes: deadline.description?.trim() || undefined,
+    alarms: alarms.length ? alarms : undefined,
+  });
 }
 
 /**
