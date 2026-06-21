@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Icon, type IconName } from "@/components/Icon";
 import { fonts, typeStyles, useColors, type ColorPalette } from "@/components/ui";
+import { useSwipeToClose } from "@/hooks/useSwipeToClose";
 import { t } from "@/lib/i18n";
 
 export type ActionSheetAction = {
@@ -32,6 +33,7 @@ export function ActionSheet({
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const progress = useRef(new Animated.Value(0)).current;
+  const { dragY, panHandlers, reset: resetDrag } = useSwipeToClose(onClose);
 
   useEffect(() => {
     if (!visible) {
@@ -39,6 +41,7 @@ export function ActionSheet({
       return;
     }
     progress.setValue(0);
+    resetDrag();
     Animated.spring(progress, {
       toValue: 1,
       useNativeDriver: true,
@@ -46,7 +49,7 @@ export function ActionSheet({
       stiffness: 260,
       mass: 0.8,
     }).start();
-  }, [progress, visible]);
+  }, [progress, resetDrag, visible]);
 
   const sheetTranslateY = progress.interpolate({ inputRange: [0, 1], outputRange: [18, 0] });
   const sheetOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
@@ -65,13 +68,12 @@ export function ActionSheet({
       </Animated.View>
 
       <Animated.View
+        {...panHandlers}
         style={[
           styles.container,
           { paddingBottom: Math.max(insets.bottom, 12) + 8 },
-          { opacity: sheetOpacity, transform: [{ translateY: sheetTranslateY }] },
+          { opacity: sheetOpacity, transform: [{ translateY: Animated.add(sheetTranslateY, dragY) }] },
         ]}
-        // Stop tap propagation so backdrop doesn't fire when tapping sheet
-        onStartShouldSetResponder={() => true}
       >
         {/* Sheet card with actions */}
         <View style={styles.sheet}>
