@@ -22,7 +22,13 @@ const passwordResetRedirectTo = ExpoLinking.createURL("auth/reset-password");
 
 WebBrowser.maybeCompleteAuthSession();
 
-export function AuthScreen({ initialMode = "register" }: { initialMode?: "register" | "login" }) {
+export function AuthScreen({
+  initialMode = "register",
+  onShowOnboarding,
+}: {
+  initialMode?: "register" | "login";
+  onShowOnboarding?: () => void;
+}) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -311,6 +317,18 @@ export function AuthScreen({ initialMode = "register" }: { initialMode?: "regist
                 <Text style={styles.legalLink}>{t("auth.privacy")}</Text>
               </Pressable>
             </View>
+          ) : null}
+
+          {onShowOnboarding ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("auth.showOnboarding")}
+              disabled={loading}
+              onPress={onShowOnboarding}
+              style={({ pressed }) => [styles.onboardingButton, pressed && styles.pressed, loading && styles.disabled]}
+            >
+              <Text style={styles.onboardingButtonText}>{t("auth.showOnboarding")}</Text>
+            </Pressable>
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -741,6 +759,20 @@ function createStyles(colors: ColorPalette) {
       fontFamily: fonts.bodyExtraBold,
       ...typeStyles.rowMeta,
       fontWeight: "800"
+    },
+    onboardingButton: {
+      minHeight: 34,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 18
+    },
+    onboardingButtonText: {
+      color: colors.muted,
+      fontFamily: fonts.bodyBold,
+      ...typeStyles.callout,
+      fontWeight: "700",
+      textAlign: "center",
+      textDecorationLine: "underline"
     },
     pressed: { opacity: 0.72 },
     disabled: { opacity: 0.55 }
