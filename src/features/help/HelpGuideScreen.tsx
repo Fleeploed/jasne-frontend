@@ -88,6 +88,14 @@ export function HelpGuideScreen() {
     void load();
   }, [load]);
 
+  // After a successful purchase the backend plan is already confirmed pro, so
+  // flip the plan and refetch the guide to pull the now-unlocked sections —
+  // otherwise the content only appears after leaving and reopening the screen.
+  const handleUpgraded = useCallback(() => {
+    setUserPlan("pro");
+    void load();
+  }, [load]);
+
   if (loading && !guide) {
     return (
       <Screen>
@@ -146,6 +154,7 @@ export function HelpGuideScreen() {
             sections={guide.sections}
             onAction={handleCtaAction}
             plan={userPlan}
+            onUpgraded={handleUpgraded}
           />
           {guide.updated_at ? (
             <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.updatedAt}>
