@@ -289,6 +289,15 @@ export function createStyles(colors: ColorPalette) {
     // Same logic as swipeCardActive: inner card squares off when actively
     // swiping; the rowShell clips the outer silhouette to the row radius.
     deadlineSwiping: { borderRadius: 0 },
+    // Holds the tile + body. The "done" dim opacity lives HERE, not on the
+    // card View — applying opacity to the card would make its surface bg
+    // translucent and let the red swipe-delete layer bleed through.
+    deadlineInner: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "stretch",
+      gap: 14,
+    },
     deadlineDone: { opacity: 0.62 },
     deadlineCompleted: {
       minHeight: 86,
