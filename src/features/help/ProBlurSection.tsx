@@ -48,7 +48,17 @@ const SKELETON_PARAGRAPHS = [
  * still degrade — that's acceptable; worst case is a darker translucent
  * panel, which still hides the content.
  */
-export function ProBlurSection({ title, children }: { title?: string | null; children?: ReactNode }) {
+export function ProBlurSection({
+  title,
+  children,
+  onUpgraded,
+}: {
+  title?: string | null;
+  children?: ReactNode;
+  // Fired after a successful purchase (backend plan already confirmed pro) so
+  // the host screen can refetch and reveal the unlocked content.
+  onUpgraded?: () => void;
+}) {
   const colors = useColors();
   const { scheme } = useThemePreference();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -79,14 +89,15 @@ export function ProBlurSection({ title, children }: { title?: string | null; chi
 
       <View style={styles.inner}>
         {children ? (
-          // Real teaser content (first line/chars from the backend), blurred
-          // below. pointerEvents="none" so taps fall through to the gate.
-          <View style={styles.teaser} pointerEvents="none">
+          // Full real content in normal flow drives the block height; the whole
+          // thing is blurred below. pointerEvents="none" so taps fall through
+          // to the gate.
+          <View style={styles.content} pointerEvents="none">
             {children}
           </View>
         ) : (
-          // No teaser arrived — content-free skeleton so the card keeps a
-          // natural height and the BlurView still has something to blur.
+          // No content arrived — content-free skeleton (absolute fill) so the
+          // card still has something to blur.
           <View style={styles.skeleton} pointerEvents="none">
             {SKELETON_PARAGRAPHS.map((lines, p) => (
               <View key={p} style={styles.skeletonParagraph}>
@@ -98,11 +109,12 @@ export function ProBlurSection({ title, children }: { title?: string | null; chi
           </View>
         )}
 
+        {/* Blur the whole block. */}
         <BlurView
-          intensity={10}
+          intensity={20}
           tint={scheme === "dark" ? "dark" : "light"}
           experimentalBlurMethod="dimezisBlurView"
-          style={StyleSheet.absoluteFill}
+          style={styles.blur}
         />
 
         <View style={styles.overlay} pointerEvents="box-none">
@@ -129,7 +141,11 @@ export function ProBlurSection({ title, children }: { title?: string | null; chi
         </View>
       </View>
 
-      <PaywallSheet visible={showPaywall} onClose={() => setShowPaywall(false)} />
+      <PaywallSheet
+        visible={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        onPurchase={() => onUpgraded?.()}
+      />
     </View>
   );
 }
@@ -158,12 +174,15 @@ function createStyles(colors: ColorPalette) {
       overflow: "hidden",
       // Floor the height so the Pro gate always has breathing room.
       minHeight: 200,
-      justifyContent: "center",
     },
-    teaser: {
-      ...StyleSheet.absoluteFillObject,
+    content: {
+      // Full content in normal flow drives the block height; top-aligned so the
+      // first lines sit above the blur layer.
       padding: 16,
-      justifyContent: "center",
+    },
+    blur: {
+      // Cover the whole block — the entire content reads as blurred.
+      ...StyleSheet.absoluteFillObject,
     },
     skeleton: {
       ...StyleSheet.absoluteFillObject,

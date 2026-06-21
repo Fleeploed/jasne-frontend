@@ -343,10 +343,12 @@ export function ChecklistList({ title, items }: { title?: string | null; items: 
   );
 }
 
-export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
+export function HelpContentRenderer({ sections, onAction, plan = "pro", onUpgraded }: {
   sections: Section[];
   onAction: (action: CtaAction) => void;
   plan?: UserPlan;
+  // Bubbled up from a gated section's paywall after a successful purchase.
+  onUpgraded?: () => void;
 }) {
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -434,7 +436,7 @@ export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
             );
           }
           return (
-            <ProBlurSection key={key} title={section.title ?? null}>
+            <ProBlurSection key={key} title={section.title ?? null} onUpgraded={onUpgraded}>
               {gatedContent}
             </ProBlurSection>
           );
