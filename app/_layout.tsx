@@ -119,6 +119,7 @@ function RootNavigator() {
   const colors = useColors();
   const router = useRouter();
   const [onboardingSeen, setOnboardingSeen] = useState<boolean | null>(null);
+  const [forceOnboarding, setForceOnboarding] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(ONBOARDING_STORAGE_KEY)
@@ -128,6 +129,7 @@ function RootNavigator() {
 
   const completeOnboarding = useCallback(() => {
     setOnboardingSeen(true);
+    setForceOnboarding(false);
     void AsyncStorage.setItem(ONBOARDING_STORAGE_KEY, "1").catch(() => {});
   }, []);
 
@@ -173,11 +175,18 @@ function RootNavigator() {
     );
   }
 
-  if (!session && !hasHadAccount && !onboardingSeen) {
+  if (!session && ((!hasHadAccount && !onboardingSeen) || forceOnboarding)) {
     return <OnboardingScreen onComplete={completeOnboarding} />;
   }
 
-  if (!session) return <AuthScreen initialMode={hasHadAccount ? "login" : "register"} />;
+  if (!session) {
+    return (
+      <AuthScreen
+        initialMode={hasHadAccount ? "login" : "register"}
+        onShowOnboarding={() => setForceOnboarding(true)}
+      />
+    );
+  }
 
   return (
     <AccountGate userId={session.user.id}>

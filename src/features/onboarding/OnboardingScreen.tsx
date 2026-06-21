@@ -4,6 +4,7 @@ import {
   Easing,
   type LayoutChangeEvent,
   Linking,
+  PanResponder,
   Pressable,
   StyleSheet,
   Text,
@@ -361,6 +362,21 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
     setStep(SLIDE_COUNT - 1);
   }
 
+  // Horizontal swipe to move between slides: right → back, left → next. Only
+  // captures clear horizontal drags so taps and the slides' controls still
+  // work. Swiping left on the last slide does nothing (completion stays an
+  // explicit CTA tap, never an accidental swipe).
+  const swipe = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
+        Math.abs(dx) > 18 && Math.abs(dx) > Math.abs(dy) * 1.4,
+      onPanResponderRelease: (_, { dx, vx }) => {
+        if (dx > 56 || vx > 0.4) setStep((current) => Math.max(current - 1, 0));
+        else if (dx < -56 || vx < -0.4) setStep((current) => Math.min(current + 1, SLIDE_COUNT - 1));
+      },
+    })
+  ).current;
+
   function selectLanguage(next: LanguageCode) {
     userPickedLanguage.current = true;
     setSelectedLanguage(next);
@@ -368,7 +384,7 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
   }
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.bg }]}>
+    <View style={[styles.root, { backgroundColor: colors.bg }]} {...swipe.panHandlers}>
       <StatusBar style={statusStyle} backgroundColor={colors.bg} />
       <BgGlow step={step} isLight={isLight} />
       <View pointerEvents="none" style={[stylesStatic.vignette, { borderColor: colors.bgDeep }]} />
@@ -724,16 +740,16 @@ function ScanSlide({ active, copy, colors, styles, onNext }: SlideProps & { onNe
 
   return (
     <View style={styles.slide}>
-      <Animated.View style={[styles.scanHeroWrap, staggerStyle(entries[0])]}>
+      <View style={styles.slideHeader}>
+        <Animated.Text style={[styles.slideTitle, staggerStyle(entries[0])]}>{copy.scanTitle}</Animated.Text>
+        <Animated.Text style={[styles.slideBody, staggerStyle(entries[1])]}>{copy.scanBody}</Animated.Text>
+      </View>
+      <Animated.View style={[styles.scanHeroWrap, staggerStyle(entries[2])]}>
         <ScanReveal active={active} copy={copy} colors={colors} styles={styles} />
       </Animated.View>
-      <View style={styles.slideFooter}>
-        <Animated.Text style={[styles.slideTitle, staggerStyle(entries[1])]}>{copy.scanTitle}</Animated.Text>
-        <Animated.Text style={[styles.slideBody, staggerStyle(entries[2])]}>{copy.scanBody}</Animated.Text>
-        <Animated.View style={[styles.ctaSpacing, staggerStyle(entries[3])]}>
-          <PrimaryCTA label={copy.next} onPress={onNext} colors={colors} styles={styles} />
-        </Animated.View>
-      </View>
+      <Animated.View style={[styles.ctaSpacing, staggerStyle(entries[3])]}>
+        <PrimaryCTA label={copy.next} onPress={onNext} colors={colors} styles={styles} />
+      </Animated.View>
     </View>
   );
 }
@@ -995,19 +1011,21 @@ function RemindersSlide({ active, copy, colors, styles, onNext }: SlideProps & {
 
   return (
     <View style={styles.slide}>
-      <View style={styles.reminderStack}>
-        <NotificationBanner active={active} index={0} tone="green" title={copy.banners[0].title} body={copy.banners[0].body} colors={colors} styles={styles} />
-        <NotificationBanner active={active} index={1} tone="amber" title={copy.banners[1].title} body={copy.banners[1].body} colors={colors} styles={styles} />
-        <NotificationBanner active={active} index={2} tone="amber" title={copy.banners[2].title} body={copy.banners[2].body} colors={colors} styles={styles} />
-        <NotificationBanner active={active} index={3} tone="red" title={copy.banners[3].title} body={copy.banners[3].body} colors={colors} styles={styles} />
-      </View>
-      <View style={styles.slideFooter}>
+      <View style={styles.slideHeader}>
         <Animated.Text style={[styles.slideTitle, staggerStyle(entries[0])]}>{copy.remindersTitle}</Animated.Text>
         <Animated.Text style={[styles.slideBody, staggerStyle(entries[1])]}>{copy.remindersBody}</Animated.Text>
-        <Animated.View style={[styles.ctaSpacing, staggerStyle(entries[2])]}>
-          <PrimaryCTA label={copy.next} onPress={onNext} colors={colors} styles={styles} />
-        </Animated.View>
       </View>
+      <View style={styles.remindersMain}>
+        <View style={styles.reminderStack}>
+          <NotificationBanner active={active} index={0} tone="green" title={copy.banners[0].title} body={copy.banners[0].body} colors={colors} styles={styles} />
+          <NotificationBanner active={active} index={1} tone="amber" title={copy.banners[1].title} body={copy.banners[1].body} colors={colors} styles={styles} />
+          <NotificationBanner active={active} index={2} tone="amber" title={copy.banners[2].title} body={copy.banners[2].body} colors={colors} styles={styles} />
+          <NotificationBanner active={active} index={3} tone="red" title={copy.banners[3].title} body={copy.banners[3].body} colors={colors} styles={styles} />
+        </View>
+      </View>
+      <Animated.View style={[styles.remindersCta, staggerStyle(entries[2])]}>
+        <PrimaryCTA label={copy.next} onPress={onNext} colors={colors} styles={styles} />
+      </Animated.View>
     </View>
   );
 }
@@ -1058,14 +1076,20 @@ function NotificationBanner({
   const rotate = ring.interpolate({ inputRange: [-20, 20], outputRange: ["-20deg", "20deg"] });
 
   return (
-    <Animated.View style={[styles.notificationBanner, { opacity: enter, transform: [{ translateY }, { scale }] }]}>
-      <Animated.View style={[styles.notificationIcon, { backgroundColor: toneStyle.bg, transform: [{ rotate }] }]}>
-        <Icon name="bell" size={18} color={toneStyle.color} />
+    <Animated.View style={[styles.notificationBanner, { transform: [{ translateY }, { scale }] }]}>
+      {/* Opacity lives on this inner row, never on the card View — applying it
+          to the card would make its surface bg translucent and let the warm
+          background glow bleed through (visible as a lighter patch on one
+          side). */}
+      <Animated.View style={[styles.notificationInner, { opacity: enter }]}>
+        <Animated.View style={[styles.notificationIcon, { backgroundColor: toneStyle.bg, transform: [{ rotate }] }]}>
+          <Icon name="bell" size={18} color={toneStyle.color} />
+        </Animated.View>
+        <View style={styles.notificationTextBlock}>
+          <Text style={styles.notificationTitle}>{title}</Text>
+          <Text style={styles.notificationBody}>{body}</Text>
+        </View>
       </Animated.View>
-      <View style={styles.notificationTextBlock}>
-        <Text style={styles.notificationTitle}>{title}</Text>
-        <Text style={styles.notificationBody}>{body}</Text>
-      </View>
     </Animated.View>
   );
 }
@@ -1078,18 +1102,18 @@ function GuidesSlide({ active, copy, lang, colors, styles, onNext }: SlideProps 
 
   return (
     <View style={styles.slide}>
+      <View style={styles.slideHeader}>
+        <Animated.Text style={[styles.slideTitle, staggerStyle(entries[0])]}>{copy.guidesTitle}</Animated.Text>
+        <Animated.Text style={[styles.slideBody, staggerStyle(entries[1])]}>{copy.guidesBody}</Animated.Text>
+      </View>
       <View style={styles.guideGroup}>
         {topics.map((topic, index) => (
           <GuideRow key={topic.title} topic={topic} index={index} active={active} colors={colors} styles={styles} />
         ))}
       </View>
-      <View style={styles.slideFooter}>
-        <Animated.Text style={[styles.slideTitle, staggerStyle(entries[0])]}>{copy.guidesTitle}</Animated.Text>
-        <Animated.Text style={[styles.slideBody, staggerStyle(entries[1])]}>{copy.guidesBody}</Animated.Text>
-        <Animated.View style={[styles.ctaSpacing, staggerStyle(entries[2])]}>
-          <PrimaryCTA label={copy.next} onPress={onNext} colors={colors} styles={styles} />
-        </Animated.View>
-      </View>
+      <Animated.View style={[styles.ctaSpacing, staggerStyle(entries[2])]}>
+        <PrimaryCTA label={copy.next} onPress={onNext} colors={colors} styles={styles} />
+      </Animated.View>
     </View>
   );
 }
@@ -1125,17 +1149,21 @@ function GuideRow({
   const translateY = enter.interpolate({ inputRange: [0, 1], outputRange: [14, 0] });
 
   return (
-    <Animated.View style={[styles.guideRow, { opacity: enter, transform: [{ translateY }] }]}>
-      <View style={[styles.guideIcon, { backgroundColor: toneStyle.bg }]}>
-        <Icon name={topic.icon} size={20} color={toneStyle.color} />
-      </View>
-      <View style={styles.guideTextBlock}>
-        <Text style={styles.guideTitle}>{topic.title}</Text>
-        <Text style={styles.guideSub} numberOfLines={1}>
-          {topic.sub}
-        </Text>
-      </View>
-      <Icon name="chevron-right" size={16} color={colors.muted3} />
+    <Animated.View style={[styles.guideRow, { transform: [{ translateY }] }]}>
+      {/* Opacity on the inner row, never on the card View — keeps the card's
+          surface bg opaque so the background glow can't bleed through. */}
+      <Animated.View style={[styles.guideRowInner, { opacity: enter }]}>
+        <View style={[styles.guideIcon, { backgroundColor: toneStyle.bg }]}>
+          <Icon name={topic.icon} size={20} color={toneStyle.color} />
+        </View>
+        <View style={styles.guideTextBlock}>
+          <Text style={styles.guideTitle}>{topic.title}</Text>
+          <Text style={styles.guideSub} numberOfLines={1}>
+            {topic.sub}
+          </Text>
+        </View>
+        <Icon name="chevron-right" size={16} color={colors.muted3} />
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -1649,6 +1677,8 @@ function createStyles(colors: ColorPalette, topInset: number) {
     slideHeader: {
       paddingHorizontal: 4,
       gap: 8,
+      // Space between the top header and the slide's content below it.
+      marginBottom: 20,
     },
     slideTitle: {
       color: colors.text,
@@ -1851,38 +1881,40 @@ function createStyles(colors: ColorPalette, topInset: number) {
       fontSize: 12,
       fontWeight: "700",
     },
-    slideFooter: {
-      paddingBottom: 2,
-    },
     ctaSpacing: {
       marginTop: 18,
     },
-    reminderStack: {
+    remindersMain: {
+      // Cards sit directly under the header (no floaty centered gap); the
+      // leftover space falls below them, above the CTA.
       flex: 1,
-      justifyContent: "center",
-      gap: 9,
+      justifyContent: "flex-start",
+    },
+    reminderStack: {
+      gap: 10,
       paddingHorizontal: 0,
     },
+    remindersCta: {
+      marginTop: 28,
+      paddingBottom: 2,
+    },
     notificationBanner: {
-      minHeight: 72,
+      minHeight: 64,
       borderRadius: 16,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surface2,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    notificationInner: {
       flexDirection: "row",
       alignItems: "flex-start",
       gap: 12,
-      paddingHorizontal: 13,
-      paddingVertical: 12,
-      shadowColor: "#000000",
-      shadowOffset: { width: 0, height: 10 },
-      shadowOpacity: 0.22,
-      shadowRadius: 22,
-      elevation: 4,
     },
     notificationIcon: {
-      width: 36,
-      height: 36,
+      width: 34,
+      height: 34,
       borderRadius: 10,
       alignItems: "center",
       justifyContent: "center",
@@ -1900,14 +1932,14 @@ function createStyles(colors: ColorPalette, topInset: number) {
     notificationBody: {
       color: colors.text,
       fontFamily: fonts.bodyBold,
-      fontSize: 14,
-      lineHeight: 19,
+      fontSize: 13.5,
+      lineHeight: 18,
       fontWeight: "700",
       marginTop: 3,
     },
     guideGroup: {
       flex: 1,
-      justifyContent: "center",
+      justifyContent: "flex-start",
       gap: 9,
     },
     guideRow: {
@@ -1916,10 +1948,13 @@ function createStyles(colors: ColorPalette, topInset: number) {
       borderWidth: 1,
       borderColor: colors.borderSoft,
       backgroundColor: colors.surface,
+      paddingHorizontal: 14,
+    },
+    guideRowInner: {
+      flex: 1,
       flexDirection: "row",
       alignItems: "center",
       gap: 13,
-      paddingHorizontal: 14,
     },
     guideIcon: {
       width: 42,
