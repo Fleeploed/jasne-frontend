@@ -54,10 +54,20 @@
       <key>NSAllowsLocalNetworking</key>
       <true/>
     </dict>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Jasne can add document deadlines to your calendar as reminders.</string>
+    <key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+    <string>Jasne can add document deadlines to your calendar as reminders.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>Jasne can add document deadlines to your calendar as reminders.</string>
     <key>NSCameraUsageDescription</key>
     <string>Jasne uses the camera to scan bureaucracy documents.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Jasne can upload documents selected from your library.</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>Jasne can add document deadlines to your reminders.</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>Jasne can add document deadlines to your reminders.</string>
     <key>NSUserActivityTypes</key>
     <array>
       <string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>
