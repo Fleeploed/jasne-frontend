@@ -362,6 +362,7 @@ export function DeadlinesScreen() {
                       setOpenDeadlineId={setOpenDeadlineId}
                       onDone={markDone}
                       onSwipeDelete={swipeDelete}
+                      onEdit={setEditingDeadline}
                       onOpenManual={setDetailDeadline}
                       onLongPress={(d, rect) => {
                         triggerLongPressHaptic();
@@ -409,6 +410,7 @@ export function DeadlinesScreen() {
                               setOpenDeadlineId={setOpenDeadlineId}
                               onDone={markDone}
                               onSwipeDelete={swipeDelete}
+                              onEdit={setEditingDeadline}
                               onOpenManual={setDetailDeadline}
                               onLongPress={(d, rect) => {
                                 triggerLongPressHaptic();

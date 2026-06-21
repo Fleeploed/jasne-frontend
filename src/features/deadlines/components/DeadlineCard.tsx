@@ -4,6 +4,7 @@ import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture
 import { AppIcon } from "@/components/AppIcon";
 import type { ColorPalette } from "@/components/ui";
 import { triggerSelectionHaptic } from "@/lib/haptics";
+import { t } from "@/lib/i18n";
 import type { DeadlineResponse } from "@/lib/types";
 import type { DeadlinesStyles } from "@/features/deadlines/components/deadlinesStyles";
 import {
@@ -27,6 +28,7 @@ export function DeadlineCard({
   setOpenDeadlineId,
   onDone,
   onSwipeDelete,
+  onEdit,
   onOpenManual,
   onLongPress,
   onOpenScan,
@@ -39,6 +41,7 @@ export function DeadlineCard({
   setOpenDeadlineId: (deadlineId: string | null) => void;
   onDone: (deadlineId: string) => Promise<void>;
   onSwipeDelete: (deadline: DeadlineResponse) => void;
+  onEdit: (deadline: DeadlineResponse) => void;
   onOpenManual: (deadline: DeadlineResponse) => void;
   onLongPress: (
     deadline: DeadlineResponse,
@@ -82,14 +85,38 @@ export function DeadlineCard({
     [colors.greenDark, styles.swipeDoneArea]
   );
 
-  // Swipe left reveals a red delete.
-  const renderDeleteAction = useCallback(
+  // Swipe left reveals tappable action buttons (they stay open until tapped):
+  // active rows get Edit + Delete; completed rows get Delete only.
+  const renderRightActions = useCallback(
     () => (
-      <View style={styles.swipeDeleteArea}>
-        <AppIcon name="x" size={22} color={colors.dangerDark} strokeWidth={2.2} />
+      <View style={[styles.swipeLeftActions, done && styles.swipeLeftActionsCompact]}>
+        {done ? null : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("common.edit")}
+            onPress={() => {
+              swipeableRef.current?.close();
+              onEdit(item);
+            }}
+            style={({ pressed }) => [styles.swipeEditArea, pressed && styles.cardPressed]}
+          >
+            <AppIcon name="sliders" size={22} color={colors.primary} strokeWidth={2} />
+          </Pressable>
+        )}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("common.delete")}
+          onPress={() => {
+            swipeableRef.current?.close();
+            onSwipeDelete(item);
+          }}
+          style={({ pressed }) => [styles.swipeDeleteArea, pressed && styles.cardPressed]}
+        >
+          <AppIcon name="x" size={22} color={colors.dangerDark} strokeWidth={2.2} />
+        </Pressable>
       </View>
     ),
-    [colors.dangerDark, styles.swipeDeleteArea]
+    [done, item, onEdit, onSwipeDelete, colors.primary, colors.dangerDark, styles]
   );
 
   const sourceLabel = item.scan_id ? deadlineSourceLabel(item) : null;
@@ -99,45 +126,48 @@ export function DeadlineCard({
       style={[
         styles.deadline,
         activeSwipe && styles.deadlineSwiping,
-        done && styles.deadlineDone,
         done && styles.deadlineCompleted,
         { width: cardWidth },
       ]}
     >
-      <View style={[styles.dateTile, done && styles.dateTileCompleted, { backgroundColor: tile.bg }]}>
-        <Text style={[styles.dateTileDay, { color: tile.fg }]}>{day}</Text>
-        <Text style={[styles.dateTileMonth, { color: tile.fg }]}>{month}</Text>
-      </View>
-      <View style={styles.deadlineBody}>
-        {done ? (
-          <View style={styles.completedMetaRow}>
-            <Text style={styles.completedMetaText}>{completedDateLabel(item.due_date)}</Text>
-            <AppIcon name="check" size={14} color={colors.green} strokeWidth={2.4} />
-          </View>
-        ) : (
-          <Text style={[styles.relativeText, { color: relativeLabelColor }]} numberOfLines={1}>
-            {relativeTime(item.due_date)}
-          </Text>
-        )}
-        <Text
-          style={[styles.title, done && styles.titleDone]}
-          numberOfLines={2}
-          ellipsizeMode="tail"
-        >
-          {item.title}
-        </Text>
-        {sourceLabel ? (
-          <View style={styles.metaRow}>
-            <AppIcon name="doc" size={12} color={colors.muted3} strokeWidth={1.7} />
-            <Text style={[styles.metaText, done && styles.descriptionDone]} numberOfLines={1}>
-              {sourceLabel}
+      {/* Dim opacity lives on this inner row, not the card View, so the card's
+          opaque surface keeps covering the swipe-delete layer behind it. */}
+      <View style={[styles.deadlineInner, done && styles.deadlineDone]}>
+        <View style={[styles.dateTile, done && styles.dateTileCompleted, { backgroundColor: tile.bg }]}>
+          <Text style={[styles.dateTileDay, { color: tile.fg }]}>{day}</Text>
+          <Text style={[styles.dateTileMonth, { color: tile.fg }]}>{month}</Text>
+        </View>
+        <View style={styles.deadlineBody}>
+          {done ? (
+            <View style={styles.completedMetaRow}>
+              <Text style={styles.completedMetaText}>{completedDateLabel(item.due_date)}</Text>
+              <AppIcon name="check" size={14} color={colors.green} strokeWidth={2.4} />
+            </View>
+          ) : (
+            <Text style={[styles.relativeText, { color: relativeLabelColor }]} numberOfLines={1}>
+              {relativeTime(item.due_date)}
             </Text>
-          </View>
-        ) : item.description ? (
-          <Text style={[styles.metaText, styles.metaTextManual, done && styles.descriptionDone]} numberOfLines={1}>
-            {item.description.replace(/\n+/g, " ").trim()}
+          )}
+          <Text
+            style={[styles.title, done && styles.titleDone]}
+            numberOfLines={2}
+            ellipsizeMode="tail"
+          >
+            {item.title}
           </Text>
-        ) : null}
+          {sourceLabel ? (
+            <View style={styles.metaRow}>
+              <AppIcon name="doc" size={12} color={colors.muted3} strokeWidth={1.7} />
+              <Text style={[styles.metaText, done && styles.descriptionDone]} numberOfLines={1}>
+                {sourceLabel}
+              </Text>
+            </View>
+          ) : item.description ? (
+            <Text style={[styles.metaText, styles.metaTextManual, done && styles.descriptionDone]} numberOfLines={1}>
+              {item.description.replace(/\n+/g, " ").trim()}
+            </Text>
+          ) : null}
+        </View>
       </View>
     </View>
   );
@@ -152,15 +182,24 @@ export function DeadlineCard({
         leftThreshold={SWIPE_RIGHT_WIDTH * 0.5}
         rightThreshold={SWIPE_LEFT_THRESHOLD}
         renderLeftActions={done ? undefined : renderDoneAction}
-        renderRightActions={renderDeleteAction}
+        renderRightActions={renderRightActions}
         onSwipeableWillOpen={() => setOpenDeadlineId(item.id)}
         onSwipeableOpen={(direction, swipeable) => {
           triggerSelectionHaptic();
-          // direction "left"  = left actions revealed = swiped RIGHT → mark done.
-          // direction "right" = right actions revealed = swiped LEFT  → delete.
-          if (direction === "left") void onDone(item.id);
-          else onSwipeDelete(item);
-          swipeable.close();
+          // direction "left" = left actions revealed = swiped RIGHT → quick
+          // complete (active only): fire and snap closed.
+          if (direction === "left") {
+            void onDone(item.id);
+            swipeable.close();
+            return;
+          }
+          // direction "right" = right actions revealed = swiped LEFT.
+          // Completed rows quick-delete; active rows reveal Edit/Delete buttons
+          // and stay open so the user can tap one.
+          if (done) {
+            onSwipeDelete(item);
+            swipeable.close();
+          }
         }}
         onSwipeableClose={() => {
           if (openDeadlineId === item.id) setOpenDeadlineId(null);
