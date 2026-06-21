@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSwipeToClose } from "@/hooks/useSwipeToClose";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import type { ColorPalette } from "@/components/ui";
@@ -172,6 +173,9 @@ export function ReminderSheet({
 }) {
   const insets = useSafeAreaInsets();
   const sheetY = useRef(new Animated.Value(REMINDER_SHEET_HIDDEN)).current;
+  // Swipe-down-to-dismiss. capture:false so the inner ScrollView still scrolls;
+  // drags on the grab handle / non-scrolling areas dismiss the sheet.
+  const { dragY, panHandlers, reset: resetDrag } = useSwipeToClose(() => close(), { capture: false });
   const isPro = plan === "pro";
   const availableDays = useMemo(() => filterUpcomingReminderDays(deadline.date, REMINDER_DAYS), [deadline.date]);
   const initialDays = useMemo(
@@ -184,6 +188,7 @@ export function ReminderSheet({
     if (!visible) return;
     setSelectedDays(initialDays);
     sheetY.setValue(REMINDER_SHEET_HIDDEN);
+    resetDrag();
     Animated.spring(sheetY, {
       toValue: 0,
       useNativeDriver: true,
@@ -191,7 +196,7 @@ export function ReminderSheet({
       stiffness: 210,
       mass: 0.9,
     }).start();
-  }, [initialDays, sheetY, visible]);
+  }, [initialDays, resetDrag, sheetY, visible]);
 
   const enabledCount = selectedDays.length;
   const ctaText = enabledCount > 1
@@ -220,11 +225,12 @@ export function ReminderSheet({
       <View style={styles.reminderOverlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={close} />
         <Animated.View
+          {...panHandlers}
           style={[
             styles.reminderSheet,
             {
               paddingBottom: Math.max(insets.bottom + 18, 28),
-              transform: [{ translateY: sheetY }],
+              transform: [{ translateY: Animated.add(sheetY, dragY) }],
             },
           ]}
         >
