@@ -539,8 +539,12 @@ function BgGlow({ step, isLight }: { step: number; isLight: boolean }) {
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <GlowLayer size={620} left="50%" top="34%" color="#6FA0E6" alpha={0.28} opacity={blueOpacity} extraTranslateY={blueShiftY} scale={scale} />
       <GlowLayer size={500} left="58%" top="72%" color="#C89650" alpha={0.14} opacity={warmOpacity} scale={scale} />
-      <GlowLayer size={500} left="36%" top="20%" color="#E0B45A" alpha={0.26} opacity={reminderOpacity} scale={scale} />
-      <GlowLayer size={540} left="62%" top="70%" color="#E07F73" alpha={0.24} opacity={reminderOpacity} scale={scale} />
+      {/* Reminder-slide glows. Kept clear of the card band (cards sit ~36–78%
+          of the height): the amber sits high behind the header, the warm/red
+          sits low-centre below the stack — so neither hotspots into the cards'
+          side margins (which previously read as a lighter patch on the right). */}
+      <GlowLayer size={480} left="40%" top="14%" color="#E0B45A" alpha={0.2} opacity={reminderOpacity} scale={scale} />
+      <GlowLayer size={520} left="50%" top="93%" color="#E07F73" alpha={0.18} opacity={reminderOpacity} scale={scale} />
     </View>
   );
 }
