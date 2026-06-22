@@ -23,8 +23,8 @@
       "expo_go_status": "partial only",
       "expo_go_notes": [
         "Core JS screens can run in Expo Go.",
-        "In-app camera (expo-camera), custom URL schemes, OAuth redirects, and password reset links should be tested in a development build.",
-        "Camera capture uses expo-camera live preview inside the app UI; native iOS/Android project files are the source of truth for app identity, permissions, icons, orientation, and localized permission strings. Requires New Architecture + dev build."
+        "In-app camera (react-native-vision-camera), custom URL schemes, OAuth redirects, and password reset links should be tested in a development build.",
+        "Camera capture uses react-native-vision-camera live preview inside the app UI (ScannerCamera.tsx + NewScanScreen.tsx); native iOS/Android project files are the source of truth for app identity, permissions, icons, orientation, and localized permission strings. Requires New Architecture + dev build."
       ],
       "added_packages_this_session": [
         "yaml ^2.9.0 (parse bundled terms.yaml for the Terms of Service screen)",
@@ -140,7 +140,7 @@
         "expo-document-picker",
         "expo-file-system"
       ],
-      "camera": "expo-camera (live preview, in-app UI)",
+      "camera": "react-native-vision-camera v4 (live preview, in-app UI); expo-image-picker for gallery selection",
       "styling": "React Native StyleSheet + shared color tokens in src/components/ui.tsx",
       "i18n": "local dictionary in src/lib/i18n.ts"
     },
