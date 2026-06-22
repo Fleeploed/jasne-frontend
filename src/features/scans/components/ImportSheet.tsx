@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Animated, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { Icon } from "@/components/Icon";
 import type { IconName } from "@/components/Icon";
+import { useSwipeToClose } from "@/hooks/useSwipeToClose";
 import { useScannerTheme } from "@/features/scans/components/scannerStyles";
 import type { ScannerCopy } from "@/features/scans/components/newScanData";
 
@@ -24,6 +25,9 @@ export function ImportSheet({
   const [mounted, setMounted] = useState(visible);
   const latestVisibleRef = useRef(visible);
   const progress = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  // Swipe-down-to-dismiss. dragY is added to the entrance translateY so the
+  // sheet follows the finger; releasing past a threshold closes it.
+  const { dragY, panHandlers, reset: resetDrag } = useSwipeToClose(onClose);
 
   useEffect(() => {
     latestVisibleRef.current = visible;
@@ -38,6 +42,7 @@ export function ImportSheet({
     progress.stopAnimation();
     if (visible) {
       progress.setValue(0);
+      resetDrag();
       Animated.spring(progress, {
         toValue: 1,
         useNativeDriver: true,
@@ -57,7 +62,7 @@ export function ImportSheet({
         setMounted(false);
       }
     });
-  }, [mounted, progress, visible]);
+  }, [mounted, progress, resetDrag, visible]);
 
   if (!mounted) return null;
 
@@ -77,14 +82,14 @@ export function ImportSheet({
           <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         </Animated.View>
         <Animated.View
+          {...panHandlers}
           style={[
             sheetStyles.sheet,
             {
               opacity: sheetOpacity,
-              transform: [{ translateY: sheetTranslateY }],
+              transform: [{ translateY: Animated.add(sheetTranslateY, dragY) }],
             },
           ]}
-          onStartShouldSetResponder={() => true}
         >
           <View style={sheetStyles.handle} />
           <Text style={sheetStyles.sectionLabel}>{copy.addToScan}</Text>

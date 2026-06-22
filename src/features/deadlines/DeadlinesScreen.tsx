@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useScrollToTop } from "@react-navigation/native";
 import { AppIcon } from "@/components/AppIcon";
 import { TrackingCard } from "@/components/tracking/TrackingCard";
 import { EmptyState, ErrorText, Screen, useColors } from "@/components/ui";
 import { completeDeadline, deleteDeadline, listAllDeadlines, reactivateDeadline } from "@/features/deadlines/deadlinesApi";
-import { exportDeadlineToCalendar } from "@/features/deadlines/calendarExport";
+import { CalendarPermissionError, saveDeadlineToCalendar } from "@/features/deadlines/calendarExport";
 import { getLimits } from "@/features/scans/scansApi";
 import { useTrackings } from "@/hooks/useTrackings";
 import { triggerLongPressHaptic } from "@/lib/haptics";
@@ -218,14 +218,25 @@ export function DeadlinesScreen() {
       setDeadlines((current) =>
         current.some((d) => d.id === item.id) ? current : [...current, item].sort(compareDeadlines)
       );
+      // A restored completed deadline lands in the "Done" group, which is
+      // collapsed by default — expand it so the undo is visibly reflected.
+      if (item.status === "completed") setDoneExpanded(true);
     }
   }
 
   async function addDeadlineToCalendar(item: DeadlineResponse) {
     try {
-      await exportDeadlineToCalendar(item);
+      await saveDeadlineToCalendar(item);
+      Alert.alert(t("deadlines.calendarSavedTitle"), t("deadlines.calendarSavedBody"));
     } catch (exportError) {
-      logger.warn("exportDeadlineToCalendar failed", exportError);
+      if (exportError instanceof CalendarPermissionError) {
+        Alert.alert(t("deadlines.calendarPermissionTitle"), t("deadlines.calendarPermissionBody"), [
+          { text: t("common.cancel"), style: "cancel" },
+          { text: t("deadlines.openSettings"), onPress: () => void Linking.openSettings() },
+        ]);
+        return;
+      }
+      logger.warn("saveDeadlineToCalendar failed", exportError);
       const detail = exportError instanceof Error ? exportError.message : t("deadlines.calendarExportError");
       Alert.alert(t("deadlines.calendarExportError"), detail);
     }
@@ -362,6 +373,7 @@ export function DeadlinesScreen() {
                       setOpenDeadlineId={setOpenDeadlineId}
                       onDone={markDone}
                       onSwipeDelete={swipeDelete}
+                      onEdit={setEditingDeadline}
                       onOpenManual={setDetailDeadline}
                       onLongPress={(d, rect) => {
                         triggerLongPressHaptic();
@@ -409,6 +421,7 @@ export function DeadlinesScreen() {
                               setOpenDeadlineId={setOpenDeadlineId}
                               onDone={markDone}
                               onSwipeDelete={swipeDelete}
+                              onEdit={setEditingDeadline}
                               onOpenManual={setDetailDeadline}
                               onLongPress={(d, rect) => {
                                 triggerLongPressHaptic();

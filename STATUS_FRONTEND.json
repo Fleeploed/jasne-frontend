@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "meta": {
     "project": "Jasne frontend",
-    "snapshot_date": "2026-06-16T23:40:00+02:00",
+    "snapshot_date": "2026-06-22T19:15:00+02:00",
     "repo_path": "/Users/alisheribrayev/Documents/Jasne/jasne-frontend",
     "app_name": "Jasne",
     "current_version": "0.1.0",
@@ -1272,6 +1272,41 @@
       "id": "fe-fix-99",
       "area": "Swipe-left-to-close did not work on Android (native-stack swipe is iOS-only)",
       "fix": "Migrated navigation from expo-router's default native-stack to a JS stack so the swipe-back gesture is honored on Android too. New src/components/JsStack.tsx wraps @react-navigation/stack createStackNavigator via withLayoutContext. Root app/_layout.tsx and the help/ + profile/ stacks now use <JsStack> with headerShown:false, cardStyle bg, gestureEnabled:true and ...TransitionPresets.SlideFromRightIOS. Added deps @react-navigation/stack ^7.1.1 and @react-native-masked-view/masked-view 0.3.2 to package.json — run `npx expo install @react-navigation/stack @react-native-masked-view/masked-view` to align to SDK 52 + lockfile. @react-navigation/stack is pure JS on already-built react-native-gesture-handler + react-native-screens; masked-view is native but with headers hidden its view never mounts, so it should run on the existing dev build via Fast Refresh (rebuild only if an RNCMaskedView error appears). tsc reports the expected 'Cannot find module @react-navigation/stack' in the 4 importing files until install; 208 unit tests green (src/ unaffected). To verify on-device: swipe-to-close on chat + guide screens."
+    },
+    {
+      "id": "fe-fix-100",
+      "area": "Onboarding polish (PR #7 feat/onboarding-ui-polish — open, CI green)",
+      "fix": "Added a 'How Jasně works' replay link on AuthScreen that re-shows onboarding for returning logged-out users via a forceOnboarding flag in app/_layout RootNavigator. Added horizontal swipe between slides (right=back, left=next; the last slide never auto-completes on swipe). Moved each slide's title/body to the top with content below (reminders/scans/guides) so slides no longer feel top-empty: reminder/guide content is anchored under the header, the scan animation sits centred below it."
+    },
+    {
+      "id": "fe-fix-101",
+      "area": "Onboarding reminder/guide cards showed a lighter strip on their right edge (iOS 26.3)",
+      "fix": "Entrance opacity/transform were attached directly to the bordered, rounded card View. iOS 26 keeps such a view in its own compositing layer even at rest and renders a faint right-edge artifact — a magenta-bg flatten test with no Animated props was clean, confirming it. Fix: the entrance opacity/transform now live on a transparent wrapper while the bordered card (NotificationBanner, GuideRow) stays a plain static View. The heavy card shadow was also removed and the dim opacity moved off the card surface in the same pass."
+    },
+    {
+      "id": "fe-fix-102",
+      "area": "Android shipped the default launcher icon while iOS had the branded one",
+      "fix": "app.json had no icon config. Added icon + ios + android(adaptiveIcon) config and generated Android adaptive icon resources (mipmap-anydpi-v26 XML, per-density foreground webp, refreshed legacy launcher webp) plus iconBackground #16458A in colors.xml. Requires native rebuild."
+    },
+    {
+      "id": "fe-fix-103",
+      "area": "Deadlines swipe actions + completed-card rendering + undo",
+      "fix": "Active rows: swipe right = quick complete; swipe left now reveals tappable Edit + Delete buttons instead of auto-deleting. Completed rows: swipe left = quick delete (with undo). Fixed completed cards showing the red swipe-delete layer through them (view-level opacity made the surface bg translucent — moved the dim onto an inner row so the card stays opaque). Fixed undo for completed deadlines: restoring a completed item now expands the collapsed 'Done' group so the undo is visibly reflected."
+    },
+    {
+      "id": "fe-fix-104",
+      "area": "'Add to calendar' could not actually save to Apple Calendar (.ics share only)",
+      "fix": "calendarExport.saveDeadlineToCalendar now writes a real all-day event (with per-reminder-day alarms) into the device calendar via expo-calendar, requesting permission and offering to open Settings if declined (.ics export kept as a fallback builder). Added expo-calendar ~14.0.6 to package.json/package-lock + the ExpoCalendar pod to Podfile.lock, and the NSCalendars*/NSReminders* usage descriptions to ios/Jasne/Info.plist + app.json ios.infoPlist — without them expo-calendar 14 fatal-crashes on iOS 17+ with MissingCalendarPListValueException. Requires native rebuild."
+    },
+    {
+      "id": "fe-fix-105",
+      "area": "Bottom sheets had no swipe-down-to-dismiss",
+      "fix": "Added reusable src/hooks/useSwipeToClose.ts (drag-to-dismiss + spring-back, with a capture option for sheets containing a ScrollView) and applied it to ImportSheet, ReminderSheet, and the shared ActionSheet. PaywallSheet, ManualDeadlineModal and the profile language sheet already had it."
+    },
+    {
+      "id": "fe-fix-106",
+      "area": "Help Pro gating — show real content under the blur (product decision)",
+      "fix": "Free users now receive the FULL pro_only section content rendered blurred behind the upgrade gate (backend _gate_sections_for_plan keeps body/items with locked=true). TRADEOFF: the blur is cosmetic, not a security boundary — the text is present in the API response and readable via a network inspector; accepted product decision. The blur now covers the whole gated block (height follows the real content). After a successful purchase the guide refetches and reveals unlocked content immediately — onUpgraded is threaded PaywallSheet -> ProBlurSection -> HelpContentRenderer -> HelpGuideScreen, and onPurchase only fires once the backend plan is confirmed pro."
     }
   ],
   "known_issues_and_risks": [
