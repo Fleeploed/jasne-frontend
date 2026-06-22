@@ -118,13 +118,14 @@ export function DocumentCategoryFilterBar({
       >
         {filters.map((filter) => {
           const active = filter.key === selected;
+          const showCount = filter.key !== "all";
           return (
             <Pressable
               key={filter.key}
               onPress={() => onSelect(filter.key)}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
-              accessibilityLabel={`${filter.label} ${filter.count}`}
+              accessibilityLabel={showCount ? `${filter.label} ${filter.count}` : filter.label}
               style={({ pressed }) => [
                 styles.categoryChip,
                 active && styles.categoryChipActive,
@@ -134,9 +135,11 @@ export function DocumentCategoryFilterBar({
               <Text style={[styles.categoryChipLabel, active && styles.categoryChipLabelActive]} numberOfLines={1}>
                 {filter.label}
               </Text>
-              <Text style={[styles.categoryChipCount, active && styles.categoryChipCountActive]}>
-                {filter.count}
-              </Text>
+              {showCount ? (
+                <Text style={[styles.categoryChipCount, active && styles.categoryChipCountActive]}>
+                  {filter.count}
+                </Text>
+              ) : null}
             </Pressable>
           );
         })}
