@@ -539,10 +539,7 @@ function BgGlow({ step, isLight }: { step: number; isLight: boolean }) {
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <GlowLayer size={620} left="50%" top="34%" color="#6FA0E6" alpha={0.28} opacity={blueOpacity} extraTranslateY={blueShiftY} scale={scale} />
       <GlowLayer size={500} left="58%" top="72%" color="#C89650" alpha={0.14} opacity={warmOpacity} scale={scale} />
-      {/* Reminder-slide glows. Kept clear of the card band (cards sit ~36–78%
-          of the height): the amber sits high behind the header, the warm/red
-          sits low-centre below the stack — so neither hotspots into the cards'
-          side margins (which previously read as a lighter patch on the right). */}
+      {/* Reminder-slide glows, kept clear of the card band. */}
       <GlowLayer size={480} left="40%" top="14%" color="#E0B45A" alpha={0.2} opacity={reminderOpacity} scale={scale} />
       <GlowLayer size={520} left="50%" top="93%" color="#E07F73" alpha={0.18} opacity={reminderOpacity} scale={scale} />
     </View>
@@ -1080,20 +1077,23 @@ function NotificationBanner({
   const rotate = ring.interpolate({ inputRange: [-20, 20], outputRange: ["-20deg", "20deg"] });
 
   return (
-    <Animated.View style={[styles.notificationBanner, { transform: [{ translateY }, { scale }] }]}>
-      {/* Opacity lives on this inner row, never on the card View — applying it
-          to the card would make its surface bg translucent and let the warm
-          background glow bleed through (visible as a lighter patch on one
-          side). */}
-      <Animated.View style={[styles.notificationInner, { opacity: enter }]}>
-        <Animated.View style={[styles.notificationIcon, { backgroundColor: toneStyle.bg, transform: [{ rotate }] }]}>
-          <Icon name="bell" size={18} color={toneStyle.color} />
-        </Animated.View>
-        <View style={styles.notificationTextBlock}>
-          <Text style={styles.notificationTitle}>{title}</Text>
-          <Text style={styles.notificationBody}>{body}</Text>
+    // The entrance opacity/transform live on this transparent wrapper, NOT on
+    // the bordered card. On iOS 26 an Animated transform/opacity keeps the view
+    // in its own compositing layer even at rest, and a rounded+bordered card in
+    // that layer renders a faint edge artifact on the right. Keeping the card a
+    // plain static View (no Animated props) avoids the layer entirely.
+    <Animated.View style={{ opacity: enter, transform: [{ translateY }, { scale }] }}>
+      <View style={styles.notificationBanner}>
+        <View style={styles.notificationInner}>
+          <Animated.View style={[styles.notificationIcon, { backgroundColor: toneStyle.bg, transform: [{ rotate }] }]}>
+            <Icon name="bell" size={18} color={toneStyle.color} />
+          </Animated.View>
+          <View style={styles.notificationTextBlock}>
+            <Text style={styles.notificationTitle}>{title}</Text>
+            <Text style={styles.notificationBody}>{body}</Text>
+          </View>
         </View>
-      </Animated.View>
+      </View>
     </Animated.View>
   );
 }
@@ -1153,21 +1153,25 @@ function GuideRow({
   const translateY = enter.interpolate({ inputRange: [0, 1], outputRange: [14, 0] });
 
   return (
-    <Animated.View style={[styles.guideRow, { transform: [{ translateY }] }]}>
-      {/* Opacity on the inner row, never on the card View — keeps the card's
-          surface bg opaque so the background glow can't bleed through. */}
-      <Animated.View style={[styles.guideRowInner, { opacity: enter }]}>
-        <View style={[styles.guideIcon, { backgroundColor: toneStyle.bg }]}>
-          <Icon name={topic.icon} size={20} color={toneStyle.color} />
+    // Entrance opacity/transform on a transparent wrapper, never on the
+    // bordered card — see NotificationBanner: an Animated card keeps an iOS 26
+    // compositing layer that renders an edge artifact. The card stays a plain
+    // static View.
+    <Animated.View style={{ opacity: enter, transform: [{ translateY }] }}>
+      <View style={styles.guideRow}>
+        <View style={styles.guideRowInner}>
+          <View style={[styles.guideIcon, { backgroundColor: toneStyle.bg }]}>
+            <Icon name={topic.icon} size={20} color={toneStyle.color} />
+          </View>
+          <View style={styles.guideTextBlock}>
+            <Text style={styles.guideTitle}>{topic.title}</Text>
+            <Text style={styles.guideSub} numberOfLines={1}>
+              {topic.sub}
+            </Text>
+          </View>
+          <Icon name="chevron-right" size={16} color={colors.muted3} />
         </View>
-        <View style={styles.guideTextBlock}>
-          <Text style={styles.guideTitle}>{topic.title}</Text>
-          <Text style={styles.guideSub} numberOfLines={1}>
-            {topic.sub}
-          </Text>
-        </View>
-        <Icon name="chevron-right" size={16} color={colors.muted3} />
-      </Animated.View>
+      </View>
     </Animated.View>
   );
 }
