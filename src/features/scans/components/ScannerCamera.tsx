@@ -3,6 +3,7 @@ import type { ReactNode, Ref, RefObject } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector, type GestureType } from "react-native-gesture-handler";
 import Reanimated, { runOnJS, useAnimatedProps, useSharedValue } from "react-native-reanimated";
+// react-native-vision-camera is the active camera library — also imported by NewScanScreen and newScanData; do not remove
 import { Camera, type CameraDevice, type CameraProps } from "react-native-vision-camera";
 import { Icon } from "@/components/Icon";
 import type { PickedUpload } from "@/features/scans/scansApi";
