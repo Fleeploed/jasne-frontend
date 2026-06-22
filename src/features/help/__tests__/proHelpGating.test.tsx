@@ -18,9 +18,13 @@ jest.mock("@/lib/logger", () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-const PRO_BODY = "SECRET_PRO_BODY";
-const LOCKED_BODY = "SECRET_LOCKED_BODY";
+// For gated sections the backend sends the full content flagged locked; the
+// client renders it blurred behind the gate. So these bodies ARE expected to
+// render (under the BlurView).
+const PRO_BODY = "PRO_BODY_VISIBLE";
+const LOCKED_BODY = "LOCKED_BODY_VISIBLE";
 const OPEN_ITEM = "PUBLIC_CHECKLIST_ITEM";
+const GATED_ITEM = "GATED_ITEM_VISIBLE";
 const CTA_TITLE = "PRO_CTA_TITLE_VISIBLE";
 
 type JsonNode = ReactTestRendererJSON | string;
@@ -52,25 +56,27 @@ describe("HelpContentRenderer — gating edge cases", () => {
     expect(renderText(sections, "free")).toContain(OPEN_ITEM);
   });
 
-  it("gates a section the backend marked locked, even without the pro_only flag", () => {
-    // Contract hardening: `locked` is the backend's authoritative gating signal.
-    // Even if a body slips through, the client must withhold it and show the gate.
+  it("renders backend-locked content behind the gate, even without the pro_only flag", () => {
+    // Contract: `locked` is the backend's authoritative gating signal. The
+    // content the backend sent is rendered (blurred) behind the gate.
     const sections: Section[] = [{ type: "text", title: "Pro details", body: LOCKED_BODY, locked: true }];
     const rendered = renderText(sections, "free");
-    expect(rendered).not.toContain(LOCKED_BODY); // body withheld
+    expect(rendered).toContain(LOCKED_BODY); // content rendered under blur
     expect(rendered).toContain(t("help.pro.gateTitle")); // Pro gate rendered (ProBlurSection)
   });
 
-  it("withholds a locked checklist's items for free but shows them for a pro user", () => {
-    const free: Section[] = [{ type: "checklist", title: "Steps", items: [OPEN_ITEM], pro_only: true, locked: true }];
-    expect(renderText(free, "free")).not.toContain(OPEN_ITEM);
+  it("renders a locked checklist's content for free and the full list for a pro user", () => {
+    const free: Section[] = [{ type: "checklist", title: "Steps", items: [GATED_ITEM], pro_only: true, locked: true }];
+    const freeRendered = renderText(free, "free");
+    expect(freeRendered).toContain(GATED_ITEM); // content rendered under blur
+    expect(freeRendered).toContain(t("help.pro.gateTitle")); // still gated
 
     // For a pro user the backend sends locked:false with the real items.
-    const pro: Section[] = [{ type: "checklist", title: "Steps", items: [OPEN_ITEM], pro_only: true, locked: false }];
-    expect(renderText(pro, "pro")).toContain(OPEN_ITEM);
+    const pro: Section[] = [{ type: "checklist", title: "Steps", items: [GATED_ITEM], pro_only: true, locked: false }];
+    expect(renderText(pro, "pro")).toContain(GATED_ITEM);
   });
 
-  it("blurs a pro_only text body for free but reveals it for pro, within one mixed payload", () => {
+  it("shows pro_only text behind the gate for free, full body for pro", () => {
     const sections: Section[] = [
       { type: "checklist", title: "Open list", items: [OPEN_ITEM] },
       { type: "text", title: "Pro details", body: PRO_BODY, pro_only: true },
@@ -78,7 +84,8 @@ describe("HelpContentRenderer — gating edge cases", () => {
 
     const free = renderText(sections, "free");
     expect(free).toContain(OPEN_ITEM); // public content untouched
-    expect(free).not.toContain(PRO_BODY); // gated content withheld
+    expect(free).toContain(PRO_BODY); // content rendered under blur
+    expect(free).toContain(t("help.pro.gateTitle")); // gate present
 
     const pro = renderText(sections, "pro");
     expect(pro).toContain(PRO_BODY);

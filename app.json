@@ -4,6 +4,25 @@
     "slug": "jasne",
     "version": "0.1.0",
     "scheme": "jasne",
+    "icon": "./assets/icon.png",
+    "ios": {
+      "bundleIdentifier": "app.jasne.mobile",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCalendarsFullAccessUsageDescription": "Jasne can add document deadlines to your calendar as reminders.",
+        "NSCalendarsWriteOnlyAccessUsageDescription": "Jasne can add document deadlines to your calendar as reminders.",
+        "NSCalendarsUsageDescription": "Jasne can add document deadlines to your calendar as reminders.",
+        "NSRemindersFullAccessUsageDescription": "Jasne can add document deadlines to your reminders.",
+        "NSRemindersUsageDescription": "Jasne can add document deadlines to your reminders."
+      }
+    },
+    "android": {
+      "package": "app.jasne.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#16458A"
+      }
+    },
     "newArchEnabled": true,
     "experiments": {
       "typedRoutes": true

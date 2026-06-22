@@ -343,10 +343,12 @@ export function ChecklistList({ title, items }: { title?: string | null; items: 
   );
 }
 
-export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
+export function HelpContentRenderer({ sections, onAction, plan = "pro", onUpgraded }: {
   sections: Section[];
   onAction: (action: CtaAction) => void;
   plan?: UserPlan;
+  // Bubbled up from a gated section's paywall after a successful purchase.
+  onUpgraded?: () => void;
 }) {
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -385,17 +387,59 @@ export function HelpContentRenderer({ sections, onAction, plan = "pro" }: {
         }
 
         // warning/cta are always open regardless of gating flags. A section is
-        // gated when the backend already stripped it (`locked`, authoritative —
-        // only ever set for free users) or when it's `pro_only` and this is a
-        // free user. `locked` is the stronger contract: trust it directly.
+        // gated when the backend flagged it `locked` (authoritative — only ever
+        // set for free users) or when it's `pro_only` and this is a free user.
+        // `locked` is the stronger contract: trust it directly.
         const gateable = section.type !== "warning" && section.type !== "cta";
         const gated = gateable && (section.locked || (section.pro_only && plan === "free"));
         if (gated) {
-          // SECURITY: never pass section.body/items into the tree here. For
-          // free users the backend already strips them (they arrive empty),
-          // and the real Pro content must never be rendered even as blurred
-          // nodes. ProBlurSection draws a content-free skeleton + upgrade gate.
-          return <ProBlurSection key={key} title={section.title ?? null} />;
+          // For free users the backend sends the full Pro content flagged
+          // locked; we render it blurred behind the upgrade gate (the blur is
+          // cosmetic, not a security boundary). Title is passed separately
+          // (rendered crisp above the blur), so the node here omits it to avoid
+          // a duplicate heading. If no content arrived, ProBlurSection falls
+          // back to a content-free skeleton.
+          //
+          // Chrome-free nodes: no contentCard background (it would hide the
+          // blur) and no copy button (the content is non-interactive behind the
+          // gate). Reuses the row styles for a real look.
+          let gatedContent: ReactNode = null;
+          if (section.type === "text" && section.body) {
+            gatedContent = (
+              <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>
+                {section.body}
+              </SelectableText>
+            );
+          } else if (section.type === "steps" && section.items?.length) {
+            gatedContent = (
+              <View style={styles.listBlock}>
+                {section.items.map((item, i) => (
+                  <View key={`${i}-${item}`} style={styles.stepRow}>
+                    <View style={styles.stepNumber}>
+                      <Text maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.stepNumberText}>{i + 1}</Text>
+                    </View>
+                    <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{item}</SelectableText>
+                  </View>
+                ))}
+              </View>
+            );
+          } else if (section.type === "checklist" && section.items?.length) {
+            gatedContent = (
+              <View style={styles.listBlock}>
+                {section.items.map((item, i) => (
+                  <View key={`${i}-${item}`} style={styles.checkRow}>
+                    <Ionicons name="checkmark-outline" size={24} color={colors.primary} />
+                    <SelectableText maxFontSizeMultiplier={HELP_TEXT_SCALE} style={styles.contentText}>{item}</SelectableText>
+                  </View>
+                ))}
+              </View>
+            );
+          }
+          return (
+            <ProBlurSection key={key} title={section.title ?? null} onUpgraded={onUpgraded}>
+              {gatedContent}
+            </ProBlurSection>
+          );
         }
         return <View key={key}>{rendered}</View>;
       })}
