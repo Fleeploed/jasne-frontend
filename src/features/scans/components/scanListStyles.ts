@@ -229,6 +229,10 @@ export function createStyles(colors: ColorPalette) {
       shadowOpacity: 0.32,
       shadowRadius: 18,
     },
+    emptyCtaPro: {
+      backgroundColor: colors.pro,
+      shadowColor: colors.pro,
+    },
     emptyCtaText: {
       color: colors.textOnAccent,
       fontFamily: fonts.bodyBold,
@@ -412,6 +416,10 @@ export function createStyles(colors: ColorPalette) {
       shadowRadius: 20,
       elevation: 16,
       zIndex: 100
+    },
+    fabPro: {
+      backgroundColor: colors.pro,
+      shadowColor: colors.pro,
     },
     fabDisabled: { opacity: 0.45 },
     pressed: { opacity: 0.85 }

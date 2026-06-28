@@ -79,12 +79,14 @@ export function OfflineState({
 export function DocumentsEmpty({
   limits,
   scanDisabled,
+  scanUpgradeAvailable,
   onScan,
   colors,
   styles,
 }: {
   limits: LimitsResponse | null;
   scanDisabled: boolean;
+  scanUpgradeAvailable: boolean;
   onScan: () => void;
   colors: ColorPalette;
   styles: ScanListStyles;
@@ -108,12 +110,13 @@ export function DocumentsEmpty({
         onPress={onScan}
         style={({ pressed }) => [
           styles.emptyCta,
+          scanUpgradeAvailable && styles.emptyCtaPro,
           scanDisabled && styles.fabDisabled,
           pressed && !scanDisabled && styles.pressed,
         ]}
       >
-        <Icon name="camera" size={24} color={colors.textOnAccent} />
-        <Text style={styles.emptyCtaText}>{t("documents.emptyButton")}</Text>
+        <Icon name={scanUpgradeAvailable ? "star" : "camera"} size={24} color={colors.textOnAccent} />
+        <Text style={styles.emptyCtaText}>{scanUpgradeAvailable ? t("documents.goPro") : t("documents.emptyButton")}</Text>
       </Pressable>
 
       <Text style={styles.emptyPlanFooter}>{planFooter}</Text>

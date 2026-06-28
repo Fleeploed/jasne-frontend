@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "meta": {
     "project": "Jasne frontend",
-    "snapshot_date": "2026-06-22T19:15:00+02:00",
+    "snapshot_date": "2026-06-28T19:55:00+02:00",
     "repo_path": "/Users/alisheribrayev/Documents/Jasne/jasne-frontend",
     "app_name": "Jasne",
     "current_version": "0.1.0",
@@ -32,7 +32,8 @@
         "@sentry/react-native ~6.10.0 (mobile crash/error reporting)",
         "expo-application ~6.0.2, expo-device ~7.0.3, expo-localization ~16.0.1 (PostHog/Sentry peer dependencies and app/device metadata)",
         "expo-secure-store ~14.0.0 (encrypted Supabase auth session storage — iOS Keychain / Android Keystore; requires native rebuild)",
-        "expo-clipboard ~7.0.1 (copy-to-clipboard for chat answers and scan result blocks; requires native rebuild)"
+        "expo-clipboard ~7.0.1 (copy-to-clipboard for chat answers and scan result blocks; requires native rebuild)",
+        "expo-updates ~0.27.5 (EAS Update runtime support; native iOS/Android config now points at the Expo project update URL and runtimeVersion 1.0.0)"
       ],
       "metro_config": "metro.config.js extends the default Expo config to add 'yaml' and 'yml' to resolver.assetExts so .yaml content can be bundled and loaded via expo-asset; src/types/assets.d.ts declares the matching '*.yaml' module so TS imports resolve. It also contains a targeted resolver for @posthog/core/surveys -> @posthog/core/dist/surveys/index.js because Expo SDK 52 Metro has package exports disabled and posthog-react-native imports that subpath."
     },
@@ -124,7 +125,7 @@
       ],
       "ci": ".github/workflows/ci.yml — 3 parallel jobs: typecheck, lint, test (coverage artifact)",
       "counts": "16 suites / 208 tests (jest no longer scans .claude worktrees — fe-fix-89)",
-      "current_state": "Fully green (fe-fix-93): typecheck 0; lint 0 errors / 0 warnings; jest 16 suites / 208 tests all passing; npx expo-doctor now reports 18/18 checks passed after moving bare native config out of app.json and into native source-of-truth files. iOS export smoke, xcodebuild project listing, and Android assembleDebug all pass."
+      "current_state": "Latest verification (2026-06-28, fe-fix-107): npm run typecheck passed; targeted ESLint passed on onboarding and scan-list files changed in this pass. Last recorded full green suite remains fe-fix-93: lint 0 errors / 0 warnings; jest 16 suites / 208 tests; expo-doctor 18/18; iOS export smoke; xcodebuild project listing; Android assembleDebug."
     }
   },
   "frontend": {
@@ -1307,6 +1308,11 @@
       "id": "fe-fix-106",
       "area": "Help Pro gating — show real content under the blur (product decision)",
       "fix": "Free users now receive the FULL pro_only section content rendered blurred behind the upgrade gate (backend _gate_sections_for_plan keeps body/items with locked=true). TRADEOFF: the blur is cosmetic, not a security boundary — the text is present in the API response and readable via a network inspector; accepted product decision. The blur now covers the whole gated block (height follows the real content). After a successful purchase the guide refetches and reveals unlocked content immediately — onUpgraded is threaded PaywallSheet -> ProBlurSection -> HelpContentRenderer -> HelpGuideScreen, and onPurchase only fires once the backend plan is confirmed pro."
+    },
+    {
+      "id": "fe-fix-107",
+      "area": "Expo Updates native wiring + onboarding Android safe area + Free-limit Pro FAB",
+      "fix": "Installed expo-updates ~0.27.5 and enabled updates in native iOS/Android config with EXUpdatesURL=https://u.expo.dev/9d4ebefc-e4b4-4c83-852e-787f5985725c and runtimeVersion 1.0.0 (AndroidManifest/strings.xml, ios Expo.plist, Xcode project resource bundle list, Podfile.lock, package-lock). OnboardingScreen now passes a bottom inset into createStyles and adds an Android 3-button-navigation fallback so the primary CTA no longer sits under system navigation buttons. ScanListScreen now distinguishes Free exhausted limits from Pro exhausted limits: Free users with scans_remaining <= 0 get an active purple colors.pro FAB/empty-state CTA with star icon that opens PaywallSheet and refreshes limits after purchase; Pro users at the monthly limit stay disabled/grey. Verified: npm run typecheck and targeted ESLint on changed onboarding/scan-list files passed."
     }
   ],
   "known_issues_and_risks": [
@@ -1389,13 +1395,13 @@
     {
       "area": "Native rebuild required",
       "status": "action needed before testing",
-      "detail": "Native project files changed this session: iOS localized InfoPlist.strings were added to the Xcode project, Android localized resource strings were added, and app.json no longer carries native config fields. A Metro/JS reload is not enough to see native permission-string changes.",
-      "mitigation": "Reinstall a native development build with npx expo run:ios / run:android, or trigger an EAS development build. Verified locally: xcodebuild -list and ./gradlew app:assembleDebug pass."
+      "detail": "Native project files changed recently: iOS localized InfoPlist.strings were added to the Xcode project, Android localized resource strings were added, app.json no longer carries native config fields, expo-updates was installed, and native Expo Updates URL/runtimeVersion metadata was enabled. A Metro/JS reload is not enough to see native permission-string or expo-updates changes.",
+      "mitigation": "Reinstall a native development build with npx expo run:ios / run:android, or trigger an EAS development build. Last full native verification recorded: xcodebuild -list and ./gradlew app:assembleDebug passed."
     }
   ],
   "next_steps": {
     "high_priority": [
-      "EAS Update (Phase 4): install expo-updates, run eas init + eas update:configure, add GitHub Actions eas-update job for OTA on main push",
+      "EAS Update follow-up: add GitHub Actions eas-update job for OTA on main push and document update channels/runtime policy",
       "Wire hidden-count paywall row in ScanListScreen: listScansResponse() already returns archive_limit and hidden_count — render '+N скрытых, перейти на Pro' row at bottom of list for Free users",
       "Implement DELETE /push-tokens in jasne-backend so sign-out actually unregisters the device's push token.",
       "Fix Czech grammar 'Skeny v květen' → 'Skeny v květnu' in ProfileScreen usage label.",
