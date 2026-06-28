@@ -4,6 +4,7 @@ import { router, useFocusEffect } from "expo-router";
 import { useScrollToTop } from "@react-navigation/native";
 
 import { Icon } from "@/components/Icon";
+import { PaywallSheet } from "@/components/PaywallSheet";
 import { ErrorText, Screen, useColors } from "@/components/ui";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { listAllDeadlines } from "@/features/deadlines/deadlinesApi";
@@ -70,6 +71,7 @@ export function ScanListScreen() {
   const [hasMoreScans, setHasMoreScans] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [showPaywall, setShowPaywall] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<DocumentCategoryFilterKey>("all");
   const [settledCategoryFilter, setSettledCategoryFilter] = useState<DocumentCategoryFilterKey>("all");
@@ -351,7 +353,9 @@ export function ScanListScreen() {
     syncCategoryFromPagerOffset(event.nativeEvent.contentOffset.x);
   }, [syncCategoryFromPagerOffset]);
 
-  const scanDisabled = Boolean(limits && limits.scans_remaining <= 0);
+  const scanLimitReached = Boolean(limits && limits.scans_remaining <= 0);
+  const freeScanLimitReached = scanLimitReached && limits?.plan !== "pro";
+  const scanDisabled = scanLimitReached && !freeScanLimitReached;
   const limitWarning = getScanLimitWarning(limits);
   const activePendingScans = useMemo(() => pendingScans.filter((p) => p.active), [pendingScans]);
   // Scans that were streaming when the app was killed — restored from storage
@@ -371,6 +375,13 @@ export function ScanListScreen() {
   const openNewScan = useCallback(() => {
     router.push({ pathname: "/scan/new", params: { fresh: String(Date.now()) } });
   }, []);
+  const handleScanAction = useCallback(() => {
+    if (freeScanLimitReached) {
+      setShowPaywall(true);
+      return;
+    }
+    openNewScan();
+  }, [freeScanLimitReached, openNewScan]);
 
   const toggleSearch = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.create(220, "easeInEaseOut", "opacity"));
@@ -457,7 +468,8 @@ export function ScanListScreen() {
               <DocumentsEmpty
                 limits={limits}
                 scanDisabled={scanDisabled}
-                onScan={openNewScan}
+                scanUpgradeAvailable={freeScanLimitReached}
+                onScan={handleScanAction}
                 colors={colors}
                 styles={styles}
               />
@@ -496,13 +508,14 @@ export function ScanListScreen() {
     activePendingScans,
     categoryStyleList,
     colors,
+    freeScanLimitReached,
+    handleScanAction,
     hasPending,
     interruptedPendingScans,
     limits,
     load,
     loadMoreScans,
     loadingMoreScans,
-    openNewScan,
     pageWidth,
     refreshing,
     scanDisabled,
@@ -589,15 +602,27 @@ export function ScanListScreen() {
       />
       {(showEmptyPlaceholder || showOfflineState) && !search.trim() ? null : (
         <Pressable
-          onPress={openNewScan}
+          onPress={handleScanAction}
           disabled={scanDisabled}
-          style={({ pressed }) => [styles.fab, scanDisabled && styles.fabDisabled, pressed && !scanDisabled && { opacity: 0.88, transform: [{ scale: 0.94 }] }]}
+          style={({ pressed }) => [
+            styles.fab,
+            freeScanLimitReached && styles.fabPro,
+            scanDisabled && styles.fabDisabled,
+            pressed && !scanDisabled && { opacity: 0.88, transform: [{ scale: 0.94 }] },
+          ]}
           accessibilityRole="button"
-          accessibilityLabel={t("documents.emptyButton")}
+          accessibilityLabel={freeScanLimitReached ? t("documents.goPro") : t("documents.emptyButton")}
         >
-          <Icon name="camera" size={24} color={colors.textOnAccent} />
+          <Icon name={freeScanLimitReached ? "star" : "camera"} size={24} color={colors.textOnAccent} />
         </Pressable>
       )}
+      <PaywallSheet
+        visible={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        onPurchase={() => {
+          void load();
+        }}
+      />
     </Screen>
   );
 }

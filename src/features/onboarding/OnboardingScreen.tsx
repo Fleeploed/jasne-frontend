@@ -5,6 +5,7 @@ import {
   type LayoutChangeEvent,
   Linking,
   PanResponder,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -327,7 +328,10 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(() => normalizeLocale(locale) as LanguageCode);
   const userPickedLanguage = useRef(false);
   const offset = useRef(new Animated.Value(0)).current;
-  const styles = useMemo(() => createStyles(colors, insets.top), [colors, insets.top]);
+  // Three-button Android navigation can overlay transparent app content without
+  // always reporting a bottom inset, so keep the CTA above that system area.
+  const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 40 : 0);
+  const styles = useMemo(() => createStyles(colors, insets.top, bottomInset), [colors, insets.top, bottomInset]);
   const copy = ONBOARDING_COPY[selectedLanguage];
   const isLight = colors.bg === lightColors.bg;
   const statusStyle = isLight ? "dark" : "light";
@@ -1535,7 +1539,9 @@ const stylesStatic = StyleSheet.create({
   },
 });
 
-function createStyles(colors: ColorPalette, topInset: number) {
+function createStyles(colors: ColorPalette, topInset: number, bottomInset: number) {
+  const slideBottomPadding = Math.max(28, bottomInset + 8);
+
   return StyleSheet.create({
     root: {
       flex: 1,
@@ -1601,7 +1607,7 @@ function createStyles(colors: ColorPalette, topInset: number) {
       flex: 1,
       paddingTop: topInset + 56,
       paddingHorizontal: 24,
-      paddingBottom: 28,
+      paddingBottom: slideBottomPadding,
     },
     welcomeCenter: {
       flex: 1,
