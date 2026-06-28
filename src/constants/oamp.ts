@@ -20,4 +20,4 @@ export const OAMP_DOCUMENTS_FOR_PREVZETI = [
   "oamp.documents.originalDocs",
 ] as const;
 
-export type OampStatus = "probiha" | "schvaleno" | "zamitnuto" | "not_found";
+export type OampStatus = "probiha" | "schvaleno" | "zamitnuto" | "not_found" | "error";

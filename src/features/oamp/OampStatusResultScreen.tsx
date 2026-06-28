@@ -234,6 +234,7 @@ export function normalizeOampStatus(value?: string): OampStatus {
   if (value === "schvaleno" || value === "approved") return "schvaleno";
   if (value === "zamitnuto" || value === "rejected") return "zamitnuto";
   if (value === "not_found") return "not_found";
+  if (value === "error" || value === "unknown" || value === "failed" || value === "unavailable") return "error";
   return "probiha";
 }
 

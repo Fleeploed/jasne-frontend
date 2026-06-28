@@ -96,7 +96,7 @@ export function HelpStatusScreen() {
         style={styles.keyboard}
       >
         <ScrollView
-          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "none"}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           style={styles.scroll}
@@ -494,6 +494,7 @@ function toOampStatus(status: OampStatusResponse["status"]): OampStatus {
   if (status === "approved") return "schvaleno";
   if (status === "rejected") return "zamitnuto";
   if (status === "not_found") return "not_found";
+  if (status === "unknown") return "error";
   return "probiha";
 }
 
@@ -664,25 +665,21 @@ function createStyles(colors: ColorPalette) {
     caseField: {
       minHeight: 56,
       borderRadius: 13,
-      borderWidth: 1,
+      borderWidth: 2,
       borderColor: colors.borderSoft,
       backgroundColor: colors.bg,
       justifyContent: "center",
-      paddingHorizontal: 11,
-      paddingVertical: 6,
-      gap: 2,
-    },
-    // Focused state: blue border + soft glow, matching the design's focused number field.
-    caseFieldFocused: {
-      borderColor: colors.primary,
-      borderWidth: 2,
       paddingHorizontal: 10,
       paddingVertical: 5,
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0.45,
-      shadowRadius: 12,
-      elevation: 6,
+      gap: 2,
+    },
+    // ONLY borderColor changes on focus. Do NOT toggle elevation/shadow here:
+    // on Android, adding elevation to the View that wraps a focused EditText
+    // forces RN to re-back the native view, which detaches/reattaches the
+    // EditText and instantly dismisses the keyboard. Border-color-only is a
+    // pure paint change with no native view churn.
+    caseFieldFocused: {
+      borderColor: colors.primary,
     },
     casePrefixField: {
       width: 84,
@@ -798,23 +795,17 @@ function createStyles(colors: ColorPalette) {
     visaInput: {
       minHeight: 56,
       borderRadius: 14,
-      borderWidth: 1,
+      borderWidth: 2,
       borderColor: colors.borderSoft,
       backgroundColor: colors.surface,
       color: colors.text,
       fontFamily: fonts.bodyMedium,
       ...typeStyles.headline,
-      paddingHorizontal: 14,
+      paddingHorizontal: 13,
     },
+    // Border-color-only focus — see caseFieldFocused for why no elevation/shadow.
     visaInputFocused: {
       borderColor: colors.primary,
-      borderWidth: 2,
-      paddingHorizontal: 13,
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0.45,
-      shadowRadius: 12,
-      elevation: 6,
     },
     primaryButton: {
       minHeight: 54,

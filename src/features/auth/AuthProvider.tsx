@@ -6,6 +6,7 @@ import type { Session, User } from "@supabase/supabase-js";
 
 import { syncProfileLanguage } from "@/features/auth/profileApi";
 import { supabase } from "@/lib/supabase";
+import { syncPushTokenAfterSignIn } from "@/lib/pushNotifications";
 import { identifyAnalyticsUser } from "@/lib/analytics";
 import { getLocale } from "@/lib/i18n";
 import { identifyPurchasesUser } from "@/lib/purchases";
@@ -49,9 +50,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === "SIGNED_IN" && nextSession) {
         setHasHadAccount(true);
         void AsyncStorage.setItem(HAS_HAD_ACCOUNT_KEY, "1");
-        // Push the locally-chosen language (e.g. picked during onboarding before
-        // the account existed) onto the now-created profile. Best-effort.
         void syncProfileLanguage(getLocale()).catch(() => {});
+        void syncPushTokenAfterSignIn();
       }
     });
 

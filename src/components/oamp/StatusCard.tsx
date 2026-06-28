@@ -30,6 +30,7 @@ export function StatusCard({
         <Ionicons name={iconForStatus(status)} size={30} color={tone.iconColor} />
       </View>
       <View style={styles.copy}>
+        <Text style={styles.eyebrow}>{t("oamp.status.label")}</Text>
         <Text style={styles.title}>{t(`oamp.status.${status}.title` as const)}</Text>
         <Text style={styles.summary}>
           {t(`oamp.status.${status}.summary` as const, { cisloJednaci })}
@@ -43,6 +44,7 @@ function iconForStatus(status: OampStatus) {
   if (status === "schvaleno") return "checkmark-circle-outline" as const;
   if (status === "zamitnuto") return "close-circle-outline" as const;
   if (status === "not_found") return "help-circle-outline" as const;
+  if (status === "error") return "alert-circle-outline" as const;
   return "time-outline" as const;
 }
 
@@ -53,7 +55,7 @@ function toneForStatus(status: OampStatus, colors: ColorPalette): StatusTone {
   if (status === "zamitnuto") {
     return { bg: colors.dangerLight, border: colors.danger, iconBg: colors.danger, iconColor: colors.textOnAccent };
   }
-  if (status === "not_found") {
+  if (status === "not_found" || status === "error") {
     return { bg: colors.surface, border: colors.border, iconBg: colors.surface2, iconColor: colors.muted2 };
   }
   return { bg: colors.warningBg, border: colors.amberDark, iconBg: colors.amber, iconColor: colors.textOnAccent };
@@ -81,6 +83,14 @@ function createStyles(colors: ColorPalette) {
     copy: {
       gap: 8,
       alignItems: "center",
+    },
+    eyebrow: {
+      color: colors.muted3,
+      fontFamily: fonts.bodyBold,
+      ...typeStyles.caption1,
+      textAlign: "center",
+      textTransform: "uppercase",
+      letterSpacing: 0,
     },
     title: {
       color: colors.text,
