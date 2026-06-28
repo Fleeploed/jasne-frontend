@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { logger } from "@/lib/logger";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, Platform, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { TransitionPresets } from "@react-navigation/stack";
@@ -97,6 +97,32 @@ export default Sentry.wrap(RootLayout);
 function ThemedStatusBar() {
   const colors = useColors();
   const isLight = colors.bg === lightColors.bg;
+
+  // expo-status-bar only themes the TOP status bar. The bottom Android system
+  // navigation bar (back/home/recents) keeps its OS default — which on most
+  // devices is light — so it stayed white while the app is in dark mode. Drive
+  // it explicitly from the active theme. Android-only; lazy-imported so it
+  // never touches iOS/web bundles.
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    let cancelled = false;
+    void import("expo-navigation-bar")
+      .then((NavigationBar) => {
+        if (cancelled) return;
+        // "absolute" overlays the nav bar on the content (edge-to-edge).
+        // SafeAreaProvider still reports the correct bottom inset so nothing
+        // is obscured. Transparent background lets the app background show
+        // through the gesture hint area.
+        void NavigationBar.setPositionAsync("absolute");
+        void NavigationBar.setBackgroundColorAsync("transparent");
+        void NavigationBar.setButtonStyleAsync(isLight ? "dark" : "light");
+      })
+      .catch((error) => logger.warn("[navbar] theming unavailable", error));
+    return () => {
+      cancelled = true;
+    };
+  }, [colors.bg, isLight]);
+
   return <StatusBar style={isLight ? "dark" : "light"} backgroundColor={colors.bg} />;
 }
 

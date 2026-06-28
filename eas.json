@@ -7,8 +7,14 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend.onrender.com"
+        "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend.onrender.com",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "test_gMpOEzqRfmGCBhemMXetEInSCKs",
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "test_gMpOEzqRfmGCBhemMXetEInSCKs",
+        "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "pro"
       }
     },
     "preview": {
@@ -17,13 +23,17 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend.onrender.com"
+        "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend.onrender.com",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "test_gMpOEzqRfmGCBhemMXetEInSCKs",
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "test_gMpOEzqRfmGCBhemMXetEInSCKs",
+        "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "pro"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend.onrender.com"
+        "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend-production.up.railway.app",
+        "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "pro"
       }
     }
   },

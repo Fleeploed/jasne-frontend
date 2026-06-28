@@ -4,9 +4,11 @@ import { router } from "expo-router";
 
 import { ActionSheet } from "@/components/ActionSheet";
 import { AppIcon } from "@/components/AppIcon";
+import { PaywallSheet } from "@/components/PaywallSheet";
 import { TrackingTypeRenderer } from "@/components/tracking/TrackingTypeRenderer";
 import { fonts, type ColorPalette, typeStyles, useColors } from "@/components/ui";
 import { trackingConfigFor, type TrackingTone } from "@/constants/trackings";
+import { useSubscription } from "@/hooks/useSubscription";
 import { useCheckTracking, useStopTracking } from "@/hooks/useTrackings";
 import { triggerLongPressHaptic } from "@/lib/haptics";
 import { formatLocalizedDate, getLocale, t } from "@/lib/i18n";
@@ -19,7 +21,9 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
   const config = trackingConfigFor(tracking.tracking_type);
   const stopTracking = useStopTracking();
   const checkTracking = useCheckTracking();
+  const { isPro, loading: subscriptionLoading, refresh: refreshSubscription } = useSubscription();
   const [sheetVisible, setSheetVisible] = useState(false);
+  const [paywallVisible, setPaywallVisible] = useState(false);
   const status = tracking.current_status ?? "unknown";
   const tone = config?.statusColors[status] ?? "gray";
   const statusLabel = localizedStatusLabel(tracking.tracking_type, status);
@@ -150,6 +154,22 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
             </Text>
           </Pressable>
         )}
+        {!isPro && !subscriptionLoading ? (
+          <View style={styles.proExpiredNote}>
+            <AppIcon name="bell" size={16} color={colors.pro} strokeWidth={1.9} />
+            <View style={styles.proExpiredTextBlock}>
+              <Text style={styles.proExpiredText}>{t("tracking.proExpiredNote")}</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("tracking.proExpiredCta")}
+                onPress={() => setPaywallVisible(true)}
+                style={({ pressed }) => [styles.proExpiredCta, pressed && styles.pressed]}
+              >
+                <Text style={styles.proExpiredCtaText}>{t("tracking.proExpiredCta")}</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
       </View>
       <ActionSheet
         visible={sheetVisible}
@@ -185,6 +205,13 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
             onPress: confirmStop,
           },
         ]}
+      />
+      <PaywallSheet
+        visible={paywallVisible}
+        onClose={() => setPaywallVisible(false)}
+        onPurchase={() => {
+          void refreshSubscription();
+        }}
       />
     </>
   );
@@ -320,6 +347,34 @@ function createStyles(colors: ColorPalette) {
     checkButtonText: {
       color: colors.primary,
       fontFamily: fonts.bodySemiBold,
+      ...typeStyles.footnote,
+    },
+    proExpiredNote: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 9,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.pro,
+      backgroundColor: colors.proLight,
+      paddingHorizontal: 12,
+      paddingVertical: 11,
+    },
+    proExpiredTextBlock: {
+      flex: 1,
+      gap: 8,
+    },
+    proExpiredText: {
+      color: colors.text,
+      fontFamily: fonts.bodyMedium,
+      ...typeStyles.footnote,
+    },
+    proExpiredCta: {
+      alignSelf: "flex-start",
+    },
+    proExpiredCtaText: {
+      color: colors.pro,
+      fontFamily: fonts.bodyBold,
       ...typeStyles.footnote,
     },
   });

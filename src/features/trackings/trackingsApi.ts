@@ -26,7 +26,12 @@ export async function stopTracking(id: string) {
 }
 
 export async function checkTracking(id: string) {
+  // Playwright scraping ipc.gov.cz takes ~40 s warm and can exceed that on a
+  // cold Render free-tier start. The default 30 s frontend timeout fired first
+  // and surfaced a false "check your internet" error. Allow up to 120 s so the
+  // request outlasts both the scrape and a cold backend boot.
   return apiFetch<Tracking>(`/trackings/${encodeURIComponent(id)}/check`, {
     method: "POST",
+    timeoutMs: 120_000,
   });
 }
