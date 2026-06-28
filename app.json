@@ -23,6 +23,9 @@
         "backgroundColor": "#16458A"
       }
     },
+    "androidNavigationBar": {
+      "barStyle": "light-content"
+    },
     "newArchEnabled": true,
     "experiments": {
       "typedRoutes": true
@@ -35,6 +38,10 @@
         "projectId": "9d4ebefc-e4b4-4c83-852e-787f5985725c"
       }
     },
-    "owner": "fleeploed"
+    "owner": "fleeploed",
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/9d4ebefc-e4b4-4c83-852e-787f5985725c"
+    }
   }
 }

@@ -28,8 +28,12 @@ export async function checkOampStatus(input: OampStatusInput): Promise<OampStatu
   if (input.caseNumber) body.case_number = input.caseNumber;
   if (input.visaNumber) body.visa_number = input.visaNumber;
   if (input.language) body.language = input.language;
+  // The backend scrapes ipc.gov.cz with Playwright (~40 s warm, longer on a
+  // cold Render start), so the default 30 s timeout aborted early and showed a
+  // false network error. Allow up to 120 s to outlast the scrape + cold boot.
   return apiFetch<OampStatusResponse>("/status/oamp", {
     method: "POST",
     json: body,
+    timeoutMs: 120_000,
   });
 }
