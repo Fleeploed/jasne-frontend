@@ -1,8 +1,7 @@
-// Render is the current backend until the Railway production plan is ready.
-// EAS profiles also set EXPO_PUBLIC_API_BASE_URL explicitly; this fallback keeps
-// a misconfigured build on the same active backend instead of the old Railway URL.
+// Railway is the current backend. EAS profiles also set EXPO_PUBLIC_API_BASE_URL
+// explicitly; this fallback keeps a misconfigured build on the active backend.
 const apiBaseUrl =
-  process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://jasne-backend.onrender.com";
+  process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://jasne-backend-api-production.up.railway.app";
 
 export const config = {
   apiBaseUrl: apiBaseUrl.replace(/\/$/, ""),

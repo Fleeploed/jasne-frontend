@@ -11,7 +11,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend.onrender.com",
+        "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend-api-production.up.railway.app",
         "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "REDACTED_PUBLIC_REVENUECAT_KEY",
         "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "REDACTED_PUBLIC_REVENUECAT_KEY",
         "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "pro"
@@ -23,7 +23,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend.onrender.com",
+        "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend-api-production.up.railway.app",
         "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "REDACTED_PUBLIC_REVENUECAT_KEY",
         "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "REDACTED_PUBLIC_REVENUECAT_KEY",
         "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "pro"
@@ -32,7 +32,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend-production.up.railway.app",
+        "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend-api-production.up.railway.app",
         "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "pro"
       }
     }
