@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, useWindowDimensions } from "react-native";
+// Modal uses animationType="none" + a reanimated-driven sheet: on RN 0.76 with
+// the New Architecture, Android fails to show a mounted Modal whose `visible`
+// flips with animationType="fade" (the add-deadline window simply never
+// appeared). All working sheets in the app (PaywallSheet, ReminderSheet,
+// ImportSheet) follow this exact pattern.
+import Reanimated, {
+  cancelAnimation,
+  interpolate,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppIcon } from "@/components/AppIcon";
 import { ErrorText, useColors } from "@/components/ui";
@@ -10,6 +24,9 @@ import type { DeadlineResponse, UserPlan } from "@/lib/types";
 import { createStyles } from "@/features/deadlines/components/deadlinesStyles";
 import type { DeadlinesStyles } from "@/features/deadlines/components/deadlinesStyles";
 import { CALENDAR_ANIMATION_MAX_HEIGHT, SHEET_DISMISS_DISTANCE, SHEET_DISMISS_VELOCITY, addDays, filterUpcomingReminderDays, formatManualReminderSubtitle, formatReminderTriggerDate, parseDateOnly, reminderDaysForPlan, reminderOptionLabel } from "@/features/deadlines/components/deadlinesData";
+
+// Off-screen offset the sheet enters from / exits to.
+const SHEET_ENTER_OFFSET = 620;
 
 export function ManualDeadlineModal({
   open,
@@ -27,10 +44,17 @@ export function ManualDeadlineModal({
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  // Numeric height cap instead of the stylesheet's percentage maxHeight: when
+  // the Android keyboard resizes the window, the window height shrinks and the
+  // sheet must shrink with it — a bottom-pinned sheet taller than the visible
+  // area clips its header off the top of the screen.
+  const { height: windowHeight } = useWindowDimensions();
+  const sheetMaxHeight = Math.round(windowHeight * 0.95);
   const scrollRef = useRef<ScrollView>(null);
   const sheetScrollYRef = useRef(0);
-  const sheetTranslateY = useRef(new Animated.Value(0)).current;
-  const calendarProgress = useRef(new Animated.Value(editing ? 1 : 0)).current;
+  const sheetTranslateY = useSharedValue(SHEET_ENTER_OFFSET);
+  const backdropOpacity = useSharedValue(0);
+  const calendarProgress = useSharedValue(editing ? 1 : 0);
 
   const [title, setTitle] = useState(editing?.title ?? "");
   const [description, setDescription] = useState(editing?.description ?? "");
@@ -46,11 +70,20 @@ export function ManualDeadlineModal({
   useEffect(() => {
     if (open) {
       sheetScrollYRef.current = 0;
-      sheetTranslateY.setValue(0);
-      calendarProgress.setValue(editing ? 1 : 0);
+      // The sheet stays mounted between opens — make sure the form is scrolled
+      // back to the top so the header is always the first thing visible.
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+      // Slide the sheet in and fade the dim ourselves (Modal animation is "none").
+      cancelAnimation(sheetTranslateY);
+      cancelAnimation(backdropOpacity);
+      sheetTranslateY.value = SHEET_ENTER_OFFSET;
+      sheetTranslateY.value = withSpring(0, { damping: 24, stiffness: 240, mass: 0.9 });
+      backdropOpacity.value = 0;
+      backdropOpacity.value = withTiming(1, { duration: 160 });
+      calendarProgress.value = editing ? 1 : 0;
       setCalendarMounted(Boolean(editing));
     }
-  }, [calendarProgress, editing, open, sheetTranslateY]);
+  }, [backdropOpacity, calendarProgress, editing, open, sheetTranslateY]);
 
   // Sync form state when the modal opens or switches to a different deadline.
   useEffect(() => {
@@ -150,37 +183,24 @@ export function ManualDeadlineModal({
     ? formatManualReminderSubtitle(reminderDaysToSave, date)
     : t("deadlines.reminderOffSubtitle");
 
-  const calendarAnimatedStyle = useMemo(
-    () => ({
-      maxHeight: calendarProgress.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, CALENDAR_ANIMATION_MAX_HEIGHT],
-      }),
-      opacity: calendarProgress,
-      transform: [
-        {
-          translateY: calendarProgress.interpolate({
-            inputRange: [0, 1],
-            outputRange: [-8, 0],
-          }),
-        },
-      ],
-    }),
-    [calendarProgress]
-  );
+  const calendarAnimatedStyle = useAnimatedStyle(() => ({
+    maxHeight: interpolate(calendarProgress.value, [0, 1], [0, CALENDAR_ANIMATION_MAX_HEIGHT]),
+    opacity: calendarProgress.value,
+    transform: [{ translateY: interpolate(calendarProgress.value, [0, 1], [-8, 0]) }],
+  }));
 
   useEffect(() => {
     if (!open) return;
     const shouldShowCalendar = dateMode === "custom";
-    calendarProgress.stopAnimation();
+    cancelAnimation(calendarProgress);
     if (shouldShowCalendar) setCalendarMounted(true);
-    Animated.timing(calendarProgress, {
-      toValue: shouldShowCalendar ? 1 : 0,
-      duration: shouldShowCalendar ? 220 : 170,
-      useNativeDriver: false,
-    }).start(({ finished }) => {
-      if (finished && !shouldShowCalendar) setCalendarMounted(false);
-    });
+    calendarProgress.value = withTiming(
+      shouldShowCalendar ? 1 : 0,
+      { duration: shouldShowCalendar ? 220 : 170 },
+      (finished) => {
+        if (finished && !shouldShowCalendar) runOnJS(setCalendarMounted)(false);
+      }
+    );
   }, [calendarProgress, dateMode, open]);
 
   function setReminderEnabled(next: boolean) {
@@ -203,17 +223,15 @@ export function ManualDeadlineModal({
     });
   }
 
-  const closeWithSheetDrag = useCallback(() => {
+  // Animated close for EVERY dismiss path (drag, X, backdrop tap, back
+  // button) — with animationType="none" the Modal itself no longer animates.
+  const animatedClose = useCallback(() => {
     setReminderPickerOpen(false);
-    Animated.timing(sheetTranslateY, {
-      toValue: 620,
-      duration: 180,
-      useNativeDriver: true,
-    }).start(() => {
-      sheetTranslateY.setValue(0);
-      onClose();
+    backdropOpacity.value = withTiming(0, { duration: 160 });
+    sheetTranslateY.value = withTiming(SHEET_ENTER_OFFSET, { duration: 180 }, (finished) => {
+      if (finished) runOnJS(onClose)();
     });
-  }, [onClose, sheetTranslateY]);
+  }, [backdropOpacity, onClose, sheetTranslateY]);
 
   const sheetPanResponder = useMemo(
     () =>
@@ -224,42 +242,37 @@ export function ManualDeadlineModal({
           return gesture.dy > 8 && gesture.dy > Math.abs(gesture.dx) * 1.2;
         },
         onPanResponderMove: (_, gesture) => {
-          if (gesture.dy > 0) sheetTranslateY.setValue(gesture.dy);
+          if (gesture.dy > 0) sheetTranslateY.value = gesture.dy;
         },
         onPanResponderRelease: (_, gesture) => {
           if (gesture.dy > SHEET_DISMISS_DISTANCE || gesture.vy > SHEET_DISMISS_VELOCITY) {
-            closeWithSheetDrag();
+            animatedClose();
             return;
           }
-          Animated.spring(sheetTranslateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            damping: 22,
-            stiffness: 260,
-          }).start();
+          sheetTranslateY.value = withSpring(0, { damping: 22, stiffness: 260 });
         },
         onPanResponderTerminate: () => {
-          Animated.spring(sheetTranslateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            damping: 22,
-            stiffness: 260,
-          }).start();
+          sheetTranslateY.value = withSpring(0, { damping: 22, stiffness: 260 });
         },
       }),
-    [closeWithSheetDrag, reminderPickerOpen, sheetTranslateY]
+    [animatedClose, reminderPickerOpen, sheetTranslateY]
   );
 
+  const backdropAnimatedStyle = useAnimatedStyle(() => ({ opacity: backdropOpacity.value }));
+  const sheetAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: sheetTranslateY.value }],
+  }));
+
   return (
-    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <View style={styles.sheetBackdrop}>
+    <Modal visible={open} transparent animationType="none" onRequestClose={animatedClose} statusBarTranslucent>
+      <Reanimated.View style={[styles.sheetBackdrop, backdropAnimatedStyle]}>
         {/* Tap outside the sheet to dismiss. */}
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Pressable style={StyleSheet.absoluteFill} onPress={animatedClose} />
 
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.sheetKAV}>
-          <Animated.View
+          <Reanimated.View
             {...sheetPanResponder.panHandlers}
-            style={[styles.sheetContainer, { transform: [{ translateY: sheetTranslateY }] }]}
+            style={[styles.sheetContainer, { maxHeight: sheetMaxHeight }, sheetAnimatedStyle]}
           >
             {/* Drag handle */}
             <View style={styles.sheetHandle} />
@@ -280,7 +293,7 @@ export function ManualDeadlineModal({
                   {editing ? t("deadlines.editTitle") : t("deadlines.newTitle")}
                 </Text>
                 <Pressable
-                  onPress={onClose}
+                  onPress={animatedClose}
                   hitSlop={8}
                   style={({ pressed }) => [styles.modalCloseButton, pressed && styles.pressed]}
                   accessibilityLabel={t("common.close")}
@@ -298,7 +311,11 @@ export function ManualDeadlineModal({
                   placeholder={t("deadlines.namePlaceholder")}
                   placeholderTextColor={colors.muted3}
                   style={styles.sheetTitleInput}
-                  autoFocus={!editing}
+                  // iOS only: on Android the immediate keyboard shrinks the
+                  // window while the sheet is still entering, and the sheet
+                  // top (header + title) ends up clipped off-screen. Let the
+                  // sheet open fully first; the user taps the field to type.
+                  autoFocus={!editing && Platform.OS === "ios"}
                 />
               </View>
 
@@ -317,14 +334,14 @@ export function ManualDeadlineModal({
 
               {/* Calendar — only shown when "Дата" preset is chosen */}
               {calendarMounted ? (
-                <Animated.View
+                <Reanimated.View
                   pointerEvents={dateMode === "custom" ? "auto" : "none"}
                   style={[styles.sheetCalendarAnimated, calendarAnimatedStyle]}
                 >
                   <View style={styles.sheetCalendarWrap}>
                     <CalendarPicker value={date} onChange={setDate} colors={colors} styles={styles} />
                   </View>
-                </Animated.View>
+                </Reanimated.View>
               ) : null}
 
               {/* Reminder toggle */}
@@ -337,7 +354,7 @@ export function ManualDeadlineModal({
                   accessibilityLabel={t("deadlines.reminderTitle")}
                 >
                   <View style={styles.reminderIconTile}>
-                    <AppIcon name="bell" size={18} color={remindEnabled ? colors.primary : colors.muted2} strokeWidth={1.8} />
+                    <AppIcon name="bell" size={18} color={remindEnabled ? colors.brandBlue : colors.muted2} strokeWidth={1.8} />
                   </View>
                   <View style={styles.reminderTextBlock}>
                     <Text style={styles.reminderTitle} numberOfLines={1}>
@@ -353,7 +370,7 @@ export function ManualDeadlineModal({
                   <Switch
                     value={remindEnabled}
                     onValueChange={setReminderEnabled}
-                    trackColor={{ false: colors.surface3, true: colors.primary }}
+                    trackColor={{ false: colors.surface3, true: colors.brandBlue }}
                     thumbColor={colors.textOnAccent}
                     ios_backgroundColor={colors.surface3}
                     style={styles.reminderSwitch}
@@ -407,12 +424,12 @@ export function ManualDeadlineModal({
                 )}
               </Pressable>
             </View>
-          </Animated.View>
+          </Reanimated.View>
         </KeyboardAvoidingView>
         <Modal
           visible={reminderPickerOpen && open}
           transparent
-          animationType="fade"
+          animationType="none"
           onRequestClose={() => setReminderPickerOpen(false)}
           statusBarTranslucent
         >
@@ -472,7 +489,7 @@ export function ManualDeadlineModal({
             </View>
           </View>
         </Modal>
-      </View>
+      </Reanimated.View>
     </Modal>
   );
 }
@@ -691,4 +708,3 @@ export function CalendarPicker({ value, onChange, colors, styles }: {
     </View>
   );
 }
-

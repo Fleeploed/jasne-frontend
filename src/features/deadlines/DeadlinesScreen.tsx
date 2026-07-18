@@ -290,7 +290,7 @@ export function DeadlinesScreen() {
     return (
       <Screen>
         <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
+          <ActivityIndicator color={colors.brandBlue} />
         </View>
       </Screen>
     );
@@ -331,7 +331,7 @@ export function DeadlinesScreen() {
         ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={hasAnyItems ? styles.list : styles.emptyList}
-        refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={refreshAll} />}
+        refreshControl={<RefreshControl tintColor={colors.brandBlue} refreshing={refreshing} onRefresh={refreshAll} />}
       >
         {!hasAnyItems ? (
           <EmptyState title={t("deadlines.emptyTitle")} detail={t("deadlines.emptyDetail")} />

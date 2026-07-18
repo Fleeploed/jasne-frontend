@@ -1,26 +1,31 @@
 {
   "expo": {
-    "name": "Jasne",
+    "name": "Jasně",
     "slug": "jasne",
     "version": "0.1.0",
     "scheme": "jasne",
     "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/logos/logo_white.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1B5FAC"
+    },
     "ios": {
       "bundleIdentifier": "app.jasne.mobile",
       "supportsTablet": true,
       "infoPlist": {
-        "NSCalendarsFullAccessUsageDescription": "Jasne can add document deadlines to your calendar as reminders.",
-        "NSCalendarsWriteOnlyAccessUsageDescription": "Jasne can add document deadlines to your calendar as reminders.",
-        "NSCalendarsUsageDescription": "Jasne can add document deadlines to your calendar as reminders.",
-        "NSRemindersFullAccessUsageDescription": "Jasne can add document deadlines to your reminders.",
-        "NSRemindersUsageDescription": "Jasne can add document deadlines to your reminders."
+        "NSCalendarsFullAccessUsageDescription": "Jasně can add document deadlines to your calendar as reminders.",
+        "NSCalendarsWriteOnlyAccessUsageDescription": "Jasně can add document deadlines to your calendar as reminders.",
+        "NSCalendarsUsageDescription": "Jasně can add document deadlines to your calendar as reminders.",
+        "NSRemindersFullAccessUsageDescription": "Jasně can add document deadlines to your reminders.",
+        "NSRemindersUsageDescription": "Jasně can add document deadlines to your reminders."
       }
     },
     "android": {
       "package": "app.jasne.mobile",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#16458A"
+        "backgroundColor": "#1B5FAC"
       }
     },
     "androidNavigationBar": {

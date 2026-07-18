@@ -15,7 +15,6 @@ import { JsStack } from "@/components/JsStack";
 import { AccountDeletionScreen } from "@/features/auth/AccountDeletionScreen";
 import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
 import { readCachedProfile, writeCachedProfile } from "@/features/auth/profileCache";
-import { AuthScreen } from "@/features/auth/AuthScreen";
 import { ResetPasswordScreen } from "@/features/auth/ResetPasswordScreen";
 import { OnboardingScreen } from "@/features/onboarding/OnboardingScreen";
 import { ThemeProvider, lightColors, useColors } from "@/components/ui";
@@ -135,7 +134,7 @@ function FontLoadingScreen() {
   const colors = useColors();
   return (
     <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
-      <ActivityIndicator color={colors.primary} />
+      <ActivityIndicator color={colors.brandBlue} />
     </View>
   );
 }
@@ -145,7 +144,6 @@ function RootNavigator() {
   const colors = useColors();
   const router = useRouter();
   const [onboardingSeen, setOnboardingSeen] = useState<boolean | null>(null);
-  const [forceOnboarding, setForceOnboarding] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(ONBOARDING_STORAGE_KEY)
@@ -155,7 +153,6 @@ function RootNavigator() {
 
   const completeOnboarding = useCallback(() => {
     setOnboardingSeen(true);
-    setForceOnboarding(false);
     void AsyncStorage.setItem(ONBOARDING_STORAGE_KEY, "1").catch(() => {});
   }, []);
 
@@ -186,30 +183,29 @@ function RootNavigator() {
   if (initializing) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color={colors.brandBlue} />
       </View>
     );
   }
 
   if (passwordRecovery) return <ResetPasswordScreen />;
 
-  if (!session && !hasHadAccount && onboardingSeen === null) {
+  if (!session && onboardingSeen === null) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color={colors.brandBlue} />
       </View>
     );
   }
 
-  if (!session && ((!hasHadAccount && !onboardingSeen) || forceOnboarding)) {
-    return <OnboardingScreen onComplete={completeOnboarding} />;
-  }
-
   if (!session) {
+    // The onboarding's last slide is the sign-in screen (Apple/Google OAuth
+    // only — the standalone email AuthScreen was removed). Users who already
+    // saw the tour, or ever had an account on this device, land straight on it.
     return (
-      <AuthScreen
-        initialMode={hasHadAccount ? "login" : "register"}
-        onShowOnboarding={() => setForceOnboarding(true)}
+      <OnboardingScreen
+        startAtAuth={Boolean(onboardingSeen) || hasHadAccount}
+        onComplete={completeOnboarding}
       />
     );
   }
@@ -297,7 +293,7 @@ function AccountGate({ userId, children }: { userId: string; children: ReactNode
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color={colors.brandBlue} />
       </View>
     );
   }

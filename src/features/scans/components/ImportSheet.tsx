@@ -112,7 +112,7 @@ export function SheetRow({ icon, title, detail, onPress }: { icon: IconName; tit
   return (
     <Pressable onPress={onPress} style={sheetStyles.row}>
       <View style={sheetStyles.rowIcon}>
-        <Icon name={icon} size={20} color={scanner.blue} />
+        <Icon name={icon} size={20} color={scanner.brandBlue} />
       </View>
       <View style={sheetStyles.rowText}>
         <Text style={sheetStyles.rowTitle}>{title}</Text>

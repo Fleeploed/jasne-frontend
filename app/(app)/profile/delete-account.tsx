@@ -228,7 +228,7 @@ export default function DeleteAccountScreen() {
                   )}
                 </View>
                 <View style={styles.graceNote}>
-                  <Ionicons name="time-outline" size={18} color={colors.primary} />
+                  <Ionicons name="time-outline" size={18} color={colors.brandBlue} />
                   <Text style={styles.graceNoteText}>{t("deleteAccount.graceNote")}</Text>
                 </View>
               </View>
@@ -248,7 +248,7 @@ export default function DeleteAccountScreen() {
                         style={[
                           styles.pill,
                           selected && {
-                            borderColor: colors.primary,
+                            borderColor: colors.brandBlue,
                             backgroundColor: colors.blueSoft,
                           },
                         ]}
@@ -378,7 +378,7 @@ function createStyles(colors: ColorPalette) {
       borderRadius: 16,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.primaryDark,
+      backgroundColor: colors.brandBlue,
       paddingHorizontal: 18,
     },
     primaryButtonText: {

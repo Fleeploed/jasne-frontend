@@ -55,10 +55,18 @@ function selectTermsContent(file: TermsFile, locale: string): TermsDocument {
   return content;
 }
 
-export function TermsScreen() {
+export function TermsScreen({
+  onBack,
+  backLabel,
+  localeOverride,
+}: {
+  onBack?: () => void;
+  backLabel?: string;
+  localeOverride?: string;
+} = {}) {
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const locale = getLocale();
+  const locale = localeOverride ?? getLocale();
   const [termsContent, setTermsContent] = useState<TermsDocument | null>(null);
 
   useEffect(() => {
@@ -84,12 +92,12 @@ export function TermsScreen() {
     <Screen>
       <View style={styles.backBar}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={onBack ?? (() => router.back())}
           style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
           accessibilityRole="button"
         >
-          <AppIcon name="chevron-left" size={22} color={colors.primary} />
-          <Text style={styles.backText}>{t("profile.title")}</Text>
+          <AppIcon name="chevron-left" size={22} color={colors.brandBlue} />
+          <Text style={styles.backText}>{backLabel ?? t("profile.title")}</Text>
         </Pressable>
       </View>
 
@@ -146,7 +154,7 @@ export function TermsScreen() {
           </View>
         ) : (
           <View style={styles.loading}>
-            <ActivityIndicator color={colors.primary} />
+            <ActivityIndicator color={colors.brandBlue} />
           </View>
         )}
 
@@ -160,8 +168,10 @@ function createStyles(colors: ColorPalette) {
   return StyleSheet.create({
     backBar: {
       paddingHorizontal: 16,
-      paddingTop: 8,
+      paddingTop: 4,
       paddingBottom: 6,
+      minHeight: 54,
+      justifyContent: "center",
       backgroundColor: colors.bg,
     },
     backButton: {
@@ -169,11 +179,11 @@ function createStyles(colors: ColorPalette) {
       alignItems: "center",
       gap: 2,
       alignSelf: "flex-start",
-      paddingVertical: 8,
+      minHeight: 44,
       paddingRight: 12,
     },
     backText: {
-      color: colors.primary,
+      color: colors.brandBlue,
       fontFamily: fonts.bodySemiBold,
       ...typeStyles.rowTitle,
       fontWeight: "600",

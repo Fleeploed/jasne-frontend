@@ -99,7 +99,7 @@ export function DocumentsEmpty({
     <View style={styles.emptyWrap}>
       <View style={styles.emptyHeroIcon}>
         <View style={styles.emptyHeroFile}>
-          <Icon name="doc-text" size={44} color={colors.primary} />
+          <Icon name="doc-text" size={44} color={colors.brandBlue} />
         </View>
       </View>
       <Text style={styles.emptyHeroTitle}>{t("documents.emptyTitle")}</Text>

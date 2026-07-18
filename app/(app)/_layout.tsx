@@ -135,7 +135,7 @@ function MockupTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
             }}
             style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
           >
-            <TabGlyph name={icon} color={focused ? colors.primary : colors.muted2} />
+            <TabGlyph name={icon} color={focused ? colors.brandBlue : colors.muted2} />
             <Text maxFontSizeMultiplier={1} style={[styles.tabLabel, focused && styles.tabLabelActive]}>{label}</Text>
           </Pressable>
         );
@@ -155,7 +155,7 @@ function createTabStyles(colors: ColorPalette) {
     },
     tab: { flex: 1, alignItems: "center", gap: 3, paddingVertical: 5 },
     tabLabel: { color: colors.muted2, fontFamily: fonts.bodySemiBold, ...typeStyles.caption2, fontWeight: "600" },
-    tabLabelActive: { color: colors.primary },
+    tabLabelActive: { color: colors.brandBlue },
     pressed: { opacity: 0.7 }
   });
 }

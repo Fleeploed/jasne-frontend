@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppIcon } from "@/components/AppIcon";
 
 export const lightColors = {
+  brandBlue: "#1B5FAC",
   bg: "#F9F7F4",
   bgDeep: "#F1ECE5",
   surface: "#FDFBF8",
@@ -65,6 +66,7 @@ export const lightColors = {
 };
 
 export const darkColors = {
+  brandBlue: "#1B5FAC",
   bg: "#0F0D0B",
   bgDeep: "#090806",
   surface: "#181512",
@@ -390,7 +392,7 @@ export function Button({
       justifyContent: "center",
       paddingHorizontal: 18
     },
-    primary: { backgroundColor: colors.primaryDark },
+    primary: { backgroundColor: colors.brandBlue },
     secondary: { backgroundColor: colors.blueSoft },
     danger: {
       backgroundColor: "transparent",

@@ -105,7 +105,7 @@ export function OampTrackingOffer({ identifier, plan }: { identifier: string; pl
       >
         <View style={[styles.iconSlot, showChecking ? null : styles.iconSlotActive]}>
           {showChecking ? (
-            <ActivityIndicator size="small" color={colors.primary} />
+            <ActivityIndicator size="small" color={colors.brandBlue} />
           ) : (
             <AppIcon name="bell" size={20} color={colors.greenDark} strokeWidth={1.9} />
           )}
@@ -154,7 +154,7 @@ export function OampTrackingOffer({ identifier, plan }: { identifier: string; pl
         <AppIcon
           name={isPro ? "bell" : "lock"}
           size={20}
-          color={isPro ? colors.primary : colors.pro}
+          color={isPro ? colors.brandBlue : colors.pro}
           strokeWidth={1.9}
         />
       </View>
@@ -163,7 +163,7 @@ export function OampTrackingOffer({ identifier, plan }: { identifier: string; pl
         <Text style={styles.hint}>{t("oamp.tracking.offer.subtitle", { identifier })}</Text>
         <View style={[styles.actionRow, !isPro && styles.actionRowLocked]}>
           {busy ? (
-            <ActivityIndicator size="small" color={isPro ? colors.primary : colors.pro} />
+            <ActivityIndicator size="small" color={isPro ? colors.brandBlue : colors.pro} />
           ) : (
             <Text style={[styles.actionText, { color: isPro ? colors.primary : colors.pro }]}>
               {isPro ? t("oamp.tracking.offer.cta") : t("oamp.tracking.offer.ctaFree")}

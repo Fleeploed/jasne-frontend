@@ -106,7 +106,7 @@ function createStyles(colors: ColorPalette) {
       paddingHorizontal: 28,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.primary,
+      backgroundColor: colors.brandBlue,
       marginTop: 8,
     },
     buttonPressed: { opacity: 0.8 },

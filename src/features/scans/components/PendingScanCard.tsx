@@ -40,7 +40,7 @@ export function PendingScanCard({
           {showImage ? (
             <Image source={{ uri: firstImage.uri }} style={styles.pendingThumbImage} resizeMode="cover" />
           ) : (
-            <Icon name="doc-text" size={24} color={interrupted ? colors.muted2 : colors.primary} />
+            <Icon name="doc-text" size={24} color={interrupted ? colors.muted2 : colors.brandBlue} />
           )}
         </View>
         <View style={styles.rowHeadText}>
@@ -48,7 +48,7 @@ export function PendingScanCard({
             <Text style={styles.rowEyebrow} numberOfLines={1}>
               {interrupted ? t("scan.interruptedEyebrow") : t("scan.processingEyebrow")}
             </Text>
-            {interrupted ? null : <ActivityIndicator size="small" color={colors.primary} />}
+            {interrupted ? null : <ActivityIndicator size="small" color={colors.brandBlue} />}
           </View>
           <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
           <Text style={styles.pendingStep} numberOfLines={1}>{latestStep}</Text>

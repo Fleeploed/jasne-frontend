@@ -58,7 +58,7 @@ export function AccountDeletionScreen({
           <Ionicons
             name={hasLoadError ? "cloud-offline-outline" : "time-outline"}
             size={34}
-            color={hasLoadError ? colors.amber : colors.primary}
+            color={hasLoadError ? colors.amber : colors.brandBlue}
           />
         </View>
         <Text style={styles.title}>
@@ -152,7 +152,7 @@ function createStyles(colors: ColorPalette) {
       borderRadius: 16,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.primary,
+      backgroundColor: colors.brandBlue,
       paddingHorizontal: 18,
     },
     primaryButtonText: {

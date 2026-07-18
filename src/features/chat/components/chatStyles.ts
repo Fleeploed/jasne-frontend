@@ -247,7 +247,7 @@ export function createStyles(colors: ColorPalette) {
       marginTop: 16,
       minHeight: 48,
       borderRadius: 12,
-      backgroundColor: colors.primaryDark,
+      backgroundColor: colors.brandBlue,
       flexDirection: "row" as const,
       alignItems: "center" as const,
       justifyContent: "center" as const,
@@ -431,7 +431,7 @@ export function createStyles(colors: ColorPalette) {
       alignItems: "center",
     },
     reminderToggleOn: {
-      backgroundColor: colors.primaryMid,
+      backgroundColor: colors.brandBlue,
     },
     reminderToggleOff: {
       backgroundColor: colors.surface2,
@@ -472,7 +472,7 @@ export function createStyles(colors: ColorPalette) {
     reminderCta: {
       minHeight: 52,
       borderRadius: 17,
-      backgroundColor: colors.primaryMid,
+      backgroundColor: colors.brandBlue,
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: 18,
@@ -556,7 +556,7 @@ export function createStyles(colors: ColorPalette) {
     bubble: { maxWidth: "84%", paddingHorizontal: 12, paddingVertical: 10 },
     userBubble: {
       alignSelf: "flex-end",
-      backgroundColor: colors.primary,
+      backgroundColor: colors.brandBlue,
       borderTopLeftRadius: 18,
       borderTopRightRadius: 18,
       borderBottomLeftRadius: 18,
@@ -620,7 +620,7 @@ export function createStyles(colors: ColorPalette) {
       height: 28,
       borderRadius: 14,
       paddingHorizontal: 9,
-      backgroundColor: colors.primary,
+      backgroundColor: colors.brandBlue,
       alignItems: "center",
       justifyContent: "center"
     },
@@ -636,7 +636,7 @@ export function createStyles(colors: ColorPalette) {
       minWidth: 164,
       borderRadius: 18,
       borderBottomRightRadius: 4,
-      backgroundColor: colors.primary,
+      backgroundColor: colors.brandBlue,
       padding: 12,
       gap: 5
     },

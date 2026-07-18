@@ -25,7 +25,10 @@ export function DeleteDeadlineModal({
   const description = item.description?.replace(/\n+/g, " ").trim();
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
+    // animationType="none": Android on RN 0.76 + New Arch is unreliable with
+    // animated Modals (see ManualDeadlineModal) — a fresh-mounted plain dialog
+    // is the safe pattern.
+    <Modal visible transparent animationType="none" onRequestClose={onCancel} statusBarTranslucent>
       <View style={styles.deleteBackdrop}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
         <View style={styles.deleteCard}>

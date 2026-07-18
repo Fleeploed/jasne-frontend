@@ -12,8 +12,9 @@ export const scannerDark = {
   surface2: "#211D19",
   surface3: "#2A2520",
   hairline: "#2C2722",
+  brandBlue: "#1B5FAC",
   blue: "#6FA0E6",
-  blueDeep: "#3E6FB8",
+  blueDeep: "#1B5FAC",
   amber: "#E0B45A",
   red: "#E07F73",
   green: "#7FBE9A",
@@ -50,8 +51,9 @@ export const scannerLight: typeof scannerDark = {
   surface2: "#F1EAD9",
   surface3: "#E8DFCB",
   hairline: "#E0D6BE",
+  brandBlue: "#1B5FAC",
   blue: "#3E6FB8",
-  blueDeep: "#3E6FB8",
+  blueDeep: "#1B5FAC",
   amber: "#B07E2C",
   red: "#C8493C",
   green: "#4E8C68",
@@ -415,7 +417,7 @@ export const createPickerStyles = (scanner: ScannerPalette) => StyleSheet.create
     backgroundColor: scanner.surface3,
   },
   pageCardSelected: {
-    borderColor: scanner.blue,
+    borderColor: scanner.brandBlue,
   },
   pageCardDim: { opacity: 0.4 },
   pageCardImage: { width: "100%", height: "100%" },
@@ -505,7 +507,7 @@ export const createPreviewStyles = (scanner: ScannerPalette) => StyleSheet.creat
     gap: 7,
   },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: scanner.ink5 },
-  dotActive: { width: 18, backgroundColor: scanner.blue },
+  dotActive: { width: 18, backgroundColor: scanner.brandBlue },
 });
 
 export const createPermissionStyles = (scanner: ScannerPalette) => StyleSheet.create({

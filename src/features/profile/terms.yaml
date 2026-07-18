@@ -74,7 +74,7 @@ cs:
       title: "Kontakt"
       paragraphs:
         - >
-          S dotazy k těmto podmínkám pište na hello@jasne.app. Právní adresa a identifikační údaje jsou uvedeny v plné verzi dokumentu.
+          S dotazy k těmto podmínkám pište na info@jasne.app. Právní adresa a identifikační údaje jsou uvedeny v plné verzi dokumentu.
         - "Konec dokumentu"
 
 ru:
@@ -153,7 +153,7 @@ ru:
       title: "Контакты"
       paragraphs:
         - >
-          По вопросам, связанным с этими условиями, пишите на hello@jasne.app. Юридический адрес и реквизиты — в полной версии документа.
+          По вопросам, связанным с этими условиями, пишите на info@jasne.app. Юридический адрес и реквизиты — в полной версии документа.
         - "Конец документа"
 
 uk:
@@ -232,7 +232,7 @@ uk:
       title: "Контакти"
       paragraphs:
         - >
-          З питань, пов'язаних із цими умовами, пишіть на hello@jasne.app. Юридична адреса та реквізити наведені в повній версії документа.
+          З питань, пов'язаних із цими умовами, пишіть на info@jasne.app. Юридична адреса та реквізити наведені в повній версії документа.
         - "Кінець документа"
 
 en:
@@ -311,5 +311,5 @@ en:
       title: "Contact"
       paragraphs:
         - >
-          For questions related to these terms, write to hello@jasne.app. The legal address and company details are provided in the full version of the document.
+          For questions related to these terms, write to info@jasne.app. The legal address and company details are provided in the full version of the document.
         - "End of document"

@@ -420,8 +420,8 @@ export function ScanListScreen() {
           windowSize={7}
           removeClippedSubviews
           keyboardShouldPersistTaps="handled"
-          ListFooterComponent={loadingMoreScans && page.filter.key === settledCategoryFilter ? <ListLoadingFooter color={colors.primary} styles={styles} /> : null}
-          refreshControl={<RefreshControl tintColor={colors.primary} refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
+          ListFooterComponent={loadingMoreScans && page.filter.key === settledCategoryFilter ? <ListLoadingFooter color={colors.brandBlue} styles={styles} /> : null}
+          refreshControl={<RefreshControl tintColor={colors.brandBlue} refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
           ListHeaderComponent={
             hasPageHeader ? (
               <View style={styles.pendingStack}>
@@ -532,7 +532,7 @@ export function ScanListScreen() {
     return (
       <Screen>
         <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
+          <ActivityIndicator color={colors.brandBlue} />
         </View>
       </Screen>
     );

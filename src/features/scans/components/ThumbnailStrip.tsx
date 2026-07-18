@@ -30,7 +30,7 @@ export function ThumbnailStrip({
         accessibilityLabel={previewLabel}
         style={({ pressed }) => [scannerStyles.previewTile, pressed && { opacity: 0.7 }]}
       >
-        <Icon name="eye" size={22} color={scanner.blue} />
+        <Icon name="eye" size={22} color={scanner.brandBlue} />
         <Text style={scannerStyles.previewTileLabel}>{files.length}</Text>
       </Pressable>
       {files.map((file, index) => {
@@ -41,7 +41,7 @@ export function ThumbnailStrip({
               <Image source={{ uri: file.uri }} style={scannerStyles.thumbImage} resizeMode="cover" />
             ) : (
               <View style={scannerStyles.thumbPdf}>
-                <Icon name="doc" size={20} color={scanner.blue} />
+                <Icon name="doc" size={20} color={scanner.brandBlue} />
               </View>
             )}
             <View style={scannerStyles.thumbIndexBadge}>

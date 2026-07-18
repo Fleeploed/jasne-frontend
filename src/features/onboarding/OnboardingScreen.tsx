@@ -1,17 +1,38 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Animated,
-  Easing,
+  ActivityIndicator,
+  BackHandler,
   type LayoutChangeEvent,
-  Linking,
   PanResponder,
   Platform,
   Pressable,
   StyleSheet,
   Text,
+  type TextProps,
   View,
+  type ViewProps,
   useWindowDimensions,
 } from "react-native";
+// All animations run on react-native-reanimated, NOT RN's Animated. On RN 0.76
+// with the New Architecture, native-driver Animated props flicker on Android
+// whenever a Fabric commit lands mid-animation (step/phase state updates here
+// do exactly that) — views blink for a frame. Reanimated applies updates
+// through its own UI-thread ShadowTree integration and is immune.
+import Reanimated, {
+  Easing,
+  type SharedValue,
+  cancelAnimation,
+  interpolate,
+  makeMutable,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,9 +40,12 @@ import Svg, { Circle, Defs, Path, RadialGradient, Rect, Stop } from "react-nativ
 
 import { BrandWordmark } from "@/components/BrandMark";
 import { Icon, type IconName } from "@/components/Icon";
+import { signInWithProvider, type SocialProvider } from "@/features/auth/socialAuth";
 import { fonts, lightColors, typeStyles, useColors, type ColorPalette } from "@/components/ui";
 import { useLocale } from "@/lib/LocaleContext";
 import { normalizeLocale } from "@/lib/i18n";
+import { TermsScreen } from "@/features/profile/TermsScreen";
+import { PrivacyPolicyScreen } from "@/features/profile/PrivacyPolicyScreen";
 
 type LanguageCode = "cs" | "en" | "uk" | "ru";
 
@@ -54,7 +78,6 @@ type OnboardingCopy = {
   authBody: string;
   authGoogle: string;
   authApple: string;
-  authEmail: string;
   authTrust: string;
   authLegal: string;
   authTermsLabel: string;
@@ -105,7 +128,6 @@ const ONBOARDING_COPY: Record<LanguageCode, OnboardingCopy> = {
     authBody: "5 документов в месяц бесплатно. Без карты.",
     authGoogle: "Продолжить с Google",
     authApple: "Продолжить с Apple",
-    authEmail: "Продолжить с email",
     authTrust: "Документы хранятся в защищённом хранилище и доступны только в вашем аккаунте.",
     authLegal: "Продолжая, вы принимаете {terms} и {privacy}.",
     authTermsLabel: "Условия использования",
@@ -153,7 +175,6 @@ const ONBOARDING_COPY: Record<LanguageCode, OnboardingCopy> = {
     authBody: "5 dokumentů měsíčně zdarma. Bez karty.",
     authGoogle: "Pokračovat s Google",
     authApple: "Pokračovat s Apple",
-    authEmail: "Pokračovat s emailem",
     authTrust: "Dokumenty jsou uložené v chráněném úložišti a dostupné jen ve vašem účtu.",
     authLegal: "Pokračováním přijímáte {terms} a {privacy}.",
     authTermsLabel: "Podmínky používání",
@@ -201,7 +222,6 @@ const ONBOARDING_COPY: Record<LanguageCode, OnboardingCopy> = {
     authBody: "5 documents per month for free. No card required.",
     authGoogle: "Continue with Google",
     authApple: "Continue with Apple",
-    authEmail: "Continue with email",
     authTrust: "Your documents are stored in protected storage and are available only in your account.",
     authLegal: "By continuing, you accept {terms} and {privacy}.",
     authTermsLabel: "Terms of Use",
@@ -249,7 +269,6 @@ const ONBOARDING_COPY: Record<LanguageCode, OnboardingCopy> = {
     authBody: "5 документів на місяць безкоштовно. Без картки.",
     authGoogle: "Продовжити з Google",
     authApple: "Продовжити з Apple",
-    authEmail: "Продовжити з email",
     authTrust: "Документи зберігаються в захищеному сховищі й доступні лише у вашому акаунті.",
     authLegal: "Продовжуючи, ви приймаєте {terms} і {privacy}.",
     authTermsLabel: "Умови використання",
@@ -318,16 +337,25 @@ type Tone = "blue" | "amber" | "red" | "green";
 const SLIDE_COUNT = 6;
 const SPRING = Easing.bezier(0.2, 0.8, 0.2, 1);
 const OVERSHOOT = Easing.bezier(0.34, 1.56, 0.64, 1);
+const LEGAL_CONTENT_DELAY_MS = 380;
 
-export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
+// startAtAuth: open directly on the last (auth) slide — this doubles as the
+// app's only sign-in screen for users who have already seen the onboarding
+// (the standalone email/password AuthScreen was removed). Swiping back through
+// the earlier slides remains available as a product tour.
+export function OnboardingScreen({ onComplete, startAtAuth = false }: { onComplete: () => void; startAtAuth?: boolean }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { locale, changeLocale } = useLocale();
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(startAtAuth ? SLIDE_COUNT - 1 : 0);
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(() => normalizeLocale(locale) as LanguageCode);
+  const [legalWindow, setLegalWindow] = useState<"terms" | "privacy" | null>(null);
+  const [legalContentReady, setLegalContentReady] = useState(false);
   const userPickedLanguage = useRef(false);
-  const offset = useRef(new Animated.Value(0)).current;
+  const offset = useSharedValue(startAtAuth ? -(SLIDE_COUNT - 1) * width : 0);
+  const legalOffset = useSharedValue(width);
+  const legalReturnStepRef = useRef(SLIDE_COUNT - 1);
   // Three-button Android navigation can overlay transparent app content without
   // always reporting a bottom inset, so keep the CTA above that system area.
   const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 40 : 0);
@@ -337,13 +365,21 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
   const statusStyle = isLight ? "dark" : "light";
 
   useEffect(() => {
-    Animated.timing(offset, {
-      toValue: -step * width,
-      duration: 600,
-      easing: SPRING,
-      useNativeDriver: true,
-    }).start();
+    offset.value = withTiming(-step * width, { duration: 600, easing: SPRING });
   }, [offset, step, width]);
+
+  useEffect(() => {
+    if (!legalWindow) return;
+    setLegalContentReady(false);
+    legalOffset.value = width;
+    legalOffset.value = withTiming(0, { duration: 360, easing: SPRING });
+
+    const timer = setTimeout(() => {
+      setLegalContentReady(true);
+    }, LEGAL_CONTENT_DELAY_MS);
+
+    return () => clearTimeout(timer);
+  }, [legalOffset, legalWindow, width]);
 
   useEffect(() => {
     if (userPickedLanguage.current) return;
@@ -387,12 +423,92 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
     void changeLocale(next);
   }
 
+  const openLegalWindow = useCallback((target: "terms" | "privacy") => {
+    legalReturnStepRef.current = step;
+    legalOffset.value = width;
+    setLegalWindow(target);
+  }, [legalOffset, step, width]);
+
+  const dismissLegalWindow = useCallback(() => {
+    setLegalWindow(null);
+  }, []);
+
+  const closeLegalWindow = useCallback(() => {
+    setStep(legalReturnStepRef.current);
+    setLegalContentReady(false);
+    legalOffset.value = withTiming(width, { duration: 300, easing: SPRING }, (finished) => {
+      if (finished) runOnJS(dismissLegalWindow)();
+    });
+  }, [dismissLegalWindow, legalOffset, width]);
+
+  useEffect(() => {
+    if (Platform.OS !== "android" || legalWindow === null) return undefined;
+
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      closeLegalWindow();
+      return true;
+    });
+
+    return () => subscription.remove();
+  }, [closeLegalWindow, legalWindow]);
+
+  const legalSwipe = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, { dx, dy }) =>
+          legalWindow !== null && dx > 16 && Math.abs(dx) > Math.abs(dy) * 1.25,
+        onMoveShouldSetPanResponderCapture: (_, { dx, dy }) =>
+          legalWindow !== null && dx > 16 && Math.abs(dx) > Math.abs(dy) * 1.25,
+        onPanResponderGrant: () => {
+          cancelAnimation(legalOffset);
+        },
+        onPanResponderMove: (_, { dx }) => {
+          legalOffset.value = Math.max(0, dx);
+        },
+        onPanResponderRelease: (_, { dx, vx }) => {
+          if (dx > width * 0.22 || vx > 0.45) {
+            closeLegalWindow();
+            return;
+          }
+          legalOffset.value = withSpring(0, { damping: 24, stiffness: 240, mass: 0.9 });
+        },
+      }),
+    [closeLegalWindow, legalOffset, legalWindow, width],
+  );
+
+  const legalEdgeSwipe = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => legalWindow !== null,
+        onPanResponderGrant: () => {
+          cancelAnimation(legalOffset);
+        },
+        onPanResponderMove: (_, { dx }) => {
+          legalOffset.value = Math.max(0, dx);
+        },
+        onPanResponderRelease: (_, { dx, vx }) => {
+          if (dx > width * 0.18 || vx > 0.35) {
+            closeLegalWindow();
+            return;
+          }
+          legalOffset.value = withSpring(0, { damping: 24, stiffness: 240, mass: 0.9 });
+        },
+      }),
+    [closeLegalWindow, legalOffset, legalWindow, width],
+  );
+
+  const trackAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: offset.value }],
+  }));
+  const legalAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: legalOffset.value }],
+  }));
+
   return (
-    <View style={[styles.root, { backgroundColor: colors.bg }]} {...swipe.panHandlers}>
+    <View style={[styles.root, { backgroundColor: colors.bg }]} {...(legalWindow ? {} : swipe.panHandlers)}>
       <StatusBar style={statusStyle} backgroundColor={colors.bg} />
       <BgGlow step={step} isLight={isLight} />
       <View pointerEvents="none" style={[stylesStatic.vignette, { borderColor: colors.bgDeep }]} />
-      <View pointerEvents="none" style={[stylesStatic.grain, { backgroundColor: colors.surface3 }]} />
 
       <View style={[styles.chrome, { paddingTop: insets.top + 8 }]}>
         <Pressable
@@ -438,13 +554,11 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
         </Pressable>
       </View>
 
-      <Animated.View
+      <Reanimated.View
         style={[
           styles.track,
-          {
-            width: width * SLIDE_COUNT,
-            transform: [{ translateX: offset }],
-          },
+          { width: width * SLIDE_COUNT },
+          trackAnimatedStyle,
         ]}
       >
         <SlidePage width={width}>
@@ -478,9 +592,30 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
             styles={styles}
             onRestart={() => setStep(0)}
             onComplete={onComplete}
+            onOpenTerms={() => openLegalWindow("terms")}
+            onOpenPrivacy={() => openLegalWindow("privacy")}
           />
         </SlidePage>
-      </Animated.View>
+      </Reanimated.View>
+      {legalWindow ? (
+        <Reanimated.View
+          {...legalSwipe.panHandlers}
+          style={[styles.legalOverlay, legalAnimatedStyle]}
+        >
+          {legalContentReady ? (
+            legalWindow === "terms" ? (
+              <TermsScreen onBack={closeLegalWindow} backLabel={copy.back} localeOverride={selectedLanguage} />
+            ) : (
+              <PrivacyPolicyScreen onBack={closeLegalWindow} backLabel={copy.back} localeOverride={selectedLanguage} />
+            )
+          ) : (
+            <View style={styles.legalLoading}>
+              <ActivityIndicator color={colors.brandBlue} />
+            </View>
+          )}
+          <View style={styles.legalSwipeEdge} {...legalEdgeSwipe.panHandlers} />
+        </Reanimated.View>
+      ) : null}
     </View>
   );
 }
@@ -490,62 +625,64 @@ function SlidePage({ children, width }: { children: React.ReactNode; width: numb
 }
 
 /* ───────────────────────── Background glow ─────────────────────────
-   Faithful port of v2's <BgGlow>: breathing radial glows whose color and
-   opacity shift per step. RN has no CSS radial-gradient, so each glow is an
-   <Svg> radial gradient inside an absolutely-positioned Animated.View. Step
-   transitions and breathing run on the JS driver (low-frequency ambient). */
+   Port of v2's <BgGlow>: radial glows whose color and opacity shift per step.
+   RN has no CSS radial-gradient, so each glow is an <Svg> radial gradient
+   inside an absolutely-positioned Reanimated.View. The continuous "breathing"
+   loop was removed: recompositing the full-screen translucent glow stack every
+   frame overwhelms mid-range Android GPUs (Mali), so the glows now only
+   animate during the 700ms step transition and the scene is static at rest. */
+
+// Step indices: 0=welcome 1=language 2=scan 3=reminders 4=guides 5=auth
+const GLOW_STEPS = [0, 1, 2, 3, 4, 5];
 
 function BgGlow({ step, isLight }: { step: number; isLight: boolean }) {
-  const stepAnim = useRef(new Animated.Value(step)).current;
-  const breathe = useRef(new Animated.Value(0)).current;
+  const stepAnim = useSharedValue(step);
   const factor = isLight ? 0.4 : 1;
 
   useEffect(() => {
-    Animated.timing(stepAnim, {
-      toValue: step,
-      duration: 700,
-      easing: Easing.inOut(Easing.ease),
-      useNativeDriver: false,
-    }).start();
+    stepAnim.value = withTiming(step, { duration: 700, easing: Easing.inOut(Easing.ease) });
   }, [stepAnim, step]);
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(breathe, { toValue: 1, duration: 4500, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
-        Animated.timing(breathe, { toValue: 0, duration: 4500, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [breathe]);
-
-  const scale = breathe.interpolate({ inputRange: [0, 1], outputRange: [1, 1.14] });
-  // Step indices: 0=welcome 1=language 2=scan 3=reminders 4=guides 5=auth
-  const blueOpacity = stepAnim.interpolate({
-    inputRange: [0, 1, 2, 3, 4, 5],
-    outputRange: [factor, factor, factor, factor * 0.3, factor, factor],
-  });
-  const blueShiftY = stepAnim.interpolate({
-    inputRange: [0, 1, 2, 3, 4, 5],
-    outputRange: [0, -26, 0, 0, 0, 130],
-  });
-  const warmOpacity = stepAnim.interpolate({
-    inputRange: [0, 1, 2, 3, 4, 5],
-    outputRange: [factor, factor * 0.35, factor * 0.35, 0, factor * 0.35, factor],
-  });
-  const reminderOpacity = stepAnim.interpolate({
-    inputRange: [0, 1, 2, 3, 4, 5],
-    outputRange: [0, 0, 0, factor, 0, 0],
-  });
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <GlowLayer size={620} left="50%" top="34%" color="#6FA0E6" alpha={0.28} opacity={blueOpacity} extraTranslateY={blueShiftY} scale={scale} />
-      <GlowLayer size={500} left="58%" top="72%" color="#C89650" alpha={0.14} opacity={warmOpacity} scale={scale} />
+      <GlowLayer
+        size={620}
+        left="50%"
+        top="34%"
+        color="#6FA0E6"
+        alpha={0.28}
+        stepAnim={stepAnim}
+        opacityRange={[factor, factor, factor, factor * 0.3, factor, factor]}
+        shiftRange={[0, -26, 0, 0, 0, 130]}
+      />
+      <GlowLayer
+        size={500}
+        left="58%"
+        top="72%"
+        color="#C89650"
+        alpha={0.14}
+        stepAnim={stepAnim}
+        opacityRange={[factor, factor * 0.35, factor * 0.35, 0, factor * 0.35, factor]}
+      />
       {/* Reminder-slide glows, kept clear of the card band. */}
-      <GlowLayer size={480} left="40%" top="14%" color="#E0B45A" alpha={0.2} opacity={reminderOpacity} scale={scale} />
-      <GlowLayer size={520} left="50%" top="93%" color="#E07F73" alpha={0.18} opacity={reminderOpacity} scale={scale} />
+      <GlowLayer
+        size={480}
+        left="40%"
+        top="14%"
+        color="#E0B45A"
+        alpha={0.2}
+        stepAnim={stepAnim}
+        opacityRange={[0, 0, 0, factor, 0, 0]}
+      />
+      <GlowLayer
+        size={520}
+        left="50%"
+        top="93%"
+        color="#E07F73"
+        alpha={0.18}
+        stepAnim={stepAnim}
+        opacityRange={[0, 0, 0, factor, 0, 0]}
+      />
     </View>
   );
 }
@@ -558,36 +695,40 @@ function GlowLayer({
   top,
   color,
   alpha,
-  opacity,
-  scale,
-  extraTranslateY,
+  stepAnim,
+  opacityRange,
+  shiftRange,
 }: {
   size: number;
   left: string;
   top: string;
   color: string;
   alpha: number;
-  opacity: Animated.AnimatedInterpolation<number>;
-  scale: Animated.AnimatedInterpolation<number>;
-  extraTranslateY?: Animated.AnimatedInterpolation<number>;
+  stepAnim: SharedValue<number>;
+  opacityRange: number[];
+  shiftRange?: number[];
 }) {
   const gradientId = useRef(`onbGlow${glowIdCounter++}`).current;
-  const transform: Animated.WithAnimatedArray<{ translateY?: Animated.AnimatedInterpolation<number>; scale?: Animated.AnimatedInterpolation<number> }> =
-    extraTranslateY ? [{ translateY: extraTranslateY }, { scale }] : [{ scale }];
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(stepAnim.value, GLOW_STEPS, opacityRange),
+    transform: shiftRange ? [{ translateY: interpolate(stepAnim.value, GLOW_STEPS, shiftRange) }] : [],
+  }));
 
   return (
-    <Animated.View
-      style={{
-        position: "absolute",
-        left: left as unknown as number,
-        top: top as unknown as number,
-        width: size,
-        height: size,
-        marginLeft: -size / 2,
-        marginTop: -size / 2,
-        opacity,
-        transform: transform as never,
-      }}
+    <Reanimated.View
+      style={[
+        {
+          position: "absolute",
+          left: left as unknown as number,
+          top: top as unknown as number,
+          width: size,
+          height: size,
+          marginLeft: -size / 2,
+          marginTop: -size / 2,
+        },
+        animatedStyle,
+      ]}
     >
       <Svg width={size} height={size}>
         <Defs>
@@ -598,7 +739,7 @@ function GlowLayer({
         </Defs>
         <Circle cx={size / 2} cy={size / 2} r={size / 2} fill={`url(#${gradientId})`} />
       </Svg>
-    </Animated.View>
+    </Reanimated.View>
   );
 }
 
@@ -610,26 +751,26 @@ function WelcomeSlide({ active, copy, colors, styles, onNext }: SlideProps & { o
   return (
     <View style={styles.slide}>
       <View style={styles.welcomeCenter}>
-        <Animated.View style={staggerStyle(entries[0])}>
+        <StaggerView entry={entries[0]}>
           <BrandWordmark height={48} />
-        </Animated.View>
+        </StaggerView>
         <View style={styles.titleBlock}>
-          <Animated.Text style={[styles.heroTitle, staggerStyle(entries[1])]}>{copy.welcomeTitleA}</Animated.Text>
-          <Animated.Text style={[styles.heroTitle, staggerStyle(entries[2])]}>{copy.welcomeTitleB}</Animated.Text>
+          <StaggerText entry={entries[1]} style={styles.heroTitle}>{copy.welcomeTitleA}</StaggerText>
+          <StaggerText entry={entries[2]} style={styles.heroTitle}>{copy.welcomeTitleB}</StaggerText>
         </View>
-        <Animated.Text style={[styles.heroBody, staggerStyle(entries[3])]}>{copy.welcomeBody}</Animated.Text>
-        <Animated.View style={[styles.welcomeBullets, staggerStyle(entries[4])]}>
+        <StaggerText entry={entries[3]} style={styles.heroBody}>{copy.welcomeBody}</StaggerText>
+        <StaggerView entry={entries[4]} style={styles.welcomeBullets}>
           {copy.welcomeBullets.map((bullet, i) => (
             <View key={i} style={styles.welcomeBulletRow}>
-              <View style={[styles.welcomeBulletDot, { backgroundColor: colors.primary }]} />
+              <View style={[styles.welcomeBulletDot, { backgroundColor: colors.brandBlue }]} />
               <Text style={styles.welcomeBulletText}>{bullet}</Text>
             </View>
           ))}
-        </Animated.View>
+        </StaggerView>
       </View>
-      <Animated.View style={[styles.bottomCta, staggerStyle(entries[5])]}>
+      <StaggerView entry={entries[5]} style={styles.bottomCta}>
         <PrimaryCTA label={copy.start} onPress={onNext} colors={colors} styles={styles} />
-      </Animated.View>
+      </StaggerView>
     </View>
   );
 }
@@ -654,8 +795,8 @@ function LanguageSlide({
   return (
     <View style={styles.slide}>
       <View style={styles.slideHeader}>
-        <Animated.Text style={[styles.languageTitle, staggerStyle(entries[0])]}>{copy.languageTitle}</Animated.Text>
-        <Animated.Text style={[styles.slideBody, staggerStyle(entries[1])]}>{copy.languageBody}</Animated.Text>
+        <StaggerText entry={entries[0]} style={styles.languageTitle}>{copy.languageTitle}</StaggerText>
+        <StaggerText entry={entries[1]} style={styles.slideBody}>{copy.languageBody}</StaggerText>
       </View>
       <View style={styles.languageGroup}>
         {LANGUAGE_OPTIONS.map((option, index) => {
@@ -673,9 +814,9 @@ function LanguageSlide({
           );
         })}
       </View>
-      <Animated.View style={[styles.bottomCta, staggerStyle(entries[6])]}>
+      <StaggerView entry={entries[6]} style={styles.bottomCta}>
         <PrimaryCTA label={copy.continue} onPress={onNext} colors={colors} styles={styles} />
-      </Animated.View>
+      </StaggerView>
     </View>
   );
 }
@@ -692,33 +833,34 @@ function LanguageRow({
   selected: boolean;
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
-  entry: Animated.Value;
+  entry: SharedValue<number>;
   onPress: () => void;
 }) {
   // Selected rows lift slightly (scale 1.02) and the check mark pops in.
-  const lift = useRef(new Animated.Value(selected ? 1 : 0)).current;
-  const check = useRef(new Animated.Value(selected ? 1 : 0)).current;
+  const lift = useSharedValue(selected ? 1 : 0);
+  const check = useSharedValue(selected ? 1 : 0);
 
   useEffect(() => {
-    Animated.timing(lift, {
-      toValue: selected ? 1 : 0,
-      duration: 280,
-      easing: SPRING,
-      useNativeDriver: true,
-    }).start();
-    Animated.timing(check, {
-      toValue: selected ? 1 : 0,
-      duration: 350,
-      easing: OVERSHOOT,
-      useNativeDriver: true,
-    }).start();
+    lift.value = withTiming(selected ? 1 : 0, { duration: 280, easing: SPRING });
+    check.value = withTiming(selected ? 1 : 0, { duration: 350, easing: OVERSHOOT });
   }, [selected, lift, check]);
 
-  const rowScale = lift.interpolate({ inputRange: [0, 1], outputRange: [1, 1.02] });
-  const checkScale = check.interpolate({ inputRange: [0, 1], outputRange: [0.65, 1] });
+  // Stagger entrance and the selection lift compose into one scale factor
+  // (successive scale transforms multiply, so this matches the old stack).
+  const rowStyle = useAnimatedStyle(() => ({
+    opacity: entry.value,
+    transform: [
+      { translateY: interpolate(entry.value, [0, 1], [16, 0]) },
+      { scale: interpolate(entry.value, [0, 1], [0.985, 1]) * interpolate(lift.value, [0, 1], [1, 1.02]) },
+    ],
+  }));
+  const checkStyle = useAnimatedStyle(() => ({
+    opacity: check.value,
+    transform: [{ scale: interpolate(check.value, [0, 1], [0.65, 1]) }],
+  }));
 
   return (
-    <Animated.View style={[staggerStyle(entry), { transform: [...staggerTransform(entry), { scale: rowScale }] }]}>
+    <Reanimated.View style={rowStyle}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={option.label}
@@ -728,13 +870,13 @@ function LanguageRow({
       >
         <FlagIcon code={option.code} />
         <Text style={[styles.languageText, selected && styles.languageTextSelected]}>{option.label}</Text>
-        <Animated.View
-          style={[styles.languageCheck, selected && styles.languageCheckSelected, { opacity: check, transform: [{ scale: checkScale }] }]}
+        <Reanimated.View
+          style={[styles.languageCheck, selected && styles.languageCheckSelected, checkStyle]}
         >
           {selected ? <Icon name="check" size={14} color={colors.textOnAccent} /> : null}
-        </Animated.View>
+        </Reanimated.View>
       </Pressable>
-    </Animated.View>
+    </Reanimated.View>
   );
 }
 
@@ -746,15 +888,15 @@ function ScanSlide({ active, copy, colors, styles, onNext }: SlideProps & { onNe
   return (
     <View style={styles.slide}>
       <View style={styles.slideHeader}>
-        <Animated.Text style={[styles.slideTitle, staggerStyle(entries[0])]}>{copy.scanTitle}</Animated.Text>
-        <Animated.Text style={[styles.slideBody, staggerStyle(entries[1])]}>{copy.scanBody}</Animated.Text>
+        <StaggerText entry={entries[0]} style={styles.slideTitle}>{copy.scanTitle}</StaggerText>
+        <StaggerText entry={entries[1]} style={styles.slideBody}>{copy.scanBody}</StaggerText>
       </View>
-      <Animated.View style={[styles.scanHeroWrap, staggerStyle(entries[2])]}>
+      <StaggerView entry={entries[2]} style={styles.scanHeroWrap}>
         <ScanReveal active={active} copy={copy} colors={colors} styles={styles} />
-      </Animated.View>
-      <Animated.View style={[styles.ctaSpacing, staggerStyle(entries[3])]}>
+      </StaggerView>
+      <StaggerView entry={entries[3]} style={styles.ctaSpacing}>
         <PrimaryCTA label={copy.next} onPress={onNext} colors={colors} styles={styles} />
-      </Animated.View>
+      </StaggerView>
     </View>
   );
 }
@@ -787,8 +929,8 @@ function ScanReveal({
 }) {
   const [phase, setPhase] = useState(0);
   const [paperHeight, setPaperHeight] = useState(248);
-  const scanned = useRef(new Animated.Value(0)).current;
-  const morph = useRef(new Animated.Value(0)).current;
+  const scanned = useSharedValue(0);
+  const morph = useSharedValue(0);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const clearTimers = () => {
@@ -798,22 +940,21 @@ function ScanReveal({
 
   const run = () => {
     clearTimers();
-    scanned.setValue(0);
-    morph.setValue(0);
+    cancelAnimation(scanned);
+    cancelAnimation(morph);
+    scanned.value = 0;
+    morph.value = 0;
     setPhase(1);
-    Animated.timing(scanned, {
-      toValue: 1,
-      delay: SCAN_SWEEP_DELAY,
-      duration: SCAN_SWEEP_DURATION,
-      easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
+    scanned.value = withDelay(
+      SCAN_SWEEP_DELAY,
+      withTiming(1, { duration: SCAN_SWEEP_DURATION, easing: Easing.inOut(Easing.cubic) })
+    );
     SCAN_PHASES.forEach(({ at, phase: p }) => {
       timers.current.push(
         setTimeout(() => {
           setPhase(p);
           if (p === 2) {
-            Animated.timing(morph, { toValue: 1, duration: 500, easing: SPRING, useNativeDriver: true }).start();
+            morph.value = withTiming(1, { duration: 500, easing: SPRING });
           }
         }, at)
       );
@@ -825,8 +966,10 @@ function ScanReveal({
       run();
     } else {
       clearTimers();
-      scanned.setValue(0);
-      morph.setValue(0);
+      cancelAnimation(scanned);
+      cancelAnimation(morph);
+      scanned.value = 0;
+      morph.value = 0;
       setPhase(0);
     }
     return clearTimers;
@@ -839,48 +982,57 @@ function ScanReveal({
   };
 
   const replayReady = phase >= 9;
-  const paperOpacity = morph.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
-  const paperScale = morph.interpolate({ inputRange: [0, 1], outputRange: [1, 0.82] });
-  const paperShift = morph.interpolate({ inputRange: [0, 1], outputRange: [0, -8] });
-  const cardOpacity = morph;
-  const cardScale = morph.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] });
-  const lineTranslate = scanned.interpolate({ inputRange: [0, 1], outputRange: [0, paperHeight] });
-  const washHeight = scanned.interpolate({ inputRange: [0, 1], outputRange: [0, paperHeight] });
+  const paperStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(morph.value, [0, 1], [1, 0]),
+    transform: [
+      { translateY: interpolate(morph.value, [0, 1], [0, -8]) },
+      { scale: interpolate(morph.value, [0, 1], [1, 0.82]) },
+    ],
+  }));
+  const cardStyle = useAnimatedStyle(() => ({
+    opacity: morph.value,
+    transform: [{ translateY: -20 }, { scale: interpolate(morph.value, [0, 1], [0.96, 1]) }],
+  }));
+  const lineStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(scanned.value, [0, 1], [0, paperHeight]) }],
+  }));
+  // Grow the wash from the top via scaleY instead of animating `height`, which
+  // would force a layout pass every frame. Scaling happens around the view's
+  // center, so translateY compensates to keep the top edge pinned.
+  const washStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(scanned.value, [0, 1], [-paperHeight / 2, 0]) },
+      { scaleY: scanned.value },
+    ],
+  }));
 
   return (
     <View style={styles.scanStage}>
-      <Animated.View
-        style={[
-          stylesStatic.scanLayer,
-          { opacity: paperOpacity, transform: [{ translateY: paperShift }, { scale: paperScale }] },
-        ]}
-      >
+      <Reanimated.View style={[stylesStatic.scanLayer, paperStyle]}>
         <View onLayout={onPaperLayout}>
           <PaperDoc colors={colors} />
           {phase === 1 ? (
             <>
-              <Animated.View
+              <Reanimated.View
                 pointerEvents="none"
-                style={[stylesStatic.scanWash, { height: washHeight, backgroundColor: colors.blueSoft }]}
+                style={[stylesStatic.scanWash, { height: paperHeight, backgroundColor: colors.blueSoft }, washStyle]}
               />
-              <Animated.View
+              <Reanimated.View
                 pointerEvents="none"
                 style={[
                   stylesStatic.scanLine,
-                  { backgroundColor: colors.primary, shadowColor: colors.primary, transform: [{ translateY: lineTranslate }] },
+                  { backgroundColor: colors.brandBlue, shadowColor: colors.brandBlue },
+                  lineStyle,
                 ]}
               />
             </>
           ) : null}
         </View>
-      </Animated.View>
+      </Reanimated.View>
 
-      <Animated.View
-        pointerEvents="none"
-        style={[stylesStatic.scanLayer, { opacity: cardOpacity, transform: [{ translateY: -20 }, { scale: cardScale }] }]}
-      >
+      <Reanimated.View pointerEvents="none" style={[stylesStatic.scanLayer, cardStyle]}>
         <AssemblingCard phase={phase} copy={copy} colors={colors} styles={styles} />
-      </Animated.View>
+      </Reanimated.View>
 
       <Pressable
         accessibilityRole="button"
@@ -910,56 +1062,49 @@ function AssemblingCard({
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
 }) {
-  const slots = useRef(SECTION_SLOTS.map(() => new Animated.Value(0))).current;
+  const slots = useRef(SECTION_SLOTS.map(() => makeMutable(0))).current;
 
   useEffect(() => {
     SECTION_SLOTS.forEach((threshold, index) => {
       if (phase >= threshold) {
-        Animated.timing(slots[index], {
-          toValue: 1,
-          duration: 420,
-          delay: index === 2 ? 120 : 0,
-          easing: OVERSHOOT,
-          useNativeDriver: true,
-        }).start();
+        slots[index].value = withDelay(
+          index === 2 ? 120 : 0,
+          withTiming(1, { duration: 420, easing: OVERSHOOT })
+        );
       } else {
-        slots[index].setValue(0);
+        cancelAnimation(slots[index]);
+        slots[index].value = 0;
       }
     });
   }, [phase, slots]);
 
-  const reveal = (value: Animated.Value) => ({
-    opacity: value,
-    transform: [{ translateY: value.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
-  });
-
   return (
     <View style={styles.resultCard}>
-      <Animated.View style={[styles.resultHeader, reveal(slots[0])]}>
+      <RevealView entry={slots[0]} style={styles.resultHeader}>
         <IconTile icon="doc-text" tone="blue" colors={colors} styles={styles} />
         <View style={styles.resultHeaderText}>
           <Text style={styles.resultEyebrow}>{copy.cardEyebrow}</Text>
           <Text style={styles.resultTitle}>{copy.cardTitle}</Text>
         </View>
-      </Animated.View>
+      </RevealView>
       <View style={styles.resultSections}>
-        <ResultSection label={copy.cardLabelPayment} tone="blue" colors={colors} styles={styles} animatedStyle={reveal(slots[1])}>
+        <ResultSection label={copy.cardLabelPayment} tone="blue" colors={colors} styles={styles} entry={slots[1]}>
           <Text style={styles.paymentDate}>{copy.cardPaymentDate}</Text>
-          <Animated.View style={[styles.reminderButton, reveal(slots[2])]}>
+          <RevealView entry={slots[2]} style={styles.reminderButton}>
             <Icon name="bell" size={13} color={colors.textOnAccent} />
             <Text style={styles.reminderButtonText}>{copy.cardReminderCta}</Text>
-          </Animated.View>
+          </RevealView>
         </ResultSection>
-        <ResultSection label={copy.cardLabelWhere} tone="blue" colors={colors} styles={styles} animatedStyle={reveal(slots[3])}>
+        <ResultSection label={copy.cardLabelWhere} tone="blue" colors={colors} styles={styles} entry={slots[3]}>
           <Text style={styles.sectionMain}>{copy.cardWhereMain}</Text>
         </ResultSection>
-        <ResultSection label={copy.cardLabelWhat} tone="amber" colors={colors} styles={styles} animatedStyle={reveal(slots[4])}>
+        <ResultSection label={copy.cardLabelWhat} tone="amber" colors={colors} styles={styles} entry={slots[4]}>
           <Text style={styles.sectionMain}>{copy.cardWhatMain}</Text>
         </ResultSection>
-        <ResultSection label={copy.cardLabelMiss} tone="red" colors={colors} styles={styles} animatedStyle={reveal(slots[5])}>
+        <ResultSection label={copy.cardLabelMiss} tone="red" colors={colors} styles={styles} entry={slots[5]}>
           <Text style={styles.sectionMain}>{copy.cardMissMain}</Text>
         </ResultSection>
-        <ResultSection label={copy.cardLabelTip} tone="green" colors={colors} styles={styles} animatedStyle={reveal(slots[6])}>
+        <ResultSection label={copy.cardLabelTip} tone="green" colors={colors} styles={styles} entry={slots[6]}>
           <Text style={styles.sectionMain}>{copy.cardTipMain}</Text>
         </ResultSection>
       </View>
@@ -990,22 +1135,22 @@ function ResultSection({
   tone,
   colors,
   styles,
-  animatedStyle,
+  entry,
   children,
 }: {
   label: string;
   tone: Tone;
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
-  animatedStyle: { opacity: Animated.Value; transform: { translateY: Animated.AnimatedInterpolation<number> }[] };
+  entry: SharedValue<number>;
   children: React.ReactNode;
 }) {
   const toneStyle = getToneStyle(tone, colors);
   return (
-    <Animated.View style={[styles.resultSection, { backgroundColor: toneStyle.bg, borderColor: toneStyle.border }, animatedStyle]}>
+    <RevealView entry={entry} style={[styles.resultSection, { backgroundColor: toneStyle.bg, borderColor: toneStyle.border }]}>
       <Text style={[styles.resultSectionLabel, { color: toneStyle.color }]}>{label}</Text>
       {children}
-    </Animated.View>
+    </RevealView>
   );
 }
 
@@ -1017,8 +1162,8 @@ function RemindersSlide({ active, copy, colors, styles, onNext }: SlideProps & {
   return (
     <View style={styles.slide}>
       <View style={styles.slideHeader}>
-        <Animated.Text style={[styles.slideTitle, staggerStyle(entries[0])]}>{copy.remindersTitle}</Animated.Text>
-        <Animated.Text style={[styles.slideBody, staggerStyle(entries[1])]}>{copy.remindersBody}</Animated.Text>
+        <StaggerText entry={entries[0]} style={styles.slideTitle}>{copy.remindersTitle}</StaggerText>
+        <StaggerText entry={entries[1]} style={styles.slideBody}>{copy.remindersBody}</StaggerText>
       </View>
       <View style={styles.remindersMain}>
         <View style={styles.reminderStack}>
@@ -1028,9 +1173,9 @@ function RemindersSlide({ active, copy, colors, styles, onNext }: SlideProps & {
           <NotificationBanner active={active} index={3} tone="red" title={copy.banners[3].title} body={copy.banners[3].body} colors={colors} styles={styles} />
         </View>
       </View>
-      <Animated.View style={[styles.remindersCta, staggerStyle(entries[2])]}>
+      <StaggerView entry={entries[2]} style={styles.remindersCta}>
         <PrimaryCTA label={copy.next} onPress={onNext} colors={colors} styles={styles} />
-      </Animated.View>
+      </StaggerView>
     </View>
   );
 }
@@ -1053,52 +1198,58 @@ function NotificationBanner({
   styles: ReturnType<typeof createStyles>;
 }) {
   const toneStyle = getToneStyle(tone, colors);
-  const enter = useRef(new Animated.Value(0)).current;
-  const ring = useRef(new Animated.Value(0)).current;
+  const enter = useSharedValue(0);
+  const ring = useSharedValue(0);
 
   useEffect(() => {
-    enter.setValue(0);
-    ring.setValue(0);
+    cancelAnimation(enter);
+    cancelAnimation(ring);
+    enter.value = 0;
+    ring.value = 0;
     if (!active) return;
     const delay = 120 + index * 150;
-    const entrance = Animated.timing(enter, { toValue: 1, delay, duration: 520, easing: OVERSHOOT, useNativeDriver: true });
-    const bell = Animated.sequence(
-      [0, -15, 11, -8, 5, -3, 0].map((deg, i) =>
-        Animated.timing(ring, {
-          toValue: deg,
-          duration: i === 0 ? 0 : 110,
-          delay: i === 0 ? delay + 320 : 0,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        })
+    enter.value = withDelay(delay, withTiming(1, { duration: 520, easing: OVERSHOOT }));
+    // Bell wiggle: waits for the banner to mostly land, then swings and settles.
+    ring.value = withDelay(
+      delay + 320,
+      withSequence(
+        ...[-15, 11, -8, 5, -3, 0].map((deg) =>
+          withTiming(deg, { duration: 110, easing: Easing.inOut(Easing.ease) })
+        )
       )
     );
-    Animated.parallel([entrance, bell]).start();
   }, [active, index, enter, ring]);
 
-  const translateY = enter.interpolate({ inputRange: [0, 1], outputRange: [-24, 0] });
-  const scale = enter.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] });
-  const rotate = ring.interpolate({ inputRange: [-20, 20], outputRange: ["-20deg", "20deg"] });
+  const wrapperStyle = useAnimatedStyle(() => ({
+    opacity: enter.value,
+    transform: [
+      { translateY: interpolate(enter.value, [0, 1], [-24, 0]) },
+      { scale: interpolate(enter.value, [0, 1], [0.96, 1]) },
+    ],
+  }));
+  const bellStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${ring.value}deg` }],
+  }));
 
   return (
     // The entrance opacity/transform live on this transparent wrapper, NOT on
-    // the bordered card. On iOS 26 an Animated transform/opacity keeps the view
+    // the bordered card. On iOS 26 an animated transform/opacity keeps the view
     // in its own compositing layer even at rest, and a rounded+bordered card in
     // that layer renders a faint edge artifact on the right. Keeping the card a
-    // plain static View (no Animated props) avoids the layer entirely.
-    <Animated.View style={{ opacity: enter, transform: [{ translateY }, { scale }] }}>
+    // plain static View (no animated props) avoids the layer entirely.
+    <Reanimated.View style={wrapperStyle}>
       <View style={styles.notificationBanner}>
         <View style={styles.notificationInner}>
-          <Animated.View style={[styles.notificationIcon, { backgroundColor: toneStyle.bg, transform: [{ rotate }] }]}>
+          <Reanimated.View style={[styles.notificationIcon, { backgroundColor: toneStyle.bg }, bellStyle]}>
             <Icon name="bell" size={18} color={toneStyle.color} />
-          </Animated.View>
+          </Reanimated.View>
           <View style={styles.notificationTextBlock}>
             <Text style={styles.notificationTitle}>{title}</Text>
             <Text style={styles.notificationBody}>{body}</Text>
           </View>
         </View>
       </View>
-    </Animated.View>
+    </Reanimated.View>
   );
 }
 
@@ -1111,17 +1262,17 @@ function GuidesSlide({ active, copy, lang, colors, styles, onNext }: SlideProps 
   return (
     <View style={styles.slide}>
       <View style={styles.slideHeader}>
-        <Animated.Text style={[styles.slideTitle, staggerStyle(entries[0])]}>{copy.guidesTitle}</Animated.Text>
-        <Animated.Text style={[styles.slideBody, staggerStyle(entries[1])]}>{copy.guidesBody}</Animated.Text>
+        <StaggerText entry={entries[0]} style={styles.slideTitle}>{copy.guidesTitle}</StaggerText>
+        <StaggerText entry={entries[1]} style={styles.slideBody}>{copy.guidesBody}</StaggerText>
       </View>
       <View style={styles.guideGroup}>
         {topics.map((topic, index) => (
           <GuideRow key={topic.title} topic={topic} index={index} active={active} colors={colors} styles={styles} />
         ))}
       </View>
-      <Animated.View style={[styles.ctaSpacing, staggerStyle(entries[2])]}>
+      <StaggerView entry={entries[2]} style={styles.ctaSpacing}>
         <PrimaryCTA label={copy.next} onPress={onNext} colors={colors} styles={styles} />
-      </Animated.View>
+      </StaggerView>
     </View>
   );
 }
@@ -1139,29 +1290,27 @@ function GuideRow({
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
 }) {
-  const enter = useRef(new Animated.Value(0)).current;
+  const enter = useSharedValue(0);
   const toneStyle = getToneStyle(topic.tone, colors);
 
   useEffect(() => {
-    enter.setValue(0);
+    cancelAnimation(enter);
+    enter.value = 0;
     if (!active) return;
-    Animated.timing(enter, {
-      toValue: 1,
-      delay: 60 + index * 70,
-      duration: 520,
-      easing: SPRING,
-      useNativeDriver: true,
-    }).start();
+    enter.value = withDelay(60 + index * 70, withTiming(1, { duration: 520, easing: SPRING }));
   }, [active, index, enter]);
 
-  const translateY = enter.interpolate({ inputRange: [0, 1], outputRange: [14, 0] });
+  const wrapperStyle = useAnimatedStyle(() => ({
+    opacity: enter.value,
+    transform: [{ translateY: interpolate(enter.value, [0, 1], [14, 0]) }],
+  }));
 
   return (
     // Entrance opacity/transform on a transparent wrapper, never on the
-    // bordered card — see NotificationBanner: an Animated card keeps an iOS 26
+    // bordered card — see NotificationBanner: an animated card keeps an iOS 26
     // compositing layer that renders an edge artifact. The card stays a plain
     // static View.
-    <Animated.View style={{ opacity: enter, transform: [{ translateY }] }}>
+    <Reanimated.View style={wrapperStyle}>
       <View style={styles.guideRow}>
         <View style={styles.guideRowInner}>
           <View style={[styles.guideIcon, { backgroundColor: toneStyle.bg }]}>
@@ -1176,7 +1325,7 @@ function GuideRow({
           <Icon name="chevron-right" size={16} color={colors.muted3} />
         </View>
       </View>
-    </Animated.View>
+    </Reanimated.View>
   );
 }
 
@@ -1188,75 +1337,99 @@ function AuthLandingSlide({
   colors,
   styles,
   onComplete,
+  onOpenTerms,
+  onOpenPrivacy,
 }: SlideProps & {
   onRestart: () => void;
   onComplete: () => void;
+  onOpenTerms: () => void;
+  onOpenPrivacy: () => void;
 }) {
-  const entries = useStagger(active, 8);
+  const entries = useStagger(active, 7);
+  // This slide IS the sign-in screen (the standalone email/password AuthScreen
+  // was removed): the buttons run the real Supabase OAuth flow. On success the
+  // session lands via AuthProvider and RootNavigator switches to the app;
+  // onComplete just persists the "onboarding seen" flag.
+  const [socialLoading, setSocialLoading] = useState<SocialProvider | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  async function handleProvider(provider: SocialProvider) {
+    if (socialLoading) return;
+    setAuthError(null);
+    setSocialLoading(provider);
+    const result = await signInWithProvider(provider);
+    setSocialLoading(null);
+    if (result.ok) {
+      onComplete();
+      return;
+    }
+    if (result.error) setAuthError(result.error);
+  }
 
   const legalParts = copy.authLegal.split(/\{terms\}|\{privacy\}/);
 
   return (
     <View style={styles.slide}>
       <View style={styles.authCenter}>
-        <Animated.View style={staggerStyle(entries[0])}>
+        <StaggerView entry={entries[0]}>
           <BrandWordmark height={46} />
-        </Animated.View>
+        </StaggerView>
         <View style={styles.authHeading}>
-          <Animated.Text style={[styles.authTitle, staggerStyle(entries[1])]}>{copy.authTitle}</Animated.Text>
-          <Animated.Text style={[styles.authBody, staggerStyle(entries[2])]}>{copy.authBody}</Animated.Text>
+          <StaggerText entry={entries[1]} style={styles.authTitle}>{copy.authTitle}</StaggerText>
+          <StaggerText entry={entries[2]} style={styles.authBody}>{copy.authBody}</StaggerText>
         </View>
         <View style={styles.authButtons}>
-          <Animated.View style={staggerStyle(entries[3])}>
+          <StaggerView entry={entries[3]}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={copy.authApple}
-              onPress={onComplete}
+              disabled={socialLoading !== null}
+              onPress={() => void handleProvider("apple")}
               style={({ pressed }) => [styles.socialButton, pressed && styles.pressedScale]}
             >
-              <AppleMark size={22} color={colors.text} />
+              {socialLoading === "apple" ? (
+                <ActivityIndicator size="small" color={colors.text} />
+              ) : (
+                <AppleMark size={22} color={colors.text} />
+              )}
               <Text style={styles.socialButtonText}>{copy.authApple}</Text>
             </Pressable>
-          </Animated.View>
-          <Animated.View style={staggerStyle(entries[4])}>
+          </StaggerView>
+          <StaggerView entry={entries[4]}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={copy.authGoogle}
-              onPress={onComplete}
+              disabled={socialLoading !== null}
+              onPress={() => void handleProvider("google")}
               style={({ pressed }) => [styles.socialButton, pressed && styles.pressedScale]}
             >
-              <GoogleMark size={22} />
+              {socialLoading === "google" ? (
+                <ActivityIndicator size="small" color={colors.text} />
+              ) : (
+                <GoogleMark size={22} />
+              )}
               <Text style={styles.socialButtonText}>{copy.authGoogle}</Text>
             </Pressable>
-          </Animated.View>
-          <Animated.View style={staggerStyle(entries[5])}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={copy.authEmail}
-              onPress={onComplete}
-              style={({ pressed }) => [styles.emailButton, pressed && styles.pressed]}
-            >
-              <Text style={styles.emailButtonText}>{copy.authEmail}</Text>
-            </Pressable>
-          </Animated.View>
+          </StaggerView>
         </View>
-        <Animated.View style={[styles.authTrust, staggerStyle(entries[6])]}>
+        {authError ? <Text style={styles.authError}>{authError}</Text> : null}
+        <StaggerView entry={entries[5]} style={styles.authTrust}>
           <Icon name="lock-small" size={15} color={colors.green} />
           <Text style={styles.authTrustText}>{copy.authTrust}</Text>
-        </Animated.View>
+        </StaggerView>
       </View>
       <View style={styles.authFooter}>
-        <Animated.Text style={[styles.legalText, staggerStyle(entries[7])]}>
+        <StaggerText entry={entries[6]} style={styles.legalText}>
           {legalParts[0]}
-          <Text style={styles.legalLink} onPress={() => Linking.openURL("https://jasne.app/terms")}>
+          <Text style={styles.legalLink} onPress={onOpenTerms}>
             {copy.authTermsLabel}
           </Text>
           {legalParts[1]}
-          <Text style={styles.legalLink} onPress={() => Linking.openURL("https://jasne.app/privacy")}>
+          <Text style={styles.legalLink} onPress={onOpenPrivacy}>
             {copy.authPrivacyLabel}
           </Text>
           {legalParts[2]}
-        </Animated.Text>
+        </StaggerText>
       </View>
     </View>
   );
@@ -1282,22 +1455,28 @@ function PrimaryCTA({
   colors: ColorPalette;
   styles: ReturnType<typeof createStyles>;
 }) {
-  const sheen = useRef(new Animated.Value(0)).current;
+  const sheen = useSharedValue(0);
 
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(1400),
-        Animated.timing(sheen, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(sheen, { toValue: 0, duration: 0, useNativeDriver: true }),
-        Animated.delay(2500),
-      ])
+    // Sweep, hold off-button, snap back, wait, repeat — mirrors the old
+    // delay(1400) → sweep(1100) → reset → delay(2500) Animated.loop.
+    sheen.value = 0;
+    sheen.value = withRepeat(
+      withSequence(
+        withDelay(1400, withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.ease) })),
+        withDelay(2500, withTiming(0, { duration: 0 }))
+      ),
+      -1
     );
-    loop.start();
-    return () => loop.stop();
+    return () => cancelAnimation(sheen);
   }, [sheen]);
 
-  const sheenTranslate = sheen.interpolate({ inputRange: [0, 1], outputRange: [-160, 360] });
+  const sheenStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: interpolate(sheen.value, [0, 1], [-160, 360]) },
+      { skewX: "-18deg" },
+    ],
+  }));
 
   return (
     <Pressable
@@ -1308,14 +1487,14 @@ function PrimaryCTA({
     >
       <Text style={styles.primaryCtaText}>{label}</Text>
       <Icon name="arrow-right" size={18} color={colors.textOnAccent} />
-      <Animated.View pointerEvents="none" style={[styles.ctaSheen, { transform: [{ translateX: sheenTranslate }, { skewX: "-18deg" }] }]}>
+      <Reanimated.View pointerEvents="none" style={[styles.ctaSheen, sheenStyle]}>
         <LinearGradient
           colors={["transparent", "rgba(255,255,255,0.22)", "transparent"]}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={StyleSheet.absoluteFill}
         />
-      </Animated.View>
+      </Reanimated.View>
     </Pressable>
   );
 }
@@ -1395,40 +1574,72 @@ function FlagIcon({ code }: { code: LanguageCode }) {
 
 /* ───────────────────────── Animation helpers ───────────────────────── */
 
+// makeMutable (the non-hook primitive behind useSharedValue) lets us keep an
+// array of shared values without calling hooks in a loop; the count is fixed
+// per call site so the array is stable for the component's lifetime.
 function useStagger(active: boolean, count: number, baseDelay = 90, delayStep = 95) {
-  const values = useRef(Array.from({ length: count }, () => new Animated.Value(0))).current;
+  const values = useRef(Array.from({ length: count }, () => makeMutable(0))).current;
 
   useEffect(() => {
-    values.forEach((value) => value.setValue(0));
-    if (!active) return;
-
-    const animations = values.map((value, index) =>
-      Animated.timing(value, {
-        toValue: 1,
-        duration: 520,
-        delay: baseDelay + index * delayStep,
-        easing: SPRING,
-        useNativeDriver: true,
-      })
-    );
-    Animated.parallel(animations).start();
+    values.forEach((value, index) => {
+      cancelAnimation(value);
+      value.value = 0;
+      if (active) {
+        value.value = withDelay(baseDelay + index * delayStep, withTiming(1, { duration: 520, easing: SPRING }));
+      }
+    });
   }, [active, baseDelay, delayStep, values]);
+
+  useEffect(() => {
+    return () => values.forEach((value) => cancelAnimation(value));
+  }, [values]);
 
   return values;
 }
 
-function staggerTransform(value: Animated.Value) {
-  return [
-    { translateY: value.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) },
-    { scale: value.interpolate({ inputRange: [0, 1], outputRange: [0.985, 1] }) },
-  ];
+// Reanimated styles must come from the useAnimatedStyle hook, so the old
+// staggerStyle(value) inline helper became these thin wrapper components.
+function StaggerView({ entry, style, children, ...rest }: ViewProps & { entry: SharedValue<number> }) {
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: entry.value,
+    transform: [
+      { translateY: interpolate(entry.value, [0, 1], [16, 0]) },
+      { scale: interpolate(entry.value, [0, 1], [0.985, 1]) },
+    ],
+  }));
+  return (
+    <Reanimated.View {...rest} style={[style, animatedStyle]}>
+      {children}
+    </Reanimated.View>
+  );
 }
 
-function staggerStyle(value: Animated.Value) {
-  return {
-    opacity: value,
-    transform: staggerTransform(value),
-  };
+function StaggerText({ entry, style, children, ...rest }: TextProps & { entry: SharedValue<number> }) {
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: entry.value,
+    transform: [
+      { translateY: interpolate(entry.value, [0, 1], [16, 0]) },
+      { scale: interpolate(entry.value, [0, 1], [0.985, 1]) },
+    ],
+  }));
+  return (
+    <Reanimated.Text {...rest} style={[style, animatedStyle]}>
+      {children}
+    </Reanimated.Text>
+  );
+}
+
+// Reveal used by the assembling result card: fade in + slight upward slide.
+function RevealView({ entry, style, children, ...rest }: ViewProps & { entry: SharedValue<number> }) {
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: entry.value,
+    transform: [{ translateY: interpolate(entry.value, [0, 1], [10, 0]) }],
+  }));
+  return (
+    <Reanimated.View {...rest} style={[style, animatedStyle]}>
+      {children}
+    </Reanimated.View>
+  );
 }
 
 function getToneStyle(tone: GuideTone, colors: ColorPalette) {
@@ -1444,10 +1655,6 @@ const stylesStatic = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderWidth: 18,
     opacity: 0.1,
-  },
-  grain: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.025,
   },
   scanLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -1609,6 +1816,27 @@ function createStyles(colors: ColorPalette, topInset: number, bottomInset: numbe
       paddingHorizontal: 24,
       paddingBottom: slideBottomPadding,
     },
+    legalOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 50,
+      elevation: 50,
+      backgroundColor: colors.bg,
+    },
+    legalSwipeEdge: {
+      position: "absolute",
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: 72,
+      zIndex: 60,
+      elevation: 60,
+    },
+    legalLoading: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.bg,
+    },
     welcomeCenter: {
       flex: 1,
       justifyContent: "center",
@@ -1663,13 +1891,13 @@ function createStyles(colors: ColorPalette, topInset: number, bottomInset: numbe
     primaryCta: {
       minHeight: 54,
       borderRadius: 16,
-      backgroundColor: colors.primaryDark,
+      backgroundColor: colors.brandBlue,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
       gap: 10,
       overflow: "hidden",
-      shadowColor: colors.primaryDark,
+      shadowColor: colors.brandBlue,
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.25,
       shadowRadius: 16,
@@ -1734,7 +1962,7 @@ function createStyles(colors: ColorPalette, topInset: number, bottomInset: numbe
       paddingHorizontal: 16,
     },
     languageRowSelected: {
-      borderColor: colors.primary,
+      borderColor: colors.brandBlue,
       backgroundColor: colors.blueSoft,
     },
     languageText: {
@@ -1758,7 +1986,7 @@ function createStyles(colors: ColorPalette, topInset: number, bottomInset: numbe
     },
     languageCheckSelected: {
       borderWidth: 0,
-      backgroundColor: colors.primaryDark,
+      backgroundColor: colors.brandBlue,
     },
     scanHeroWrap: {
       flex: 1,
@@ -1850,7 +2078,7 @@ function createStyles(colors: ColorPalette, topInset: number, bottomInset: numbe
       marginTop: 4,
       minHeight: 28,
       borderRadius: 8,
-      backgroundColor: colors.primaryDark,
+      backgroundColor: colors.brandBlue,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
@@ -2050,18 +2278,12 @@ function createStyles(colors: ColorPalette, topInset: number, bottomInset: numbe
       fontSize: 13,
       lineHeight: 19,
     },
-    emailButton: {
-      minHeight: 44,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: 8,
-    },
-    emailButtonText: {
-      color: colors.muted,
+    authError: {
+      color: colors.danger,
       fontFamily: fonts.body,
-      fontSize: 14,
-      lineHeight: 20,
-      textDecorationLine: "underline" as const,
+      fontSize: 13,
+      lineHeight: 19,
+      textAlign: "center",
     },
     authFooter: {
       alignItems: "center",

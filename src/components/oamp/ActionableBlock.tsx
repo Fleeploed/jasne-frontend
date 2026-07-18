@@ -150,7 +150,7 @@ function SecondaryAction({
       onPress={onPress}
       style={({ pressed }) => [styles.secondaryAction, pressed && styles.pressed]}
     >
-      <Ionicons name={icon} size={20} color={colors.primary} />
+      <Ionicons name={icon} size={20} color={colors.brandBlue} />
       <Text style={styles.secondaryActionText}>{label}</Text>
     </Pressable>
   );
@@ -182,7 +182,7 @@ function createStyles(colors: ColorPalette) {
     primaryAction: {
       minHeight: 56,
       borderRadius: 17,
-      backgroundColor: colors.primary,
+      backgroundColor: colors.brandBlue,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",

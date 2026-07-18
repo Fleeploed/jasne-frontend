@@ -159,7 +159,7 @@ function PasswordInput({
           onPress={() => setPasswordVisible((visible) => !visible)}
           style={({ pressed }) => [styles.passwordToggle, pressed && styles.pressed]}
         >
-          <Icon name="eye" size={20} color={passwordVisible ? colors.primary : colors.muted3} />
+          <Icon name="eye" size={20} color={passwordVisible ? colors.brandBlue : colors.muted3} />
         </Pressable>
       </View>
     </View>

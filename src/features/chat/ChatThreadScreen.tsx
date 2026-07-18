@@ -336,7 +336,7 @@ export function ChatThreadScreen({ pendingLocalId }: { pendingLocalId?: string }
     return (
       <Screen>
         <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
+          <ActivityIndicator color={colors.brandBlue} />
         </View>
       </Screen>
     );

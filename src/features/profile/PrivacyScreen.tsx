@@ -182,7 +182,7 @@ export function PrivacyScreen() {
           style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
           accessibilityRole="button"
         >
-          <AppIcon name="chevron-left" size={22} color={colors.primary} />
+          <AppIcon name="chevron-left" size={22} color={colors.brandBlue} />
           <Text style={styles.backText}>{t("profile.title")}</Text>
         </Pressable>
       </View>
@@ -199,7 +199,7 @@ export function PrivacyScreen() {
 
         <View style={styles.hero}>
           <View style={styles.heroIcon}>
-            <AppIcon name="shield" size={26} color={colors.primary} />
+            <AppIcon name="shield" size={26} color={colors.brandBlue} />
           </View>
           <Text style={styles.heroTitle}>{t("privacy.heroTitle")}</Text>
           <Text style={styles.heroBody}>{t("privacy.heroBody")}</Text>
@@ -319,9 +319,9 @@ function RowIcon({ icon, colors, styles }: { icon: IconSource; colors: ColorPale
   return (
     <View style={styles.rowIcon}>
       {icon.kind === "app" ? (
-        <AppIcon name={icon.name} size={20} color={colors.primary} />
+        <AppIcon name={icon.name} size={20} color={colors.brandBlue} />
       ) : (
-        <Ionicons name={icon.name} size={20} color={colors.primary} />
+        <Ionicons name={icon.name} size={20} color={colors.brandBlue} />
       )}
     </View>
   );

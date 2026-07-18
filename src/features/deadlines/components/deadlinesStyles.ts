@@ -611,7 +611,7 @@ export function createStyles(colors: ColorPalette) {
     manualDoneButton: {
       minHeight: 50,
       borderRadius: 15,
-      backgroundColor: colors.primary,
+      backgroundColor: colors.brandBlue,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
@@ -780,7 +780,7 @@ export function createStyles(colors: ColorPalette) {
       gap: 2,
     },
     chipBlockActive: {
-      borderColor: colors.primary,
+      borderColor: colors.brandBlue,
       backgroundColor: colors.blueSoft,
     },
     chipLabel: {
@@ -921,8 +921,8 @@ export function createStyles(colors: ColorPalette) {
       backgroundColor: colors.surface,
     },
     reminderPickerCheckSelected: {
-      borderColor: colors.primary,
-      backgroundColor: colors.primary,
+      borderColor: colors.brandBlue,
+      backgroundColor: colors.brandBlue,
     },
     reminderPickerOptionText: {
       flex: 1,
@@ -950,7 +950,7 @@ export function createStyles(colors: ColorPalette) {
     reminderPickerDone: {
       minHeight: 44,
       borderRadius: 14,
-      backgroundColor: colors.primary,
+      backgroundColor: colors.brandBlue,
       alignItems: "center",
       justifyContent: "center",
     },
@@ -1035,8 +1035,8 @@ export function createStyles(colors: ColorPalette) {
       borderColor: colors.border,
     },
     presetChipActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
+      backgroundColor: colors.brandBlue,
+      borderColor: colors.brandBlue,
     },
     presetChipText: {
       color: colors.muted,
@@ -1056,7 +1056,7 @@ export function createStyles(colors: ColorPalette) {
     modalPrimaryButton: {
       minHeight: 54,
       borderRadius: 16,
-      backgroundColor: colors.primary,
+      backgroundColor: colors.brandBlue,
       alignItems: "center",
       justifyContent: "center",
     },
@@ -1079,8 +1079,8 @@ export function createStyles(colors: ColorPalette) {
     calGridRow: { flexDirection: "row" },
     calCell: { flex: 1, height: 44, alignItems: "center", justifyContent: "center", padding: 2 },
     calDay: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
-    calDaySelected: { backgroundColor: colors.primary },
-    calDayToday: { borderWidth: 1.5, borderColor: colors.primary },
+    calDaySelected: { backgroundColor: colors.brandBlue },
+    calDayToday: { borderWidth: 1.5, borderColor: colors.brandBlue },
     calDayText: { color: colors.text, fontFamily: fonts.bodyMedium, ...typeStyles.rowSecondary, fontWeight: "500" },
     calDayTextSelected: { color: colors.textOnAccent, fontWeight: "800" },
     calDayPast: { color: colors.muted3 },

@@ -371,7 +371,7 @@ export function ReminderOptionRow({
       ]}
     >
       <View style={[styles.reminderIconTile, locked && styles.reminderIconTileLocked]}>
-        <Icon name="bell" size={22} color={locked ? colors.muted3 : colors.primary} />
+        <Icon name="bell" size={22} color={locked ? colors.muted3 : colors.brandBlue} />
       </View>
       <View style={styles.reminderOptionTextBlock}>
         <Text

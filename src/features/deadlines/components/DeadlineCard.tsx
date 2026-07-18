@@ -100,7 +100,7 @@ export function DeadlineCard({
             }}
             style={({ pressed }) => [styles.swipeEditArea, pressed && styles.cardPressed]}
           >
-            <AppIcon name="sliders" size={22} color={colors.primary} strokeWidth={2} />
+            <AppIcon name="sliders" size={22} color={colors.brandBlue} strokeWidth={2} />
           </Pressable>
         )}
         <Pressable

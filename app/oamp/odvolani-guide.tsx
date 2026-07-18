@@ -138,7 +138,7 @@ function createStyles(colors: ColorPalette) {
       borderRadius: 14,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: colors.primary,
+      backgroundColor: colors.brandBlue,
     },
     stepNumberText: {
       color: colors.textOnAccent,

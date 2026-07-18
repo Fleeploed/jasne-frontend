@@ -120,7 +120,7 @@ async function registerForPushNotifications() {
       description: t("notifications.deadlineChannelDescription"),
       importance: Notifications.AndroidImportance.DEFAULT,
       vibrationPattern: [0, 250, 250, 250],
-      lightColor: "#6FA0E6",
+      lightColor: "#1B5FAC",
     });
   }
 

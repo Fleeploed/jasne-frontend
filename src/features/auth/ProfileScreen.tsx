@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Modal, PanResponder, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
+import { useScrollToTop } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { AppIcon, type AppIconName } from "@/components/AppIcon";
@@ -34,8 +35,10 @@ export function ProfileScreen() {
   const { locale, changeLocale } = useLocale();
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
   const sheetY = useRef(new Animated.Value(SHEET_HIDDEN)).current;
   const limitsCacheKey = useMemo(() => profileLimitsCacheKey(user?.id), [user?.id]);
+  useScrollToTop(scrollRef);
 
   const closeLangSheet = useCallback(() => {
     Animated.timing(sheetY, { toValue: SHEET_HIDDEN, duration: 220, useNativeDriver: true }).start(() => {
@@ -159,12 +162,13 @@ export function ProfileScreen() {
         <Text style={styles.title}>{t("profile.title")}</Text>
       </View>
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
-            tintColor={colors.primary}
+            tintColor={colors.brandBlue}
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); void loadLimits(); }}
           />
@@ -210,7 +214,7 @@ export function ProfileScreen() {
                     styles.progressFill,
                     {
                       width: `${Math.round(progress * 100)}%`,
-                      backgroundColor: limits?.plan === "pro" ? colors.pro : colors.primary,
+                      backgroundColor: colors.brandBlue,
                     },
                   ]}
                 />
@@ -228,7 +232,7 @@ export function ProfileScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t("profile.settings")}</Text>
-          <ProfileRow icon="languages" label={t("profile.language")} value={currentLocale?.label ?? locale} tone="blue" onPress={openLangSheet} colors={colors} styles={styles} />
+          <ProfileRow icon="languages" label={t("profile.language")} value={currentLocale?.label ?? locale} tone="neutral" onPress={openLangSheet} colors={colors} styles={styles} />
           <ProfileRow icon="sliders" label={t("profile.theme")} value={themeLabel} tone="neutral" onPress={cycleTheme} colors={colors} styles={styles} />
         </View>
 
@@ -315,7 +319,7 @@ export function ProfileScreen() {
                   <Text style={[styles.langOptionText, opt.code === locale && styles.langOptionActive]}>{opt.label}</Text>
                   {opt.sub ? <Text style={styles.langSub}>{opt.sub}</Text> : null}
                 </View>
-                  {opt.code === locale ? <AppIcon name="check" size={20} color={colors.primary} strokeWidth={2.4} /> : null}
+                  {opt.code === locale ? <AppIcon name="check" size={20} color={colors.brandBlue} strokeWidth={2.4} /> : null}
               </Pressable>
             ))}
           </Animated.View>
@@ -633,7 +637,7 @@ function createStyles(colors: ColorPalette) {
     usageTitle: { flex: 1, color: colors.muted, fontFamily: fonts.bodySemiBold, ...typeStyles.rowSecondary, fontWeight: "600" },
     usageCount: { color: colors.text, fontFamily: fonts.display, ...typeStyles.compactTitle, fontWeight: "600", fontVariant: ["tabular-nums"] },
     progressTrack: { height: 6, borderRadius: 3, backgroundColor: colors.surface2, overflow: "hidden" },
-    progressFill: { height: "100%", borderRadius: 4, backgroundColor: colors.primary },
+    progressFill: { height: "100%", borderRadius: 4, backgroundColor: colors.brandBlue },
     usageMeta: { color: colors.muted2, fontFamily: fonts.bodySemiBold, ...typeStyles.rowMeta, fontWeight: "600" },
     row: {
       minHeight: 64,

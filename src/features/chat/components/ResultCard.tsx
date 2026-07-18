@@ -223,7 +223,7 @@ export function SkeletonResultCard({ progress, colors, styles }: {
                   {state === "done" ? (
                     <Text style={styles.pendingStepCheck}>✓</Text>
                   ) : state === "active" ? (
-                    <ActivityIndicator color={colors.primary} size="small" />
+                    <ActivityIndicator color={colors.brandBlue} size="small" />
                   ) : (
                     <View style={styles.pendingStepDot} />
                   )}

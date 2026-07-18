@@ -158,7 +158,7 @@ export function DocumentAttachmentBubble({ scanId, content, colors, styles, onOp
   if (loading) {
     return (
       <View style={styles.attachmentBubble}>
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color={colors.brandBlue} />
       </View>
     );
   }

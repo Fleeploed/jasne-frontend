@@ -111,12 +111,12 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
           style={({ pressed }) => [styles.cardMain, pressed && styles.pressed]}
         >
           <View style={styles.iconSlot}>
-            <AppIcon name={config?.icon ?? "bell"} size={22} color={colors.primary} strokeWidth={1.9} />
+            <AppIcon name={config?.icon ?? "bell"} size={22} color={colors.brandBlue} strokeWidth={1.9} />
           </View>
           <View style={styles.copy}>
             <View style={styles.topRow}>
               {firstCheckPending ? (
-                <ActivityIndicator size="small" color={colors.primary} style={styles.topRowSpinner} />
+                <ActivityIndicator size="small" color={colors.brandBlue} style={styles.topRowSpinner} />
               ) : (
                 <View style={[styles.statusDot, { backgroundColor: dotColor(tone, colors) }]} />
               )}
@@ -145,9 +145,9 @@ export function TrackingCard({ tracking }: { tracking: Tracking }) {
             ]}
           >
             {checking ? (
-              <ActivityIndicator size="small" color={colors.primary} />
+              <ActivityIndicator size="small" color={colors.brandBlue} />
             ) : (
-              <AppIcon name="restore" size={17} color={colors.primary} strokeWidth={2} />
+              <AppIcon name="restore" size={17} color={colors.brandBlue} strokeWidth={2} />
             )}
             <Text style={styles.checkButtonText}>
               {checking ? t("tracking.actions.checking") : t("tracking.actions.checkAgain")}
@@ -345,7 +345,7 @@ function createStyles(colors: ColorPalette) {
       paddingHorizontal: 12,
     },
     checkButtonText: {
-      color: colors.primary,
+      color: colors.brandBlue,
       fontFamily: fonts.bodySemiBold,
       ...typeStyles.footnote,
     },

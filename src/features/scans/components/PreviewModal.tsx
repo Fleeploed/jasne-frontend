@@ -62,7 +62,7 @@ export function PreviewModal({
                 <Image source={{ uri: file.uri }} style={previewStyles.pageImage} resizeMode="contain" />
               ) : (
                 <View style={previewStyles.pagePdf}>
-                  <Icon name="doc" size={64} color={scanner.blue} />
+                  <Icon name="doc" size={64} color={scanner.brandBlue} />
                   <Text style={previewStyles.pagePdfName} numberOfLines={2}>{file.name}</Text>
                 </View>
               )}

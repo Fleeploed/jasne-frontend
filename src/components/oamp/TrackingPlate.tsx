@@ -51,7 +51,7 @@ export function TrackingPlate({
         <Ionicons
           name={isPro ? (isTracking ? "checkmark-circle-outline" : "notifications-outline") : "lock-closed-outline"}
           size={21}
-          color={isTracking ? colors.greenDark : isPro ? colors.primary : colors.pro}
+          color={isTracking ? colors.greenDark : isPro ? colors.brandBlue : colors.pro}
         />
       </View>
       <View style={styles.copy}>
@@ -61,7 +61,7 @@ export function TrackingPlate({
         ) : null}
       </View>
       {loading ? (
-        <ActivityIndicator size="small" color={colors.primary} />
+        <ActivityIndicator size="small" color={colors.brandBlue} />
       ) : (
         <Ionicons name="chevron-forward" size={19} color={colors.muted3} />
       )}

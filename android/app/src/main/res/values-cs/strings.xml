@@ -1,5 +1,5 @@
 <resources>
-  <string name="app_name">Jasne</string>
+  <string name="app_name">Jasně</string>
   <string name="camera_permission_message">Jasně potřebuje přístup ke kameře pro skenování dokumentů.</string>
   <string name="photo_library_permission_message">Jasně potřebuje přístup k fotkám pro výběr dokumentů.</string>
 </resources>

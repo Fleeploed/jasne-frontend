@@ -1,11 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+// animationType="none" + reanimated sheet: on RN 0.76 + New Arch, Android
+// doesn't show a mounted Modal whose `visible` flips with animationType="fade"
+// (see ManualDeadlineModal for the full story).
+import Reanimated, {
+  cancelAnimation,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { AppIcon } from "@/components/AppIcon";
 import type { ColorPalette } from "@/components/ui";
 import { t } from "@/lib/i18n";
 import type { DeadlineResponse, UserPlan } from "@/lib/types";
 import type { DeadlinesStyles } from "@/features/deadlines/components/deadlinesStyles";
 import { SHEET_DISMISS_DISTANCE, SHEET_DISMISS_VELOCITY, completedDateLabel, daysUntil, filterUpcomingReminderDays, formatReminderDays, parseDateOnly, parseDayMonthAbbr, relativeTime, reminderDisplayPlan, tileColors, urgencyTone } from "@/features/deadlines/components/deadlinesData";
+
+// Off-screen offset the detail sheet enters from / exits to.
+const DETAIL_ENTER_OFFSET = 520;
 
 export function ManualDeadlineDetailModal({
   item: itemProp,
@@ -34,7 +48,8 @@ export function ManualDeadlineDetailModal({
   // can leave the next Modal stuck (so its "Редактировать" button looks dead).
   const [renderedItem, setRenderedItem] = useState<DeadlineResponse | null>(itemProp);
   const detailScrollYRef = useRef(0);
-  const detailTranslateY = useRef(new Animated.Value(0)).current;
+  const detailTranslateY = useSharedValue(DETAIL_ENTER_OFFSET);
+  const backdropOpacity = useSharedValue(0);
   const visible = itemProp !== null;
 
   useEffect(() => {
@@ -44,9 +59,14 @@ export function ManualDeadlineDetailModal({
   useEffect(() => {
     if (visible) {
       detailScrollYRef.current = 0;
-      detailTranslateY.setValue(0);
+      cancelAnimation(detailTranslateY);
+      cancelAnimation(backdropOpacity);
+      detailTranslateY.value = DETAIL_ENTER_OFFSET;
+      detailTranslateY.value = withSpring(0, { damping: 24, stiffness: 240, mass: 0.9 });
+      backdropOpacity.value = 0;
+      backdropOpacity.value = withTiming(1, { duration: 160 });
     }
-  }, [detailTranslateY, visible]);
+  }, [backdropOpacity, detailTranslateY, visible]);
 
   // On Android, RN Modal has no onDismiss callback, so fire after a delay
   // that matches our fade animation (~250ms).
@@ -57,16 +77,13 @@ export function ManualDeadlineDetailModal({
     return () => clearTimeout(timer);
   }, [itemProp, onDismissed]);
 
-  const closeWithDetailDrag = useCallback(() => {
-    Animated.timing(detailTranslateY, {
-      toValue: 520,
-      duration: 180,
-      useNativeDriver: true,
-    }).start(() => {
-      detailTranslateY.setValue(0);
-      onClose();
+  // Animated close for every dismiss path — Modal itself no longer animates.
+  const animatedClose = useCallback(() => {
+    backdropOpacity.value = withTiming(0, { duration: 160 });
+    detailTranslateY.value = withTiming(DETAIL_ENTER_OFFSET, { duration: 180 }, (finished) => {
+      if (finished) runOnJS(onClose)();
     });
-  }, [detailTranslateY, onClose]);
+  }, [backdropOpacity, detailTranslateY, onClose]);
 
   const detailPanResponder = useMemo(
     () =>
@@ -76,31 +93,26 @@ export function ManualDeadlineDetailModal({
           return gesture.dy > 8 && gesture.dy > Math.abs(gesture.dx) * 1.2;
         },
         onPanResponderMove: (_, gesture) => {
-          if (gesture.dy > 0) detailTranslateY.setValue(gesture.dy);
+          if (gesture.dy > 0) detailTranslateY.value = gesture.dy;
         },
         onPanResponderRelease: (_, gesture) => {
           if (gesture.dy > SHEET_DISMISS_DISTANCE || gesture.vy > SHEET_DISMISS_VELOCITY) {
-            closeWithDetailDrag();
+            animatedClose();
             return;
           }
-          Animated.spring(detailTranslateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            damping: 22,
-            stiffness: 260,
-          }).start();
+          detailTranslateY.value = withSpring(0, { damping: 22, stiffness: 260 });
         },
         onPanResponderTerminate: () => {
-          Animated.spring(detailTranslateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            damping: 22,
-            stiffness: 260,
-          }).start();
+          detailTranslateY.value = withSpring(0, { damping: 22, stiffness: 260 });
         },
       }),
-    [closeWithDetailDrag, detailTranslateY]
+    [animatedClose, detailTranslateY]
   );
+
+  const backdropAnimatedStyle = useAnimatedStyle(() => ({ opacity: backdropOpacity.value }));
+  const detailAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: detailTranslateY.value }],
+  }));
 
   const item = itemProp ?? renderedItem;
   if (!item) return null;
@@ -130,16 +142,16 @@ export function ManualDeadlineDetailModal({
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
-      onRequestClose={onClose}
+      animationType="none"
+      onRequestClose={animatedClose}
       statusBarTranslucent
       onDismiss={onDismissed}
     >
-      <View style={styles.manualDetailBackdrop}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <Animated.View
+      <Reanimated.View style={[styles.manualDetailBackdrop, backdropAnimatedStyle]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={animatedClose} />
+        <Reanimated.View
           {...detailPanResponder.panHandlers}
-          style={[styles.manualDetailCard, { transform: [{ translateY: detailTranslateY }] }]}
+          style={[styles.manualDetailCard, detailAnimatedStyle]}
         >
           <View style={styles.manualDetailHandle} />
           <View style={styles.manualDetailTop}>
@@ -156,7 +168,7 @@ export function ManualDeadlineDetailModal({
               <Text style={styles.manualDetailTitle}>{item.title}</Text>
             </View>
             <Pressable
-              onPress={onClose}
+              onPress={animatedClose}
               hitSlop={8}
               style={({ pressed }) => [styles.manualDetailClose, pressed && styles.pressed]}
               accessibilityLabel={t("common.close")}
@@ -189,7 +201,7 @@ export function ManualDeadlineDetailModal({
               <Text style={styles.manualDetailLabel}>{t("deadlines.detailReminders")}</Text>
               <View style={styles.manualReminderRow}>
                 <View style={styles.manualReminderIcon}>
-                  <AppIcon name="bell" size={16} color={colors.primary} strokeWidth={1.8} />
+                  <AppIcon name="bell" size={16} color={colors.brandBlue} strokeWidth={1.8} />
                 </View>
                 <View style={styles.manualReminderTextBlock}>
                   <Text style={styles.manualDetailValue}>{reminderText}</Text>
@@ -230,8 +242,8 @@ export function ManualDeadlineDetailModal({
               </Pressable>
             </View>
           </View>
-        </Animated.View>
-      </View>
+        </Reanimated.View>
+      </Reanimated.View>
     </Modal>
   );
 }
