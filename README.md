@@ -44,6 +44,20 @@ The application separates routes from feature modules and shared infrastructure.
 
 Backend service credentials stay on the server. The mobile application uses client configuration and authenticated API requests; Supabase row-level security and backend authorization enforce access to user data.
 
+## My contribution
+
+Jasně is my personal project. I designed and developed the mobile application for explaining Czech official documents, and built its Python backend with FastAPI.
+
+My work includes:
+
+- Designing the REST API and integrating the mobile application with the backend.
+- Integrating OCR and language models for document extraction, classification, and analysis.
+- Implementing a retrieval-augmented generation (RAG) pipeline using PostgreSQL and pgvector to retrieve relevant reference information.
+
+## About the developer
+
+I am [Alisher Ibrayev](https://www.linkedin.com/in/alisher-ibrayev), a software engineer with experience in process automation, AI integrations, and Python backend development. My professional work includes UiPath automation, API integrations, Azure AI services, and automated evaluation of AI-agent responses. Jasně is my independent project applying these interests to document processing and a mobile user experience.
+
 ## Repository structure
 
 ```text
