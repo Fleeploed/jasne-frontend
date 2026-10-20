@@ -12,10 +12,9 @@
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend-api-production.up.railway.app",
-        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "REDACTED_PUBLIC_REVENUECAT_KEY",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "REDACTED_PUBLIC_REVENUECAT_KEY",
         "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "pro"
-      }
+      },
+      "environment": "development"
     },
     "preview": {
       "distribution": "internal",
@@ -24,17 +23,17 @@
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend-api-production.up.railway.app",
-        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "REDACTED_PUBLIC_REVENUECAT_KEY",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "REDACTED_PUBLIC_REVENUECAT_KEY",
         "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "pro"
-      }
+      },
+      "environment": "preview"
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://jasne-backend-api-production.up.railway.app",
         "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "pro"
-      }
+      },
+      "environment": "production"
     }
   },
   "submit": {

@@ -25,8 +25,9 @@ android/app/build/
 
 # Environment
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!.env.*.example
 
 # OS
 .DS_Store
@@ -52,3 +53,20 @@ coverage/
 *.apk
 *.aab
 *.ipa
+
+# Private credentials and local service configuration
+*.p8
+*.p12
+*.pfx
+*.mobileprovision
+*.jks
+*.keystore
+credentials.json
+service-account*.json
+serviceAccount*.json
+GoogleService-Info.plist
+google-services.json
+sentry.properties
+*.pem
+*.key
+coverage/

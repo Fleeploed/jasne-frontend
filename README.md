@@ -1,102 +1,80 @@
-# Jasne Frontend
+# Jasně — AI assistant for Czech paperwork
 
-Expo MVP for the Jasne mobile core loop:
+Jasně is a mobile application that helps people understand Czech official documents and act on them. Users photograph a letter or upload a PDF, receive a plain-language explanation, and keep the document, follow-up conversation, and deadlines in one place.
 
-- Supabase Auth login/register with persisted session
-- scan thread list as the main screen
-- new scan flow: in-app live camera (react-native-vision-camera), image picker, file/PDF picker
-- direct upload to Supabase Storage bucket `documents`
-- backend `POST /scans/stream` SSE progress
-- thread view with result card and progressive chat streaming
-- active deadlines list with complete/manual create actions
+The project focuses on residents of Czechia, including foreigners and self-employed people who deal with unfamiliar administrative language. It combines document processing, contextual AI chat, and deadline management in a messenger-style interface.
 
-## Environment
+This repository contains the **iOS and Android application**. The companion [FastAPI backend](https://github.com/Fleeploed/jasne-backend) handles OCR, AI analysis, retrieval, and background processing. Jasně is an MVP under active development; release readiness depends on service configuration and device testing.
 
-Create `.env` from `.env.example`:
+## Main features
+
+- **Document capture and import:** in-app camera, gallery images, and multi-page PDFs.
+- **Structured explanations:** a summary of the document, required actions, relevant dates, and extracted details.
+- **A conversation for each document:** streamed AI responses and contextual follow-up questions, subject to subscription limits.
+- **Deadline management:** extracted and manually created reminders, completion tracking, and calendar export.
+- **Czech administration tools:** multilingual help guides and OAMP immigration application status tracking.
+- **Account and subscription flows:** Supabase authentication, RevenueCat integration, and account deletion with a recovery period.
+- **Localization and themes:** Czech, English, Ukrainian, and Russian; light and dark interfaces.
+
+## How it works
+
+1. The user signs in and captures or selects a document.
+2. The app uploads the file to private Supabase Storage using a user-scoped path.
+3. The backend runs Azure Document Intelligence OCR, classifies the extracted text, retrieves relevant knowledge with pgvector, and generates a structured explanation with OpenAI models.
+4. Server-Sent Events (SSE) deliver processing progress and streamed answers to the app.
+5. The document becomes a chat thread, with deadlines managed through the backend and reminder jobs.
+
+## Technology
+
+| Area | Stack |
+| --- | --- |
+| Mobile | React Native 0.76, Expo SDK 52, TypeScript |
+| Navigation | Expo Router |
+| Server state and caching | TanStack Query |
+| Authentication and files | Supabase Auth and Storage |
+| Camera | React Native Vision Camera |
+| UI | React Native StyleSheet, shared design tokens, custom components |
+| Notifications and subscriptions | Expo Notifications, RevenueCat |
+| Observability | Sentry, PostHog |
+| Quality checks | TypeScript, ESLint, Jest, React Native Testing Library, GitHub Actions |
+
+## Engineering focus
+
+The application separates routes from feature modules and shared infrastructure. Particular attention goes to streaming responses, upload cleanup, user-scoped caches, subscription gating, localization, and restoring useful UI state when navigating between document threads.
+
+Backend service credentials stay on the server. The mobile application uses client configuration and authenticated API requests; Supabase row-level security and backend authorization enforce access to user data.
+
+## Repository structure
+
+```text
+app/             Expo Router screens and layouts
+src/features/    Authentication, scans, chat, deadlines, help, and profile
+src/components/  Shared UI and design tokens
+src/hooks/       Shared application hooks
+src/lib/         API, streaming, localization, and service integrations
+assets/          Fonts, icons, and branding
+android/         Native Android project
+ios/             Native iOS project
+```
+
+## Local development
+
+Use Node.js 20 or newer and npm. Native builds require the Android SDK or macOS with Xcode and CocoaPods.
 
 ```sh
+npm ci --legacy-peer-deps
 cp .env.example .env
 ```
 
-Set:
+Fill in your own values in `.env`:
 
-```sh
-EXPO_PUBLIC_SUPABASE_URL=<your Supabase project URL>
-EXPO_PUBLIC_SUPABASE_ANON_KEY=<your Supabase anon public key>
-EXPO_PUBLIC_API_BASE_URL=https://jasne-backend.onrender.com
-```
+| Variable | Purpose |
+| --- | --- |
+| `EXPO_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase public client key |
+| `EXPO_PUBLIC_API_BASE_URL` | Backend API URL |
 
-Do not use the backend `SUPABASE_SERVICE_KEY` in the app.
-
-After the Supabase custom domain is activated, set `EXPO_PUBLIC_SUPABASE_URL=https://auth.jasne.app` for local, EAS preview, and EAS production builds. Until activation completes, keep using `https://ndestbxknbgaxxdjoqkv.supabase.co`.
-
-`https://jasne-backend.onrender.com` is the current development/staging backend. Release production backend URL must be set later when production hosting is finalized.
-
-Optional analytics and crash reporting:
-
-```sh
-EXPO_PUBLIC_POSTHOG_KEY=<your PostHog project API key>
-EXPO_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
-EXPO_PUBLIC_SENTRY_DSN=<your Sentry mobile DSN>
-EXPO_PUBLIC_ANALYTICS_ENV=development
-```
-
-PostHog tracks product events and funnels; Sentry tracks crashes. Do not send document text, OCR, email, file URLs, scan IDs, or deadline IDs as analytics properties.
-
-For readable Sentry stack traces in production builds, set these as local/EAS build secrets, not as `EXPO_PUBLIC_*` values:
-
-```sh
-SENTRY_ORG=<your Sentry organization slug>
-SENTRY_PROJECT=<your Sentry project slug>
-SENTRY_AUTH_TOKEN=<your Sentry source-map upload token>
-```
-
-## Production Auth Checklist
-
-These settings are configured outside the frontend repo in Supabase and Google Cloud dashboards.
-
-Supabase Auth:
-
-- Email/password: enabled.
-- Custom SMTP: configure Resend SMTP (`smtp.resend.com`, port `587`, username `resend`, password = Resend API key).
-- Custom domain target: `auth.jasne.app`.
-- Redirect URLs:
-  - `jasne://auth/callback`
-  - `jasne://auth/reset-password`
-
-Supabase Custom Domain:
-
-- Requires a paid Supabase plan/add-on and Owner/Admin permissions.
-- Create DNS CNAME: `auth.jasne.app` -> `ndestbxknbgaxxdjoqkv.supabase.co`.
-- Register the domain in Supabase and add the TXT validation record Supabase returns:
-  ```sh
-  supabase domains create --project-ref ndestbxknbgaxxdjoqkv --custom-hostname auth.jasne.app
-  ```
-- After DNS propagates, verify and activate:
-  ```sh
-  supabase domains reverify --project-ref ndestbxknbgaxxdjoqkv
-  supabase domains activate --project-ref ndestbxknbgaxxdjoqkv
-  ```
-- After activation, update app env to `EXPO_PUBLIC_SUPABASE_URL=https://auth.jasne.app` and rebuild. This is what makes iOS show `auth.jasne.app` instead of `*.supabase.co` in the Google login system prompt.
-
-Google OAuth:
-
-- Enable the Supabase Google provider.
-- Configure the Google Cloud OAuth consent screen for Jasne.
-- Create a Google Web OAuth Client ID/Secret and copy it into the Supabase Google provider.
-- Add Google authorized redirect URIs:
-  - `https://ndestbxknbgaxxdjoqkv.supabase.co/auth/v1/callback`
-  - `https://auth.jasne.app/auth/v1/callback`
-
-## Run
-
-```sh
-npm install
-npm run typecheck
-npm run start
-```
-
-The camera (react-native-vision-camera) requires a development build — it does not run in Expo Go:
+Optional RevenueCat, analytics, and error-reporting settings are listed in [`.env.example`](.env.example). For EAS builds, configure the variables in the corresponding EAS environment. RevenueCat SDK keys are supplied through the environment, not committed in `eas.json`.
 
 ```sh
 npm run ios
@@ -104,4 +82,20 @@ npm run ios
 npm run android
 ```
 
-Image/file upload paths are created as `<user_id>/<filename>` and sent to the backend as storage paths, not Supabase object IDs.
+Use `npm run start` to start Metro for an installed development build. Native camera modules require a development build; Expo Go is insufficient for the full application.
+
+Configure OAuth providers and the `jasne://auth/callback` redirect in your own Supabase project. See the backend repository for API and database setup.
+
+## Validation
+
+```sh
+npm run typecheck
+npm run lint
+npm run test -- --runInBand
+```
+
+## Configuration and credentials
+
+Keep `.env` files, signing credentials, service-account files, and build tokens outside Git. Commit only configuration templates. All `EXPO_PUBLIC_*` values are bundled into the application and must be safe to expose to clients. Never put a Supabase service-role key, OpenAI key, Azure key, or Sentry upload token in an `EXPO_PUBLIC_*` variable.
+
+Use EAS environment variables and GitHub Actions secrets for the services that need them. Do not include document text, personal information, or signed file URLs in analytics events.

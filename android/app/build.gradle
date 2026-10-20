@@ -94,14 +94,7 @@ android {
         versionCode 1
         versionName "0.1.0"
     }
-    signingConfigs {
-        debug {
-            storeFile file('debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
-        }
-    }
+    // Use the Android Gradle plugin default local debug keystore.
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
